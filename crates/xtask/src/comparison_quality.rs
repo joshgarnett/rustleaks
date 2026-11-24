@@ -44,6 +44,11 @@ const PROGRAM: Program = Program {
     ],
 };
 
+/// Subcommands of `compare-quality`. The documentation command check reads this
+/// list, and a unit test keeps it in step with the argument parser in
+/// `main.py`.
+pub(crate) const SUBCOMMANDS: &[&str] = &["generate", "verify", "credata", "self-test"];
+
 /// Number of leading quality modules, after the support module, that decide
 /// the constructed corpus bytes.
 const GENERATOR_MODULES: usize = 4;
@@ -89,6 +94,23 @@ pub(crate) fn run(root: &Path, arguments: &[String]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn listed_subcommands_match_the_argument_parser() {
+        let main = PROGRAM
+            .modules
+            .iter()
+            .find(|(name, _)| name.ends_with("/main.py"))
+            .map(|(_, source)| *source)
+            .unwrap();
+        let pattern = "add_parser('";
+        let parsed = main
+            .match_indices(pattern)
+            .filter_map(|(index, _)| main[index + pattern.len()..].split_once('\''))
+            .map(|(name, _)| name)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(parsed, SUBCOMMANDS.iter().copied().collect());
+    }
 
     #[cfg(unix)]
     #[test]

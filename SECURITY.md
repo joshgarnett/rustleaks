@@ -29,8 +29,8 @@ internals](docs/dev/engine-internals.md) and
 [Dependencies](docs/dev/dependencies.md).
 
 Finding, baseline, and fragment `Debug` output omits retained byte contents.
-Compatibility serialization and reporting intentionally preserve raw fields.
-Owned buffers are not zeroized, and removing detected secret byte sequences
+Reports and serialized findings keep raw fields, such as `Secret`, `Match`
+and `Line`, unless `--redact` is used. Owned buffers are not zeroized, and removing detected secret byte sequences
 does not prove that remaining source-derived metadata is safe to disclose.
 
 `deny.toml` sets the policy for dependency advisories, licenses, versions and

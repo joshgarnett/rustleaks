@@ -63,12 +63,12 @@ tag. Only the lines that each commit adds are scanned. Every `git log` and
 --no-color`, and `git log` passes `--no-show-signature`, so the scanned
 repository's configuration cannot start these programs or replace the
 content Rustleaks reads with their output. `git log` and `git diff --staged`
-also read Git attributes from an empty tree (`-c attr.tree=`), so a text file
-that the repository's `.gitattributes` marks as binary (`-diff` or `binary`)
-is still scanned. Git then decides from the content alone: a file with a NUL
-byte near its start is skipped as binary, even when `.gitattributes` marks it
-as text (`diff`). This needs Git 2.43 or later; earlier versions ignore the
-setting and follow `.gitattributes`. `--pre-commit` runs `git diff` on the
+also read Git attributes from an empty tree (`-c attr.tree=` set to the ID of
+the empty tree), so a text file that the repository's `.gitattributes` marks
+as binary (`-diff` or `binary`) is still scanned. Git then decides from the
+content alone: a file with a NUL byte near its start is skipped as binary,
+even when `.gitattributes` marks it as text (`diff`). This needs Git 2.43 or
+later; earlier versions ignore the setting and follow `.gitattributes`. `--pre-commit` runs `git diff` on the
 worktree, which keeps the attributes: it still applies the repository's
 clean filters, as `git add` does, and skips a file that `.gitattributes`
 marks as binary.
@@ -84,6 +84,12 @@ With both `--staged` and `--pre-commit`, Rustleaks scans the staged changes.
 `--log-opts` has no effect with either of them. Findings from `--staged` and
 `--pre-commit` have no commit and no link. See [Using Rustleaks in CI and Git
 hooks](ci.md) for examples.
+
+Rustleaks runs Git with `LC_ALL=C`. Git then matches non-ASCII text byte by
+byte, so `--log-opts` options that match text, such as `-i`, `--grep` and
+`--author`, can select other commits than in a UTF-8 locale. For example,
+`-i` does not match `É` to `é`. The clean filters that `--pre-commit` runs
+also run in the C locale.
 
 ### dir
 
@@ -135,12 +141,11 @@ opened instead. See [Archives](configuration.md#archives).
 #### Git metadata
 
 The default configuration has a global path allowlist entry,
-`(?:^|/)\.git$`, so `dir` skips every `.git` folder below the scan path, as
-Gitleaks does. Text
-files in a `.git` folder can still hold secrets. A remote URL in `config` can
-contain a token, a hook script can contain a credential, and older Git
-versions or other tools can write a URL with a token to other metadata
-files.
+`(?:^|/)\.git$`, so `dir` skips every `.git` folder below the scan path.
+Text files in a `.git` folder can still hold secrets. A remote URL in
+`config` can contain a token, a hook script can contain a credential, and
+older Git versions or other tools can write a URL with a token to other
+metadata files.
 
 `--scan-git-metadata` enters a `.git` folder that a path allowlist would
 skip and scans only these files:
@@ -185,8 +190,7 @@ Other rules still apply to each selected file:
 The built-in Git credential URL rules can then report findings in
 `.git/config` and `.git-credentials`.
 
-The flag works only with `dir`. Gitleaks does not scan these files, so a scan
-with this flag can report findings that Gitleaks does not.
+The flag works only with `dir`.
 
 ### stdin
 
@@ -227,7 +231,7 @@ rustleaks completion <shell>
 
 Prints a completion script for `bash`, `zsh`, `fish` or `powershell` on
 standard output. It accepts the scan flags and ignores them. It also accepts
-`--no-descriptions` for Gitleaks compatibility and ignores it. See [Shell
+`--no-descriptions` and ignores it. See [Shell
 completion](#shell-completion) to install a script.
 
 ## Flags for scan commands
@@ -307,6 +311,7 @@ These older names also work:
 | `RUSTLEAKS_CONFIG_TOML` | The configuration text itself. |
 | `GITLEAKS_CONFIG` | Legacy name for `RUSTLEAKS_CONFIG`. |
 | `GITLEAKS_CONFIG_TOML` | Legacy name for `RUSTLEAKS_CONFIG_TOML`. |
+| `TMPDIR` (Unix), `TMP` or `TEMP` (Windows) | The folder for temporary archive files. See [Archives](resource-limits.md#archives). |
 
 An empty variable is skipped. Rustleaks reads no other environment variables
 itself. The `git` program that it runs reads its own variables, such as
@@ -330,8 +335,9 @@ for the full order.
 | Template file | With `--report-template`. |
 | Profile file | With `--complete-profile`. |
 
-A scan can skip the selected configuration file and the baseline file. See
-[Where Rustleaks finds the
+A scan skips the `--config` file, or without `--config` the
+`.rustleaks.toml` and `.gitleaks.toml` files in the scanned folder, and the
+baseline file. See [Where Rustleaks finds the
 configuration](configuration.md#where-rustleaks-finds-the-configuration).
 
 ## Output streams

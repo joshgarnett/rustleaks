@@ -25,7 +25,10 @@ use rustleaks_sources::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag mirrors one optional field of a recorded request"
+)]
 struct Request {
     id: String,
     operation: String,
@@ -71,7 +74,10 @@ struct FragmentWire {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::struct_field_names)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "the field names match the recorded JSON keys"
+)]
 struct CommitInfoWire {
     author_name_base64: String,
     author_email_base64: String,
@@ -129,7 +135,7 @@ struct ErrorWire {
 }
 
 #[test]
-fn matrix_n_isolated_platform_fixtures_use_distinct_private_copies() {
+fn isolated_platform_fixtures_use_distinct_private_copies() {
     assert_eq!(windows_git_archive_path(b"main.go.zst"), b"main.go.zst");
     assert_eq!(
         windows_git_archive_path(b"outer.tar!middle/archive.zip!leaf/value"),
@@ -144,7 +150,7 @@ fn matrix_n_isolated_platform_fixtures_use_distinct_private_copies() {
 }
 
 #[test]
-fn matrix_g_allowlist_corpus_retains_source_work_and_downstream_suppression() {
+fn allowlist_corpus_retains_source_work_and_downstream_suppression() {
     let requests = json_lines::<Request>(&corpus_root().join("requests-v1.jsonl"));
     let request = requests
         .iter()
@@ -216,7 +222,7 @@ fn valid_git_corpus_fragments_match_and_failures_have_safe_dispositions() {
                                 | SourceIssueKind::ArchiveMember
                                 | SourceIssueKind::Decode
                         )),
-                    "Rust must surface the Go worker-error loss"
+                    "the archive worker error is reported as an error or an archive issue"
                 );
                 safe += 1;
             }
@@ -408,8 +414,8 @@ fn assert_fragments(id: &str, actual: &[FragmentWire], expected: &[FragmentWire]
     let comparable = |wire: &FragmentWire| FragmentWire {
         raw_base64: wire.raw_base64.clone(),
         bytes_base64: wire.raw_base64.clone(),
-        // Rust deliberately models fragment content once rather than preserving
-        // Go's nil-versus-populated alias of the same bytes.
+        // A fragment holds its content once, so the recorded flag for an
+        // empty `Bytes` field is not compared.
         bytes_nil: false,
         file_base64: wire.file_base64.clone(),
         windows_file_base64: wire.windows_file_base64.clone(),
@@ -423,7 +429,7 @@ fn assert_fragments(id: &str, actual: &[FragmentWire], expected: &[FragmentWire]
     let expected = expected
         .iter()
         .map(|source| {
-            // Pinned Git patch fragments carry Raw only; archive-backed file
+            // Recorded Git patch fragments carry Raw only; archive-backed file
             // fragments also populate Bytes and enter the native file path
             // projection on Windows.
             let archive_fragment = !source.bytes_nil;

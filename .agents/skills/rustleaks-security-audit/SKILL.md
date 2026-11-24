@@ -62,17 +62,9 @@ one of those package-facing boundaries changes. Follow the incident procedure
 for a suspected live finding, compromised dependency, release input, or
 unexplained fuzz or sanitizer result.
 
-For a repository self-scan, build the CLI and keep all findings redacted:
-
-```sh
-bazelisk build //crates/rustleaks-cli:rustleaks
-bazel-bin/crates/rustleaks-cli/rustleaks dir . --redact --no-banner --timeout=300
-bazel-bin/crates/rustleaks-cli/rustleaks git . --redact --no-banner --timeout=600
-```
-
-Do not broaden `.rustleaks.toml` paths or add a `.rustleaksignore` fingerprint
-without privately reviewing the redacted rule, path, line, source context, and
-provenance.
+For a repository self-scan, follow [Repository
+self-scan](../../../docs/dev/security-checks.md#repository-self-scan) and keep
+all findings redacted.
 
 Report the threat boundary, evidence inspected, exact commands and results,
 finding classification, synthetic regression, dependency and unsafe delta,

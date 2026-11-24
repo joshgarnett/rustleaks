@@ -49,7 +49,7 @@ fn body(alphabet: &str, length: usize) -> String {
     alphabet.chars().cycle().take(length).collect()
 }
 
-// Both Dropbox token rules share this prefix (from the pinned rule text):
+// Both Dropbox token rules share this prefix (from the default rule text):
 // `(?i)[\w.-]{0,50}?(?:dropbox)(?:[ \t\w.-]{0,20})[\s'"]{0,3}` then an
 // operator, up to five quote, space or `=` bytes, the secret group, and one
 // terminator: a quote, backtick, whitespace, `;`, an escaped `n` or `r`, or
@@ -257,7 +257,7 @@ impl Encoding {
         }
     }
 
-    /// Whether the pinned decoder takes the whole encoded text as one
+    /// Whether the decoder takes the whole encoded text as one
     /// candidate of this kind and restores the original bytes, from the
     /// candidate patterns and the per-kind output filters:
     /// percent, hex and Base64 keep a result only when every byte is in
@@ -333,7 +333,7 @@ fn assert_encoded_samples(chain: &[Encoding]) -> (usize, usize) {
         }
         restored += 1;
         let [expected] = sample.findings.as_slice() else {
-            panic!("{}: one frozen finding", sample.case_id);
+            panic!("{}: one recorded finding", sample.case_id);
         };
         let [finding] = decoded.as_slice() else {
             failures.push(format!("{}: {} findings", sample.case_id, decoded.len()));
@@ -369,7 +369,7 @@ fn assert_encoded_samples(chain: &[Encoding]) -> (usize, usize) {
     (restored, not_restored)
 }
 
-// Each expected pair is (restored, not restored), counted from the frozen
+// Each expected pair is (restored, not restored), counted from the recorded
 // inputs with the rule in `Encoding::restores`. `GEN/JWT/ordinary_true/0052`
 // holds UTF-8 bytes above 0x7e, so no encoding restores it. Encoded twice,
 // `GEN/AWS/ordinary_true/0031` and `GEN/AWS/ordinary_true/0046` become Base64
@@ -425,7 +425,7 @@ fn one_layer_short_of_the_depth_finds_nothing() {
     assert_eq!(scan(&engine, &twice, 5).len(), 1);
 }
 
-// The pinned private-key rule:
+// The default private-key rule:
 // `(?i)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S-]{64,}?KEY(?: BLOCK)?-----`
 // It has no capture group, so the secret is the whole match. The lazy body
 // ends at the first `KEY-----` or `KEY BLOCK-----` after at least 64 bytes.

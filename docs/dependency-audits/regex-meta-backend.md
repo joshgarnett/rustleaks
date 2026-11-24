@@ -15,9 +15,9 @@ provenance, licenses, and analysis of selected and previously unselected
 source. Its direct-PikeVM execution boundary is historical. This review
 updates the reachable paths and resource argument without replacing that
 evidence or treating prior test results as validation of the new backend.
-The frozen compatibility behavior matrix also retains its historical PikeVM
-backend description. Current backend identity is recorded by the private
-`backend_version` contract and this review; frozen evidence bytes are unchanged.
+The current backend is set by the `regex-automata` requirement (`0.4.12`,
+with the features it names) and the `regex-syntax` requirement (`0.8.5`) in
+[`crates/rustleaks-core/Cargo.toml`](../../crates/rustleaks-core/Cargo.toml).
 
 ## Compilation and API boundary
 

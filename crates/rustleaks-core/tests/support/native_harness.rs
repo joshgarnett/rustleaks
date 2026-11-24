@@ -1,4 +1,4 @@
-//! Shared helpers for the native rule-pack coverage tests.
+//! Shared helpers for the rule coverage tests.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -26,8 +26,8 @@ pub fn all_packs_config() -> CompiledConfig {
 
 /// Returns `baseline_rule_ids` from a coverage data file in `tests/support/`.
 ///
-/// Each list is a frozen comparison set: the rule IDs before one batch of
-/// pack additions.
+/// Each list is a fixed comparison set of rule IDs. It does not follow rule
+/// file changes.
 pub fn baseline_rule_ids(json: &str) -> Vec<String> {
     #[derive(Deserialize)]
     struct Baseline {

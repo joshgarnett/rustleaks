@@ -57,7 +57,7 @@ with a non-generic finding on the same line and commit. It compares a generic
 finding only with non-generic findings on the same line and commit.
 
 The same filter removes findings named by reviewed rule overlaps (see
-[Rule pack authoring](rule-pack-authoring.md#same-secret-from-two-rules)). It
+[Rule authoring](rule-authoring.md#same-secret-from-two-rules)). It
 charges no work units. When some finding's rule has an overlap, it indexes the
 findings of kept rules by file, commit, secret and exact secret range, and
 polls cancellation once for each finding it indexes and once for each finding
@@ -129,8 +129,8 @@ At the 16 KiB limit, the DFA table is about 17 MiB, at most one kilobyte per
 state. Building a state's row follows a failure chain for each byte class
 without a transition, and the chain is no longer than the state's depth. Every
 state is a keyword prefix, so the prefix limit bounds the sum of depths; a
-long keyword counts quadratically. The default keywords total 1,755 bytes,
-their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
+long keyword counts quadratically. The keywords of `gitleaks.toml` total
+1,755 bytes, their prefix lengths sum to 9,339 and the longest is 34 bytes. The automaton
 kind never changes which keyword hits are reported. With every built-in rule
 the automaton has 940 patterns and its DFA uses about 2.3 MiB; with the
 default rules alone it has 510 patterns and uses about 0.6 MiB.
@@ -171,7 +171,7 @@ search caches.
   needs a location. It is reused across decoded passes and required rules.
 - The first pass borrows the original fragment. Each decoded pass owns its
   output buffer.
-- The Gitleaks-compatible path normalizes each pass's bytes for regex
+- The Go-dialect path normalizes each pass's bytes for regex
   matching at most once, lazily, after its gates.
 - Native buffer-local rules normalize a buffer only when a Go content matcher
   needs it, and share it with the primary's Go helpers. Byte matchers borrow
@@ -463,8 +463,8 @@ threads](../user/resource-limits.md#detection-threads).
 | Directory reader threads | One for each worker, up to 2 | `MAX_READ_THREADS` |
 
 The constants are in `crates/rustleaks-cli/src/run.rs`. Their doc comments
-record the measurements behind each default. Memory that grows with these
-numbers:
+give the reason for each default; the measurements follow below. Memory that
+grows with these numbers:
 
 - The runner holds at most `queue_capacity + workers + 1` fragments. See
   [Source runner budgets](#source-runner-budgets).
@@ -681,13 +681,13 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
 
 ### Archives
 
-- A final `.tgz` suffix, in any ASCII case, is read as gzip-compressed TAR in
-  complete mode. It uses one archive depth level, like `.tar.gz`. Normal
-  (not complete) mode does not recognize it.
+- A final `.tgz` suffix, in any ASCII case, is read as gzip-compressed TAR
+  in normal and complete scans. It uses one archive depth level, like
+  `.tar.gz`.
 - Complete mode forces strict 7z member lengths, even if
   `ArchiveOptions::strict_7z_member_lengths(false)` was set. A short member
-  fails. The default outside complete mode is `false`, which keeps the
-  pinned short-EOF behavior. Outside complete mode, a caller can turn it on
+  fails. The default outside complete mode is `false`, which accepts a
+  member that ends before its declared length. Outside complete mode, a caller can turn it on
   with `strict_7z_member_lengths(true)`. A length mismatch then gives a
   recoverable decode issue at the end of the short member and stops that
   archive. Earlier members, and outside complete mode the bytes of the short
@@ -708,10 +708,10 @@ file before it is scanned. The CLI uses this for `--complete-profile`.
 - 7z coder graphs reject duplicate bindings, invalid packed inputs and cycles
   before any decoder is built. This check is linear in the stream and coder
   counts.
-- Compressed RAR3, RAR5 and 7z decoding relies on catching panics on
-  malformed input. When the final binary uses `panic=abort`, those paths are
-  rejected as unsupported-archive issues before the decoder runs. Stored RAR
-  members and the other decoders still work.
+- Compressed RAR3 and RAR5 decoding and all 7z decoding rely on catching
+  panics on malformed input. When the final binary uses `panic=abort`, those
+  paths are rejected as unsupported-archive issues before the decoder runs.
+  Stored RAR members and the other decoders still work.
 
 ### Coordinates and Git
 
@@ -755,7 +755,7 @@ How the scans were run:
 
 - An optimized build (`bazelisk build -c opt //crates/rustleaks-cli:rustleaks`).
 - All rules: the default rules plus the `rustleaks-extra-v1`,
-  `rustleaks-providers-v1` and `rustleaks-connections-v1` native packs.
+  `rustleaks-providers-v1` and `rustleaks-connections-v1` rule files.
 - `--complete-profile` with the example profile, `--max-decode-depth 5`,
   `--max-archive-depth 0` and `--base64-mode compatible`.
 - Synthetic inputs with known GitHub tokens. Each row is one scan of one file,

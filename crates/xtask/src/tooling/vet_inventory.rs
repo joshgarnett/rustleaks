@@ -237,7 +237,7 @@ fn validate_coverage_against_locked(
         .collect())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // Each lookup table is built once by the caller and passed by reference.
 fn package_record(
     package: &Value,
     nodes_by_id: &BTreeMap<String, Value>,

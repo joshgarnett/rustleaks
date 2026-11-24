@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![no_main]
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each target uses part of the shared module.
 #[path = "../../tests/support/fuzz_profile.rs"]
 mod fuzz_profile;
 
@@ -12,6 +12,8 @@ use std::hint::black_box;
 
 use libfuzzer_sys::fuzz_target;
 
+// The library calls items in this module that this target does not.
+#[allow(dead_code)]
 #[path = "../../src/regex/mod.rs"]
 mod regex;
 
@@ -31,7 +33,6 @@ fuzz_target!(|data: &[u8]| {
     };
 
     black_box(compiled.source());
-    black_box(regex::backend_version());
     black_box(compiled.capture_count());
     black_box(compiled.capture_names());
     black_box(compiled.is_match(haystack));

@@ -1,5 +1,5 @@
-//! Shared generators and checks for the pack, CLI matrix, dense, Git shape and
-//! filter workload groups.
+//! Shared generators and checks for the built-in rule file, CLI matrix, dense,
+//! Git shape and filter workload groups.
 //!
 //! Every helper builds synthetic input or checks a property of that input. None
 //! of them runs the scanner, so expectations built from them stay independent
@@ -16,8 +16,8 @@ use super::source_scale_workloads::github_token;
 
 pub(super) type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// The packaged native rule packs, in the order the CLI documents them.
-pub(super) const PACKS: [(&str, &str); 3] = [
+/// The Rustleaks rule files, in the order the built-in rules load them.
+pub(super) const RULE_FILES: [(&str, &str); 3] = [
     ("rustleaks-extra-v1", EXTRA_RULES_V1),
     ("rustleaks-providers-v1", PROVIDER_RULES_V1),
     ("rustleaks-connections-v1", CONNECTION_RULES_V1),
@@ -107,8 +107,9 @@ pub(super) fn keyword_census(config: &CompiledConfig, filler: &[u8]) -> Result<(
     Ok(())
 }
 
-/// Upstream `shannonEntropy`, summed in ascending symbol order. Go iterates a
-/// map, so that order is the canonical choice among Go's admissible results.
+/// Shannon entropy as the engine reports it, summed in ascending symbol order.
+/// The Go `shannonEntropy` iterates a map, so that order is the canonical
+/// choice among Go's admissible results.
 /// Every planted secret is ASCII, which makes bytes and runes equivalent.
 pub(super) fn go_entropy(secret: &[u8]) -> Result<f64> {
     if !secret.is_ascii() {
@@ -142,7 +143,7 @@ pub(super) fn checked_github_token(index: usize) -> Result<Vec<u8>> {
     Ok(token)
 }
 
-/// A database URI whose password is planted for the connections pack rule
+/// A database URI whose password is planted for the connection rule file rule
 /// `rustleaks.connection-string.password.database-uri`. The host is neither an
 /// `example` host nor `example.invalid`, so the rule's allowlists do not apply.
 pub(super) fn database_uri(index: usize) -> (Vec<u8>, Vec<u8>) {
@@ -155,7 +156,7 @@ pub(super) fn database_uri(index: usize) -> (Vec<u8>, Vec<u8>) {
     (uri, password)
 }
 
-/// Rule ID of the connections pack rule that matches [`database_uri`].
+/// Rule ID of the connection rule file rule that matches [`database_uri`].
 pub(super) const DATABASE_URI_RULE: &str = "rustleaks.connection-string.password.database-uri";
 
 /// Counts `[[rules]]` tables in packaged TOML, an input-side rule count.
@@ -165,49 +166,53 @@ pub(super) fn declared_rules(toml: &str) -> usize {
         .count()
 }
 
-/// The named packs with their text, the rule count that text declares, and a
-/// byte identity for fingerprints. Nothing here compiles a rule.
-pub(super) struct PackSelection {
-    pub(super) packs: Vec<(&'static str, &'static str)>,
+/// The named Rustleaks rule files with their text, the rule count that text
+/// declares, and a byte identity for fingerprints. Nothing here compiles a rule.
+pub(super) struct RuleFileSelection {
+    pub(super) rule_files: Vec<(&'static str, &'static str)>,
     pub(super) rules: usize,
     pub(super) identity: Vec<u8>,
 }
 
-pub(super) fn pack_selection(ids: &[&str]) -> Result<PackSelection> {
-    let mut packs = Vec::with_capacity(ids.len());
+pub(super) fn rule_file_selection(ids: &[&str]) -> Result<RuleFileSelection> {
+    let mut rule_files = Vec::with_capacity(ids.len());
     let mut rules = crate::DEFAULT_RULES;
     let mut identity = b"default".to_vec();
     for id in ids {
-        let (name, contents) = *PACKS
+        let (name, contents) = *RULE_FILES
             .iter()
             .find(|(name, _)| name == id)
             .ok_or("unknown native pack")?;
-        packs.push((name, contents));
+        rule_files.push((name, contents));
         rules += declared_rules(contents);
         identity.push(0);
         identity.extend_from_slice(name.as_bytes());
         identity.push(0);
         identity.extend_from_slice(contents.as_bytes());
     }
-    Ok(PackSelection {
-        packs,
+    Ok(RuleFileSelection {
+        rule_files,
         rules,
         identity,
     })
 }
 
-/// Compiles the default configuration plus the selected packs through the
-/// native policy, the way `ConfigLoader` builds the built-in rules.
-pub(super) fn compile_packs(selection: &PackSelection) -> Result<CompiledConfig> {
+/// Compiles the `gitleaks.toml` default rules plus the selected rule files
+/// through the native policy, the way `ConfigLoader` builds the built-in rules.
+pub(super) fn compile_rule_files(selection: &RuleFileSelection) -> Result<CompiledConfig> {
     let mut policy = NativePolicy::builder();
-    for (id, contents) in &selection.packs {
+    for (id, contents) in &selection.rule_files {
         policy = policy.with_pack(id, contents)?;
     }
     Ok(policy.compile()?.0)
 }
 
-/// Fails unless the compiled rule count equals the count the pack text declares.
-pub(super) fn check_rule_count(config: &CompiledConfig, selection: &PackSelection) -> Result<()> {
+/// Fails unless the compiled rule count equals the count the rule file text
+/// declares.
+pub(super) fn check_rule_count(
+    config: &CompiledConfig,
+    selection: &RuleFileSelection,
+) -> Result<()> {
     if config.rules().len() != selection.rules {
         return Err(format!(
             "native policy compiled {} rules, pack text declares {}",
@@ -219,10 +224,10 @@ pub(super) fn check_rule_count(config: &CompiledConfig, selection: &PackSelectio
     Ok(())
 }
 
-/// Selects, compiles and checks the named packs in one step.
-pub(super) fn pack_config(ids: &[&str]) -> Result<(CompiledConfig, usize, Vec<u8>)> {
-    let selection = pack_selection(ids)?;
-    let config = compile_packs(&selection)?;
+/// Selects, compiles and checks the named rule files in one step.
+pub(super) fn rule_file_config(ids: &[&str]) -> Result<(CompiledConfig, usize, Vec<u8>)> {
+    let selection = rule_file_selection(ids)?;
+    let config = compile_rule_files(&selection)?;
     check_rule_count(&config, &selection)?;
     Ok((config, selection.rules, selection.identity))
 }

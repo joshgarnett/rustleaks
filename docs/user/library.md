@@ -2,8 +2,8 @@
 
 This guide is for Rust developers who want to scan bytes for secrets inside
 their own program. It covers the `rustleaks-core` library: building an
-engine, scanning, limits, findings, ignore files and baselines, rule packs and
-review records.
+engine, scanning, limits, findings, ignore files and baselines, custom rule
+compositions and review records.
 
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
 
@@ -39,10 +39,8 @@ it compiles every rule.
 ## A first scan
 
 This example loads the default rules and scans one byte string. The value is
-synthetic test data, not a credential. The examples in this guide put a
-`rustleaks:allow` comment on lines with test values, so that Rustleaks does
-not report them when it scans this repository. The comment is outside the
-scanned bytes, so the examples still find the value.
+synthetic test data, not a credential. The `rustleaks:allow` comment is
+outside the scanned bytes and does not change the result.
 
 ```rust
 use std::sync::atomic::AtomicBool;
@@ -339,7 +337,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Custom compositions
 
 `NativePolicy` starts from the default rules and adds rule files that you
-choose, with an identity that records them.
+choose, with an identity that records them. `with_pack` adds one rule file.
+The built-in rule files can be added in any order. The exact bytes and the
+order of the rule files are part of the identity.
 
 ```rust
 use rustleaks_core::explanation::ExplanationOptions;
@@ -364,14 +364,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-- Use the pack IDs shown above. `builtin_review_reference()` returns a value
-  only for the packaged packs under their own IDs.
+- Use the rule file IDs shown above, such as `rustleaks-providers-v1`.
+  `builtin_review_reference()` returns a value only for the built-in rule
+  files under their own IDs.
 - `NativeEngine::engine()` returns the plain `Engine`, which works with
   sessions.
 - `NativePolicy::compile()` returns the `CompiledConfig` and the
   `NativePolicyIdentity` without building an engine.
-- You can also add your own packs with `with_pack`. Their rule IDs must start
-  with `rustleaks.`. A pack cannot replace or disable an existing rule.
+- You can also add your own rule files with `with_pack`. Their rule IDs
+  must start with `rustleaks.`. A rule file cannot replace or disable an
+  existing rule.
 - `ExplanationOptions::bounded(n)` records up to `n` numeric diagnostic
   events about the scan. They contain no source bytes.
 

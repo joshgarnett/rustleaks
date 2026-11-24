@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use rustleaks_core::config::{ConfigLoader, ConfigOrigin, VirtualResolver};
@@ -12,7 +13,7 @@ fn build_engine(config: &str) -> Engine {
 }
 
 #[test]
-fn raw_detection_uses_keywords_captures_entropy_and_upstream_locations() {
+fn raw_detection_uses_keywords_captures_entropy_and_line_locations() {
     let engine = build_engine(
         r#"
 [[rules]]

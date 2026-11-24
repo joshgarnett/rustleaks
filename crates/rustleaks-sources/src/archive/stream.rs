@@ -1102,6 +1102,49 @@ impl<R: Read> Read for DecodeErrors<R> {
     }
 }
 
+/// Gives back the bytes already read from the start of a stream, then the
+/// rest of the stream.
+///
+/// The first read returns those bytes together with one read of the stream,
+/// so a chunked member keeps the read sizes of its stream.
+pub(super) struct Prefixed<'a> {
+    head: &'a [u8],
+    inner: &'a mut dyn Read,
+    error: Option<io::Error>,
+}
+
+impl<'a> Prefixed<'a> {
+    pub(super) fn new(head: &'a [u8], inner: &'a mut dyn Read) -> Self {
+        Self {
+            head,
+            inner,
+            error: None,
+        }
+    }
+}
+
+impl Read for Prefixed<'_> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if let Some(error) = self.error.take() {
+            return Err(error);
+        }
+        if self.head.is_empty() || output.is_empty() {
+            return self.inner.read(output);
+        }
+        let count = self.head.len().min(output.len());
+        output[..count].copy_from_slice(&self.head[..count]);
+        self.head = &self.head[count..];
+        if self.head.is_empty() && count < output.len() {
+            // Return the saved bytes now and the error on the next read.
+            match self.inner.read(&mut output[count..]) {
+                Ok(more) => return Ok(count + more),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        Ok(count)
+    }
+}
+
 /// Maps errors of a raw input, such as a file, to read failures.
 pub(super) struct ReadErrors<R>(pub(super) R);
 

@@ -250,7 +250,7 @@ fn mime_window_is_fixed_and_assembled_independently_of_short_reads() {
 }
 
 #[test]
-fn plain_and_padded_base64_tokens_survive_legacy_cut_positions() {
+fn plain_and_padded_base64_tokens_survive_normal_cut_positions() {
     let engine = detector("[[rules]]\nid='pat'\nregex='ghp_[0-9a-zA-Z]{36}'\nkeywords=['ghp_']\n");
     let secret = b"ghp_0123456789abcdefghijklmnopqrstuvwxyz";
     let encoded = base64::engine::general_purpose::STANDARD.encode(secret);
@@ -757,7 +757,7 @@ fn aggregate_new_dimensions_require_matching_fragment_reservations() {
 }
 
 #[cfg(feature = "archives")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/sevenz_seeds.rs"]
 mod sevenz_seeds;
 
@@ -1018,14 +1018,14 @@ fn complete_directory_excludes_a_dangling_link_before_resolution() {
             assert!(outcome.findings().is_empty());
         }
     }
-    // The legacy gate order still reports the link issue before continuing.
-    let mut legacy = DirectorySource::with_options(
+    // A normal scan still reports the link issue before continuing.
+    let mut normal = DirectorySource::with_options(
         &tree.0,
         DirectoryOptions::default()
             .follow_symlinks(true)
             .path_config(config),
     );
-    let outcome = run(&mut legacy, &token_detector(), ScanOptions::default());
+    let outcome = run(&mut normal, &token_detector(), ScanOptions::default());
     assert_eq!(outcome.termination(), &SourceTermination::Completed);
     assert_eq!(outcome.issues().len(), 1);
     assert_eq!(outcome.findings().len(), 1);
@@ -1097,11 +1097,11 @@ fn aggregate_span_and_normalization_limits_do_not_multiply_with_workers() {
 }
 
 #[cfg(feature = "archives")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_frame.rs"]
 mod archive_frame;
 #[cfg(feature = "archives")]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
 
@@ -1112,7 +1112,7 @@ mod excluded_archive_members {
 
     // Independent minimal stored-ZIP writer. Both headers describe the same
     // body; the test can deliberately corrupt only its payload CRC.
-    fn stored_zip(entries: &[(&str, &[u8], bool)]) -> Vec<u8> {
+    pub(super) fn stored_zip(entries: &[(&str, &[u8], bool)]) -> Vec<u8> {
         let mut data = Vec::new();
         let mut central = Vec::new();
         for &(name, body, corrupt_crc) in entries {
@@ -1223,13 +1223,13 @@ mod excluded_archive_members {
                     assert!(outcome.findings().is_empty());
                 }
             }
-            let legacy = run(
+            let normal = run(
                 &mut source(data, name, false, true, 10),
                 &token_detector(),
                 ScanOptions::default(),
             );
-            assert_eq!(legacy.termination(), &SourceTermination::Completed);
-            assert_eq!(legacy.issues().len(), 1);
+            assert_eq!(normal.termination(), &SourceTermination::Completed);
+            assert_eq!(normal.issues().len(), 1);
         }
     }
 
@@ -1312,13 +1312,13 @@ mod excluded_archive_members {
         assert_eq!(half.len(), 2071);
         half.truncate(half.len() / 2);
 
-        // Members are scanned while they are read. A legacy scan publishes
+        // Members are scanned while they are read. A normal scan publishes
         // the bytes read before a failure, so the ZIP member whose CRC fails
         // at its end is scanned, and the TAR member that ends before the
         // truncated gzip stream is too. A complete target is published only
         // when it ends without a failure, so the member whose CRC fails is
         // never published, while the whole TAR member is.
-        // (bytes, name, legacy issues, legacy findings, complete stage,
+        // (bytes, name, normal issues, normal findings, complete stage,
         // owned message, complete findings)
         let crc_findings: Found = &[
             (b"A001", b"crc.zip!first.txt"),
@@ -1366,35 +1366,35 @@ mod excluded_archive_members {
         for (
             data,
             name,
-            legacy_issues,
-            legacy_findings,
+            normal_issues,
+            normal_findings,
             complete_stage,
             owned_message,
             complete_findings,
         ) in cases
         {
-            let legacy = run(
+            let normal = run(
                 &mut source(data.clone(), name, false, false, 10),
                 &token_detector(),
                 ScanOptions::default(),
             );
             assert_eq!(
-                legacy.termination(),
+                normal.termination(),
                 &SourceTermination::Completed,
                 "{name}"
             );
-            let issues = legacy
+            let issues = normal
                 .issues()
                 .iter()
                 .map(|issue| (issue.stage(), issue.kind()))
                 .collect::<Vec<_>>();
-            assert_eq!(issues, legacy_issues, "{name}");
-            let findings = legacy
+            assert_eq!(issues, normal_issues, "{name}");
+            let findings = normal
                 .findings()
                 .iter()
                 .map(|finding| (finding.secret().as_bytes(), finding.file().as_bytes()))
                 .collect::<Vec<_>>();
-            assert_eq!(findings, legacy_findings, "{name}");
+            assert_eq!(findings, normal_findings, "{name}");
 
             let complete = run(
                 &mut source(data, name, true, false, 10),
@@ -1501,13 +1501,13 @@ mod exact_leaf_exclusions {
                 nonmatching.termination(),
                 SourceTermination::SourceError(_)
             ));
-            let legacy = run(
+            let normal = run(
                 &mut source(bytes, "values.7z", false, "values.7z!skip.txt"),
                 &token_detector(),
                 ScanOptions::default(),
             );
-            assert_eq!(legacy.termination(), &SourceTermination::Completed);
-            assert_eq!(legacy.findings().len(), 2);
+            assert_eq!(normal.termination(), &SourceTermination::Completed);
+            assert_eq!(normal.findings().len(), 2);
         }
     }
 
@@ -1533,13 +1533,13 @@ mod exact_leaf_exclusions {
             nonmatching.termination(),
             SourceTermination::SourceError(_)
         ));
-        let legacy = run(
+        let normal = run(
             &mut source(outer, "outer.tar", false, "outer.tar!value.gz"),
             &token_detector(),
             ScanOptions::default(),
         );
-        assert_eq!(legacy.termination(), &SourceTermination::Completed);
-        assert_eq!(legacy.findings().len(), 2);
+        assert_eq!(normal.termination(), &SourceTermination::Completed);
+        assert_eq!(normal.findings().len(), 2);
     }
 }
 
@@ -1567,7 +1567,7 @@ mod tgz_targets {
     }
 
     #[test]
-    fn complete_tgz_preserves_leaf_bytes_paths_and_spans_at_one_depth() {
+    fn tgz_preserves_leaf_bytes_paths_and_spans_at_one_depth() {
         let bytes = tar_gzip(&[("leaf.txt", b"token=A001")]);
         for name in ["outer.tgz", "outer.TGZ"] {
             let outcome = run(
@@ -1590,8 +1590,20 @@ mod tgz_targets {
             assert_eq!(actual.len(), 1);
             assert_eq!(actual[0].content().as_bytes(), b"token=A001");
         }
-        let mut legacy = ArchiveSource::new(Cursor::new(bytes.clone()), "outer.tgz");
-        assert!(fragments(&mut legacy).unwrap().is_empty());
+        // A normal scan reads the same `.tgz` as gzip TAR.
+        let normal = run(
+            &mut ArchiveSource::new(Cursor::new(bytes.clone()), "outer.tgz"),
+            &token_detector(),
+            ScanOptions::default(),
+        );
+        assert_eq!(normal.termination(), &SourceTermination::Completed);
+        assert!(normal.issues().is_empty());
+        assert_eq!(normal.findings().len(), 1);
+        assert_eq!(
+            normal.findings()[0].file().as_bytes(),
+            b"outer.tgz!leaf.txt"
+        );
+        assert_eq!(normal.findings()[0].secret().as_bytes(), b"A001");
         let cap = bytes.len();
         let mut backup = ArchiveSource::with_options(
             Cursor::new(bytes),
@@ -1601,6 +1613,212 @@ mod tgz_targets {
         );
         // The non-alias remains a binary ordinary target, with no archive leaves.
         assert!(fragments(&mut backup).unwrap().is_empty());
+    }
+
+    fn assert_one_token(outcome: &SourceOutcome, file: &[u8]) {
+        assert_eq!(outcome.termination(), &SourceTermination::Completed);
+        assert!(outcome.issues().is_empty(), "{:?}", outcome.issues());
+        assert_eq!(outcome.findings().len(), 1);
+        assert_eq!(outcome.findings()[0].file().as_bytes(), file);
+        assert_eq!(outcome.findings()[0].secret().as_bytes(), b"A001");
+        assert_eq!(
+            outcome.findings()[0]
+                .secret_range()
+                .exact()
+                .unwrap()
+                .as_range(),
+            6..10
+        );
+    }
+
+    #[test]
+    fn tgz_name_without_the_gzip_magic_is_scanned_as_plain_bytes() {
+        use sevenz_seeds::{Member, Method, archive};
+
+        let text = b"token=A001";
+        let normal = |bytes: Vec<u8>, name: &str, depth: usize| {
+            run(
+                &mut ArchiveSource::with_options(
+                    Cursor::new(bytes),
+                    name,
+                    FileOptions::default(),
+                    options(depth, 4096, 4096),
+                ),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        let complete = |bytes: Vec<u8>, name: &str, depth: usize| {
+            run(
+                &mut source(bytes, name, options(depth, 4096, 4096)),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        type Scan = fn(Vec<u8>, &str, usize) -> SourceOutcome;
+        let scans: [Scan; 2] = [normal, complete];
+        for scan in scans {
+            for name in ["notes.tgz", "notes.TGZ"] {
+                assert_one_token(&scan(text.to_vec(), name, 1), name.as_bytes());
+            }
+            // One byte, which cannot hold the two-byte magic.
+            let short = scan(b"t".to_vec(), "notes.tgz", 1);
+            assert_eq!(short.termination(), &SourceTermination::Completed);
+            assert!(short.issues().is_empty());
+            assert!(short.findings().is_empty());
+            // A TAR member, also at the depth limit, and a 7z member.
+            let tar = archive_seeds::synthetic_tar(&[("notes.tgz", text)]);
+            for depth in [1, 2] {
+                assert_one_token(
+                    &scan(tar.clone(), "outer.tar", depth),
+                    b"outer.tar!notes.tgz",
+                );
+            }
+            for method in [Method::Copy, Method::Deflate] {
+                let sevenz = archive(&[Member::new("notes.tgz", text, method)]);
+                assert_one_token(&scan(sevenz, "outer.7z", 2), b"outer.7z!notes.tgz");
+            }
+        }
+        // A gzip `.tgz` member is still read as gzip TAR.
+        let inner = tar_gzip(&[("leaf.txt", text)]);
+        let tar = archive_seeds::synthetic_tar(&[("inner.tgz", &inner)]);
+        for scan in scans {
+            assert_one_token(
+                &scan(tar.clone(), "outer.tar", 2),
+                b"outer.tar!inner.tgz!leaf.txt",
+            );
+        }
+    }
+
+    #[test]
+    fn tgz_names_keep_the_format_of_their_other_suffixes() {
+        use sevenz_seeds::{Member, Method, archive};
+
+        type Scan = fn(Vec<u8>, &str) -> SourceOutcome;
+        let normal: Scan = |bytes, name| {
+            run(
+                &mut ArchiveSource::with_options(
+                    Cursor::new(bytes),
+                    name,
+                    FileOptions::default(),
+                    options(2, 4096, 4096),
+                ),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        let complete: Scan = |bytes, name| {
+            run(
+                &mut source(bytes, name, options(2, 4096, 4096)),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        let leaf = b"token=A001";
+        let tar = archive_seeds::synthetic_tar(&[("leaf.txt", leaf)]);
+        let zip = super::excluded_archive_members::stored_zip(&[("leaf.txt", leaf, false)]);
+        let sevenz = archive(&[Member::new("leaf.txt", leaf, Method::Copy)]);
+        for scan in [normal, complete] {
+            // Without the gzip magic, the earlier suffix names the format.
+            assert_one_token(&scan(tar.clone(), "x.tar.tgz"), b"x.tar.tgz!leaf.txt");
+            assert_one_token(&scan(zip.clone(), "x.zip.tgz"), b"x.zip.tgz!leaf.txt");
+            assert_one_token(&scan(sevenz.clone(), "x.7z.tgz"), b"x.7z.tgz!leaf.txt");
+            // With it, the name is a gzip TAR.
+            assert_one_token(
+                &scan(tar_gzip(&[("leaf.txt", leaf)]), "x.tar.tgz"),
+                b"x.tar.tgz!leaf.txt",
+            );
+        }
+        // A normal scan reads a gzip `x.gz.tgz` as a gzip stream of one
+        // file, and a complete scan reads it as a gzip TAR.
+        assert_one_token(
+            &normal(archive_seeds::gzip_stored(leaf), "x.gz.tgz"),
+            b"x.gz.tgz",
+        );
+        assert_one_token(
+            &complete(tar_gzip(&[("leaf.txt", leaf)]), "x.gz.tgz"),
+            b"x.gz.tgz!leaf.txt",
+        );
+    }
+
+    #[test]
+    fn depth_zero_skips_a_gzip_tgz_without_an_issue_and_scans_text() {
+        let scan = |bytes: Vec<u8>| {
+            run(
+                &mut ArchiveSource::with_options(
+                    Cursor::new(bytes),
+                    "x.tgz",
+                    FileOptions::default(),
+                    options(0, 4096, 4096),
+                ),
+                &token_detector(),
+                ScanOptions::default(),
+            )
+        };
+        let skipped = scan(tar_gzip(&[("leaf.txt", b"token=A001")]));
+        assert_eq!(skipped.termination(), &SourceTermination::Completed);
+        assert!(skipped.issues().is_empty());
+        assert!(skipped.findings().is_empty());
+        assert_one_token(&scan(b"token=A001".to_vec()), b"x.tgz");
+    }
+
+    #[test]
+    fn complete_directory_exact_exclusions_apply_to_tgz_leaves() {
+        let tree = Tree::new();
+        fs::write(tree.0.join("notes.tgz"), b"token=A001").unwrap();
+        fs::write(tree.0.join("other.tgz"), b"token=A001").unwrap();
+        let scan = |excluded: &str| {
+            let directory_options = DirectoryOptions::default()
+                .file_options(FileOptions::complete(64).unwrap())
+                .logical_root("root")
+                .archives(options(1, 4096, 4096))
+                .exclude_paths(vec![ByteText::from(excluded)]);
+            let mut source = DirectorySource::with_options(&tree.0, directory_options);
+            let outcome = run(&mut source, &token_detector(), ScanOptions::default());
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert!(outcome.issues().is_empty(), "{:?}", outcome.issues());
+            outcome
+                .findings()
+                .iter()
+                .map(|finding| finding.file().as_bytes().to_vec())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(scan("root/notes.tgz"), [b"root/other.tgz".to_vec()]);
+        assert_eq!(scan("root/other.tgz"), [b"root/notes.tgz".to_vec()]);
+    }
+
+    #[test]
+    fn directory_tgz_files_are_read_by_their_bytes() {
+        let tree = Tree::new();
+        fs::write(tree.0.join("notes.tgz"), b"token=A001\n").unwrap();
+        fs::write(
+            tree.0.join("outer.tgz"),
+            tar_gzip(&[("leaf.txt", b"token=A001")]),
+        )
+        .unwrap();
+        for file_options in [FileOptions::default(), FileOptions::complete(64).unwrap()] {
+            let directory_options = DirectoryOptions::default()
+                .file_options(file_options)
+                .logical_root("root")
+                .archives(options(1, 4096, 4096));
+            let mut source = DirectorySource::with_options(&tree.0, directory_options);
+            let outcome = run(&mut source, &token_detector(), ScanOptions::default());
+            assert_eq!(outcome.termination(), &SourceTermination::Completed);
+            assert!(outcome.issues().is_empty(), "{:?}", outcome.issues());
+            let mut files = outcome
+                .findings()
+                .iter()
+                .map(|finding| finding.file().as_bytes().to_vec())
+                .collect::<Vec<_>>();
+            files.sort();
+            assert_eq!(
+                files,
+                [
+                    b"root/notes.tgz".to_vec(),
+                    b"root/outer.tgz!leaf.txt".to_vec()
+                ]
+            );
+        }
     }
 
     #[test]

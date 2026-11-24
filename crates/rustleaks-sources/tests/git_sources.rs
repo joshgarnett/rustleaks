@@ -423,7 +423,7 @@ fn history_larger_than_the_per_commit_limits_scans_completely() {
 }
 
 #[test]
-fn default_log_matches_current_pinned_added_fragment_stream() {
+fn default_log_matches_recorded_added_fragment_stream() {
     let repository = TempRepo::copy_fixture("small");
     let mut source = support::git_source(repository.path());
     let (fragments, issues) = collect(&mut source);
@@ -433,14 +433,14 @@ fn default_log_matches_current_pinned_added_fragment_stream() {
     for fragment in &fragments {
         actual.extend_from_slice(fragment.content().as_bytes());
     }
-    let ignore = fs::read(repository.path().join("api/ignoreCommit.go"))
-        .expect("read pinned ignore fixture");
-    let legacy = fs::read(fixture_root().join("testdata/expected/git/small.txt"))
-        .expect("read pinned legacy golden");
+    let ignore =
+        fs::read(repository.path().join("api/ignoreCommit.go")).expect("read ignore fixture");
+    let recorded = fs::read(fixture_root().join("testdata/expected/git/small.txt"))
+        .expect("read recorded fragment stream");
     let mut expected = Vec::new();
     expected.extend_from_slice(&ignore);
     expected.extend_from_slice(&ignore);
-    expected.extend_from_slice(&legacy);
+    expected.extend_from_slice(&recorded);
     assert_eq!(actual, expected);
 
     let secret = fragments
@@ -458,7 +458,7 @@ fn default_log_matches_current_pinned_added_fragment_stream() {
 }
 
 #[test]
-fn matrix_f_diff_and_index_fragments_have_zero_metadata() {
+fn diff_and_index_fragments_have_zero_metadata() {
     let repository = TempRepo::copy_fixture("staged");
     let mut source = support::git_source(repository.path()).mode(GitMode::Diff { staged: true });
     let (fragments, issues) = collect(&mut source);
@@ -501,7 +501,7 @@ fn patch_byte_and_line_ceilings_are_structured_limit_failures() {
 }
 
 #[test]
-fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
+fn callback_failure_remains_distinct_after_git_is_reaped() {
     let repository = TempRepo::copy_fixture("small");
     let mut callbacks = 0;
     assert_eq!(
@@ -524,7 +524,7 @@ fn matrix_i_callback_failure_remains_distinct_after_git_is_reaped() {
 
 #[cfg(feature = "archives")]
 #[test]
-fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
+fn binary_and_history_archives_reuse_safe_archive_expansion() {
     let repository = TempRepo::copy_fixture("archives");
     let mut source = support::git_source(repository.path()).archives(ArchiveOptions::default());
     let (fragments, issues) = collect(&mut source);
@@ -561,7 +561,7 @@ fn matrix_e_binary_and_history_archives_reuse_safe_archive_expansion() {
 
 #[cfg(feature = "archives")]
 #[test]
-fn matrix_k_archive_blob_exact_over_and_early_stop_are_structured() {
+fn archive_blob_exact_over_and_early_stop_are_structured() {
     let repository = TempRepo::copy_fixture("archives");
     let commit = "db8789716fc664dbce0ed2d492570e92abf717a5";
     let blob_size = usize::try_from(
@@ -817,7 +817,7 @@ fn complete_archive_options_reach_git_blobs_without_changing_text_hunks() {
 
 #[cfg(all(feature = "archives", unix))]
 #[test]
-fn complete_git_expands_tgz_aliases_and_legacy_keeps_binary_exclusion() {
+fn git_expands_tgz_blobs_in_normal_and_complete_mode() {
     let repository = TempRepo::copy_fixture("small");
     let archive = fs::read(fixture_root().join("testdata/archives/nested.tar.gz")).unwrap();
     fs::write(repository.path().join("bundle.TGZ"), archive).unwrap();
@@ -835,19 +835,15 @@ fn complete_git_expands_tgz_aliases_and_legacy_keeps_binary_exclusion() {
             .archive_file_options(file_options);
         let (fragments, issues) = collect(&mut source);
         assert!(issues.is_empty());
-        if complete {
-            let leaf = fragments
-                .iter()
-                .find(|fragment| {
-                    fragment.file_path().as_bytes() == b"bundle.TGZ!archives/files.zip!files/api.go"
-                })
-                .expect("complete mode admits and expands the binary alias blob");
-            assert_eq!(leaf.content().as_bytes(), expected);
-            assert_eq!(leaf.start_line(), 1);
-            assert!(leaf.commit_metadata().is_some());
-        } else {
-            assert!(fragments.is_empty());
-        }
+        let leaf = fragments
+            .iter()
+            .find(|fragment| {
+                fragment.file_path().as_bytes() == b"bundle.TGZ!archives/files.zip!files/api.go"
+            })
+            .unwrap_or_else(|| panic!("complete={complete}: the .TGZ blob is read as gzip TAR"));
+        assert_eq!(leaf.content().as_bytes(), expected);
+        assert_eq!(leaf.start_line(), 1);
+        assert!(leaf.commit_metadata().is_some());
     }
 }
 
@@ -865,6 +861,65 @@ fn recording_script(directory: &Path, name: &str) -> PathBuf {
     .expect("write recording script");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make script executable");
     path
+}
+
+/// Writes a stand-in for Git that prints the rename-limit warning on
+/// standard error, in English only when Git messages are untranslated
+/// (`LC_ALL=C` and no `LANGUAGE`), as a translated Git would.
+#[cfg(unix)]
+fn locale_warning_git(directory: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let path = directory.join("git");
+    fs::write(
+        &path,
+        "#!/bin/sh\n\
+         if [ \"${LC_ALL-}\" = C ] && [ -z \"${LANGUAGE+set}\" ]; then\n\
+         echo 'warning: exhaustive rename detection was skipped due to too many files.' >&2\n\
+         echo 'warning: you may want to set your diff.renameLimit variable to at least 9 and retry the command.' >&2\n\
+         else\n\
+         echo 'Warnung: Die Erkennung von Umbenennungen wurde uebersprungen.' >&2\n\
+         fi\n",
+    )
+    .expect("write Git stand-in");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make script executable");
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn translated_locale_does_not_turn_the_rename_limit_warning_into_an_issue() {
+    let unique = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let root = TempRepo(std::env::temp_dir().join(format!(
+        "rustleaks-git-locale-{}-{unique}",
+        std::process::id()
+    )));
+    fs::create_dir_all(root.path()).expect("create script directory");
+    let git = locale_warning_git(root.path());
+    let translated = [("LANG", "de_DE.UTF-8"), ("LC_MESSAGES", "de_DE.UTF-8")]
+        .map(|(key, value)| (key.into(), value.into()));
+    for mode in [
+        GitMode::Log { options: None },
+        GitMode::LogArguments(vec!["--all".into()]),
+        GitMode::Diff { staged: true },
+    ] {
+        let mut source = rustleaks_sources::GitSource::new(root.path())
+            .executable(&git)
+            .mode(mode.clone())
+            .command_environment(translated.clone());
+        let (fragments, issues) = collect(&mut source);
+        assert!(fragments.is_empty(), "{mode:?}");
+        assert!(issues.is_empty(), "{mode:?}: {issues:?}");
+    }
+
+    // A locale that the caller sets for Git is kept, so its translated
+    // warning is reported.
+    let mut source = rustleaks_sources::GitSource::new(root.path())
+        .executable(&git)
+        .mode(GitMode::LogArguments(vec!["--all".into()]))
+        .command_environment([("LC_ALL".into(), "de_DE.UTF-8".into())]);
+    let (_, issues) = collect(&mut source);
+    assert_eq!(issues, [SourceIssueKind::GitStderr]);
 }
 
 #[cfg(unix)]

@@ -27,7 +27,7 @@ between them, and where to make common changes. For using the library, see
 
 | Crate | Responsibility | Published |
 | --- | --- | --- |
-| `rustleaks-core` | Configuration, regex, keywords, decoding, detection, findings, sessions, native rule packs and review records | Yes, on crates.io |
+| `rustleaks-core` | Configuration, regex, keywords, decoding, detection, findings, sessions, the Rustleaks rule files and review records | Yes, on crates.io |
 | `rustleaks-sources` | Files, directories, standard input, archives, Git, links to findings, cancellation and the bounded source runner | No |
 | `rustleaks-report` | JSON, CSV, JUnit, SARIF and safe template reports | No |
 | `rustleaks-cli` | The `rustleaks` command: arguments, configuration discovery, running a scan, output and exit codes | No |
@@ -69,8 +69,6 @@ configuration TOML
 The CLI connects these stages. A library user can use only the parts they
 need, for example the engine alone.
 
-<a id="root-cli-generator-auxiliary-packages"></a>
-
 ### Workspace, CLI and tools
 
 The workspace root owns package policy and validation. The CLI is a thin
@@ -87,8 +85,6 @@ The Rustleaks rule files load through `native::NativePolicy`, which adds
 stricter validation before the normal loader runs. `ConfigLoader` adds all
 of them to the default rules. Regex types stay private.
 
-<a id="detection-and-codec"></a>
-
 ### Detection and decoding
 
 The engine (`engine.rs`) scans one `Fragment` with `ScanOptions` and an
@@ -97,8 +93,6 @@ allowlists, required (composite) rules and location mapping. The decoder
 (`decoder/`) finds Base64, hex, percent and Unicode escape candidates and
 scans the decoded bytes again, up to the decode depth. The result is a
 `ScanOutcome`: complete, or partial with a structured termination.
-
-<a id="scm-and-regexp"></a>
 
 ### Regex and Git
 
@@ -137,15 +131,10 @@ identify the product.
 
 ### A detection rule
 
-- The default rules started from the Gitleaks default configuration and are
-  maintained in place. A change to them needs review, tests with
-  expectations from the change's definition, an update to
-  [Default rules](../user/built-in-rules.md#default-rules) when users see the
-  change, a changelog entry, and a measurement on a held-out set that was not
-  used to design it. A change that makes Rustleaks miss secrets needs
-  maintainer approval.
-- Add a new rule to a native rule pack. See
-  [Rule pack authoring](rule-pack-authoring.md).
+- A change to the default rules follows [Changing the default
+  rules](rule-authoring.md#changing-the-default-rules).
+- Add a new rule to a Rustleaks rule file. See [Changing a
+  pack](rule-authoring.md#changing-a-pack).
 - Engine behavior that rules depend on, such as a new predicate, belongs in
   `rustleaks-core` with tests in `crates/rustleaks-core/tests/`.
 

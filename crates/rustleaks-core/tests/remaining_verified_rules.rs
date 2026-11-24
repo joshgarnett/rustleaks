@@ -1,4 +1,4 @@
-//! Independent source contracts for Mapbox, Vercel and Bitwarden additions.
+//! Cases for the Mapbox, Vercel and Bitwarden rules.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -12,7 +12,7 @@ use rustleaks_core::native::{NativePolicy, PROVIDER_RULES_V1};
 use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanTermination};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/native_harness.rs"]
 mod native_harness;
 
@@ -231,21 +231,21 @@ fn every_source_case_preserves_exact_report_secret_and_original_byte_geometry() 
 }
 
 #[test]
-fn full_composition_exposes_three_new_occurrences_and_preserves_previous_rule_domain() {
+fn full_composition_adds_one_occurrence_per_case_and_keeps_baseline_rules() {
     let full = Engine::builder(config().clone()).build().unwrap();
-    let previous_config = config()
+    let baseline_config = config()
         .select_rules(fixture().baseline_rule_ids.iter().map(String::as_str))
         .unwrap();
-    assert_eq!(previous_config.rules().len(), 534);
-    let previous = Engine::builder(previous_config).build().unwrap();
+    assert_eq!(baseline_config.rules().len(), 534);
+    let baseline = Engine::builder(baseline_config).build().unwrap();
     for case in primary() {
-        assert!(scan(&previous, case).is_empty(), "{}", case.name);
+        assert!(scan(&baseline, case).is_empty(), "{}", case.name);
         let findings = scan(&full, case);
         assert_case(case, &findings);
         assert_eq!(findings.len(), 1, "{}", case.name);
     }
-    // Filtering a composed policy back to explicit old IDs leaves each old
-    // rule's definition intact. Earlier fixture suites retain frozen domains.
+    // Selecting the baseline IDs from the composed policy keeps each of
+    // those rules.
     for id in &fixture().baseline_rule_ids {
         assert!(config().rule(id).is_some());
     }

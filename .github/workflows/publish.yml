@@ -59,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
           test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
@@ -72,7 +72,7 @@ jobs:
         run: |
           test -z "${CARGO_REGISTRY_TOKEN:-}"
           test -z "${CRATES_IO_TOKEN:-}"
-      - name: Require the protected dry run
+      - name: Require the successful dry run
         env:
           CANDIDATE: ${{ inputs.candidate }}
           DRY_RUN_ID: ${{ inputs.dry_run_id }}
@@ -90,7 +90,7 @@ jobs:
           artifacts="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}/artifacts" -f per_page=100)"
           jq -e --arg name "rustleaks-core-${EXPECTED_VERSION}-package" \
             '.artifacts | any(.name == $name and .expired == false)' <<<"${artifacts}" >/dev/null
-      - name: Compare the package with the protected artifact
+      - name: Compare the package with the dry run artifact
         id: package
         env:
           DRY_RUN_ID: ${{ inputs.dry_run_id }}

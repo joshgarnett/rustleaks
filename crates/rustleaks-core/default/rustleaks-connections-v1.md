@@ -1,32 +1,28 @@
 # Rustleaks connection rules v1
 
-The `rustleaks-connections-v1` pack adds 19 namespaced rules for passwords in
-connection strings and credential URLs: 15 password rules, 3 Git credential
-URL rules and 1 hidden helper rule. Every default scan uses the pack. It
-runs locally. It adds no parser, dependency, expression interpreter,
-validator or client connection. It does not check whether a credential is
-active, and it does not change the packaged default rules.
+This file is the reference for maintainers of the `rustleaks-connections-v1`
+rules. For the rules a scan uses, see [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md).
+
+This rule file adds 19 namespaced rules for passwords in connection strings
+and credential URLs: 15 password rules, 3 Git credential URL rules and 1
+hidden helper rule. Every default scan uses these rules. They run locally.
+They add no parser, dependency, expression interpreter, validator or client
+connection. They do not check whether a credential is active.
 
 ## Selection
 
-- CLI: always used, with the default rules, when no configuration is
-  selected and in a configuration with `[extend] useDefault = true`.
-- Library: `ConfigLoader::load_default` and `[extend] useDefault = true`
-  use all built-in rule files, unless `ConfigLoader::with_default_config`
-  replaces the default.
-  `NativePolicy::builder().with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)?.build()?`
-  builds a custom composition, with `CONNECTION_RULES_V1` from `rustleaks_core::native`.
-- The pack can be combined with `rustleaks-extra-v1` and
-  `rustleaks-providers-v1` in any order. The exact bytes and the order of the
-  packs are part of the policy identity.
-- The pack uses native byte entropy and `buffer-v1` association tables. The
-  normal configuration loader (`ConfigLoader`, `--config`, inline
+- The rule file uses native byte entropy and `buffer-v1` association tables.
+  The normal configuration loader (`ConfigLoader`, `--config`, inline
   configuration or joined TOML files) rejects these tables.
+- In a custom composition, add it with
+  `NativePolicy::builder().with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)`.
+  `CONNECTION_RULES_V1` is in `rustleaks_core::native`.
 
-See [Built-in
-rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
-for users and [Rule pack
-authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
+See [Using
+rustleaks-core](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
+for the library and [Rule
+authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md)
 for contributors.
 
 ## Rules
@@ -160,8 +156,7 @@ check that a client would accept them.
 - The `same-candidate` relation needs the same detection input and the same
   start and end of the whole match. Each raw or decoded input is separate,
   so a match in one input cannot satisfy the helper in another. The helper
-  attaches to its parent and never gives its own finding. An explicit rule
-  selection must name both the parent and the helper.
+  attaches to its parent and never gives its own finding.
 - Service URI: the rule keeps the source DNS host, port, path and suffix
   grammar. HTTP and HTTPS, database and MongoDB schemes, percent escapes,
   reserved characters in user information, IPv6 and multiple hosts are not
@@ -276,8 +271,8 @@ More URI schemes:
   clients use `amqp://`, which `service-uri-password` matches),
   `couchbase://`, the semicolon form `sqlserver://host;user=...;password=...`,
   and other schemes. A general HTTPS rule would overlap the provider token
-  rules for tokens in Git URLs and match many documentation URLs, so the pack
-  has none.
+  rules for tokens in Git URLs and match many documentation URLs, so the rule
+  file has none.
 
 ## Shared boundaries
 
@@ -293,7 +288,7 @@ ASCII scope:
 
 Exclusions:
 
-- No rule in the pack has an entropy or character complexity floor, except
+- No rule in the file has an entropy or character complexity floor, except
   the MongoDB comma helper.
 - The quoted and braced rules keep all 27 source `ignore_if_contains` markers
   as case-insensitive secret stopwords. The unquoted and `jdbc-query` rules
@@ -305,7 +300,7 @@ Exclusions:
   markers. It also keeps 2 full-match exclusions: one for synthetic tuples on
   example hosts and one for lists of ignored example hosts. Each predicate is scoped before the native
   regex array joins them, so each keeps its own flags and precedence.
-- Example: the pack alone keeps `%B`, `%D` and `%S` but rejects `%b`, `%d`
+- Example: these rules alone keep `%B`, `%D` and `%S` but reject `%b`, `%d`
   and `%s` as source formatting placeholders. The CLI and native composition
   also apply the default global allowlist, whose regex flags also reject the
   uppercase forms. `%Z` and `%B0` stay reportable in both cases. These are
@@ -379,7 +374,7 @@ the original patterns, all detection requirements, source order, source file
 hashes, path predicates, parser limits, the exact translation and the license
 identity. For `database-uri` it also keeps the original global and local
 filters, the generated overlay and how confidence, specificity and source path
-rules were handled. No downloaded scanner code runs or ships in the pack.
+rules were handled. No downloaded scanner code runs or ships with the rules.
 
 Changes made:
 
@@ -398,7 +393,7 @@ Changes made:
   key to start. A semicolon consumed by one match then does not hide the next
   connection.
 
-The pack does not claim to match the full source rules or the Kingfisher
+The rule file does not claim to match the full source rules or the Kingfisher
 scanner. It finds local candidates and does not show that a remote service
 accepts a URL or credential.
 

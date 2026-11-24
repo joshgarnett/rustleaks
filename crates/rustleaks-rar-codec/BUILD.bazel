@@ -1,9 +1,6 @@
 load("//bazel:rust_crate.bzl", "rustleaks_build_contract_files", "rustleaks_library")
 
-exports_files([
-    "COPYING",
-    "Cargo.toml",
-])
+exports_files(["Cargo.toml"])
 rustleaks_build_contract_files()
 
 rustleaks_library(

@@ -80,14 +80,10 @@ reports, warnings and exit codes do not change.
 Rustleaks uses one process with `--jobs 1` or the profile key `workers=1`,
 and with `--log-opts`, `--staged` or `--pre-commit`, because those options
 can change which commits Git shows. It also uses one process for a short
-history, for a history of more than 10,000,000 commits, and when a Git
-setting or a Git warning could change how the parts join.
-
-When Git fails, or a commit reaches a limit, the report holds findings from
-the same commits as with one process. The Git error text in the log line
-comes from the process that failed, so it can differ. When the error output
-limit is reached, the findings before the stop depend on timing, as with one
-process.
+history and in a few other cases. When Git fails, the error text in the log
+line comes from the process that failed. See [Git history
+processes](../dev/engine-internals.md#git-history-processes) for how the
+parts are read and joined.
 
 Memory and error output:
 

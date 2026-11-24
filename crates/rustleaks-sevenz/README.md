@@ -9,7 +9,8 @@ The crate is internal to Rustleaks and is not published. Only
 crate appears in a public API.
 
 - Upstream: [`sevenz-rust2`](https://crates.io/crates/sevenz-rust2) 0.20.2.
-- License: Apache-2.0, in `LICENSE`.
+- License: Apache-2.0, in `LICENSE`. The files in `src` are derived from
+  `sevenz-rust2` and changed for Rustleaks.
 
 See [Dependencies](../../docs/dev/dependencies.md#archive-codec-decision) for
 the upstream commit and archive SHA-256, the changes from upstream, the reason

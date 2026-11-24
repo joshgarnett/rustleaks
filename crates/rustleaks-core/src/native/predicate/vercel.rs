@@ -1,5 +1,5 @@
-//! Counts ordinary cl100k tokens only for the complete pinned Vercel ASCII
-//! capture domain. Generated data retains source merge ranks. See data/README.md.
+//! Counts ordinary cl100k tokens only for the complete Vercel ASCII capture
+//! domain. Generated data retains source merge ranks. See data/README.md.
 //! Algorithm behavior follows the MIT-licensed tiktoken and tiktoken-rs
 //! projects. See data/LICENSE.tiktoken and data/LICENSE.tiktoken-rs for
 //! attribution.

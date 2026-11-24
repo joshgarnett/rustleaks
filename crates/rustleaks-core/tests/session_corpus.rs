@@ -12,7 +12,7 @@ use rustleaks_core::session::{
 };
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/corpus.rs"]
 mod corpus;
 

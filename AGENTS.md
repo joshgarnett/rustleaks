@@ -19,8 +19,9 @@ key or CSV column order are presentation.
 
 Do not install Go or check out Gitleaks to create expected values.
 
-Keep `rustleaks-core` independent of files, archives, Git, reports, the CLI,
-async runtimes and native libraries. Source adapters belong in
+Keep `rustleaks-core` independent of archives, Git, reports, the CLI, async
+runtimes and native libraries. It reads no files except through the two
+explicit file helpers named in the architecture. Source adapters belong in
 `rustleaks-sources`, formatting in `rustleaks-report`, orchestration in
 `rustleaks-cli`, and unpublished regression or maintenance code in
 `rustleaks-compat` or `xtask`. Owned codec crates are source implementation
@@ -50,14 +51,12 @@ compilation.
 [Local workflow](CONTRIBUTING.md#local-workflow) lists the command for each
 kind of change.
 
-Use Cargo only for package metadata, crates.io packaging, `cargo xtask`, and
-the named security, fuzz, Miri and MSRV tools that Just recipes call. Never
-use Cargo to bypass a failed Bazel action.
+Use Cargo only for what [Local workflow](CONTRIBUTING.md#local-workflow)
+lists, and never to bypass a failed Bazel action.
 
-The eight required targets are listed in
-[Testing](docs/dev/testing.md#platforms).
-Cross-compilation proves only compilation. A support claim needs native
-build, test, feature, example and relevant CLI evidence for the exact target.
+[Platforms](docs/dev/testing.md#platforms) lists the eight required targets
+and the evidence that a support claim needs. Cross-compilation proves only
+compilation.
 
 ## Invariants
 
@@ -67,15 +66,12 @@ build, test, feature, example and relevant CLI evidence for the exact target.
   maintainer approval. See [Approval boundaries](#approval-boundaries).
 - Any change to findings, spans or fingerprints needs a changelog entry and a
   Rust test.
-- Write expected findings, spans, fingerprints, report fields, exit codes and
-  error classes from the intended behavior, never from current output. Never
-  hide a functional difference with normalization. This also applies when a
-  change updates a case under `testdata/`; see
-  [Test data](docs/dev/testing.md#test-data).
-- A presentation change needs an updated test expectation that a reviewer
-  checks against its stated intent. It does not need maintainer approval.
-  [Test data](docs/dev/testing.md#test-data) says which comparisons still
-  pin JSON key and CSV column order.
+- Write expected values from the intended behavior, never from current
+  output, and never hide a functional difference with normalization. A
+  presentation change updates its test expectation and needs no maintainer
+  approval. [Rules for tests](docs/dev/testing.md#rules-for-tests) and
+  [Test data](docs/dev/testing.md#test-data) own the details, including the
+  cases under `testdata/`.
 - Keep detection synchronous, in-memory, `Send + Sync`, and free of implicit
   file, environment, log, thread, async-runtime or process-global behavior.
   Keep C and C++ build steps and dependency implementation types out of the
@@ -120,7 +116,8 @@ Stop for maintainer approval before:
   configuration, report field, error class or exit code, or making Rustleaks
   miss secrets that it found before;
 - selecting a release version;
-- creating or publishing a release or crate; or
+- creating or publishing a release or crate, or pushing to the Homebrew tap
+  or Scoop bucket; or
 - using a credential.
 
 A local dry run does not authorize publication. A change to the shipped

@@ -211,8 +211,8 @@ cargo xtask compare run \
   --tools /path/to/tools.json \
   --workloads benchmarks/comparison/workloads/public-repos.json \
   --cache-root /path/to/cache \
-  --output /path/to/private/run-2026-11-20 \
-  --lanes defaults,threads,features,shared-rules,rustleaks-2x2
+  --output /path/to/private/run \
+  --lanes defaults,threads,features,shared-rules
 ```
 
 The output folder must not exist. It is created with owner-only permissions
@@ -276,7 +276,7 @@ lists the first 1,000 rows of each list; `score.json` has every row.
 | `threads` | Defaults | 1, 4 and all cores | Each tool's own thread setting |
 | `features` | Defaults | 4 | Decode depth 0 and 5 with archives off, then decode depth 5 with archive depth 8; Kingfisher with dedup on and off |
 | `shared-rules` | 5 synthetic rules loaded into every tool | 1 and 4 | Decode and archive depth 0; Kingfisher dedup off |
-| `rustleaks-2x2` | Rustleaks defaults, with and without the 3 native packs | 1 and 4 | `--complete-profile` on and off |
+| `rustleaks-2x2` | Rustleaks only: built-in rule files on and off, for builds that have `--native-pack` | 1 and 4 | `--complete-profile` on and off. A build without `--native-pack` always uses every built-in rule, so its rule-files-off cells are unsupported. The [0.2.0 protocol](../../benchmarks/comparison/PROTOCOL-0.2.0.md) does not use this lane. |
 
 Only the `defaults` lane gets cold cells unless `--cold-lanes` adds more.
 
@@ -462,8 +462,8 @@ local paths.
   heavy work before a run.
 - The same rule text does not guarantee the same regex meaning in every
   engine.
-- The Rustleaks native packs are ported from rule sources that Kingfisher
-  also bundles, most of them derived from Betterleaks. Pack results and
+- The Rustleaks rule files are ported from rule sources that Kingfisher
+  also bundles, most of them derived from Betterleaks. Their results and
   Kingfisher results are therefore not independent.
 - Some differences are rule policy, not misses. For example, the
   Betterleaks 1 AWS rule reports a key ID only with a nearby secret key.

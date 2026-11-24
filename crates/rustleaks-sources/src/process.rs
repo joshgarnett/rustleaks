@@ -26,6 +26,18 @@ pub(crate) fn spawn(command: &mut Command) -> io::Result<Child> {
     command.spawn()
 }
 
+/// Makes a Git child print its messages in English.
+///
+/// The sources tell harmless Git warnings from failures by their English
+/// text, such as the rename-limit warning and `No remote configured`.
+/// `LC_ALL=C` turns off Git's message translation. `LANGUAGE` is removed
+/// because GNU gettext can prefer it to the locale. The Git output that the
+/// sources parse (commit headers, patches, quoted paths and dates in Git's
+/// default format) is the same in every locale.
+pub(crate) fn untranslated_git_messages(command: &mut Command) -> &mut Command {
+    command.env("LC_ALL", "C").env_remove("LANGUAGE")
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use std::process::Stdio;

@@ -48,7 +48,6 @@ pub(crate) struct Options {
     pub baseline_path: Option<PathBuf>,
     pub log_level: String,
     pub verbose: bool,
-    pub no_color: bool,
     pub max_target_megabytes: i64,
     pub ignore_allow_markers: bool,
     pub redact: usize,
@@ -80,7 +79,6 @@ impl Default for Options {
             baseline_path: None,
             log_level: "info".to_owned(),
             verbose: false,
-            no_color: false,
             max_target_megabytes: 0,
             ignore_allow_markers: false,
             redact: 0,
@@ -230,14 +228,14 @@ pub(crate) fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Act
                 version_words += 1;
             }
             command_name = name;
-            match name {
-                "git" => command = Some(CommandKind::Git),
-                "dir" | "file" | "directory" => command = Some(CommandKind::Directory),
-                "stdin" => command = Some(CommandKind::Stdin),
-                "version" => version_command = true,
-                "help" if !version_command => meta = Some(Topic::Help),
-                "completion" if !version_command => meta = Some(Topic::Completion),
-                value => return Err(ParseError::unknown_command(value)),
+            match cli_spec::topic_by_name(name) {
+                Some(Topic::Git) => command = Some(CommandKind::Git),
+                Some(Topic::Directory) => command = Some(CommandKind::Directory),
+                Some(Topic::Stdin) => command = Some(CommandKind::Stdin),
+                Some(Topic::Version) => version_command = true,
+                Some(Topic::Help) if !version_command => meta = Some(Topic::Help),
+                Some(Topic::Completion) if !version_command => meta = Some(Topic::Completion),
+                _ => return Err(ParseError::unknown_command(name)),
             }
         } else {
             positionals.try_reserve(1).map_err(|error| {
@@ -407,7 +405,11 @@ fn parse_long(
         }
         "log-level" => options.log_level = copy_text(value(name, attached, arguments, index)?)?,
         "verbose" => options.verbose = boolean(name, attached)?,
-        "no-color" => options.no_color = boolean(name, attached)?,
+        // Accepted and ignored: Rustleaks never prints color. An invalid
+        // value is still an error.
+        "no-color" => {
+            boolean(name, attached)?;
+        }
         "max-target-megabytes" => {
             options.max_target_megabytes =
                 parse_i64(name, value(name, attached, arguments, index)?)?;
@@ -774,6 +776,20 @@ mod tests {
         let unknown = parsed(&["help", "nope"]).unwrap_err();
         assert_eq!(unknown.kind, ParseErrorKind::UnknownCommand);
         assert_eq!(unknown.command, None);
+        for (name, expected) in [
+            ("git", CommandKind::Git),
+            ("dir", CommandKind::Directory),
+            ("file", CommandKind::Directory),
+            ("directory", CommandKind::Directory),
+            ("stdin", CommandKind::Stdin),
+        ] {
+            let Action::Scan(invocation) = parsed(&[name]).unwrap() else {
+                panic!("expected scan for {name}");
+            };
+            assert_eq!(invocation.command, expected, "{name}");
+        }
+        let unknown = parsed(&["nope"]).unwrap_err();
+        assert_eq!(unknown.kind, ParseErrorKind::UnknownCommand);
         for arguments in [
             vec!["help", "git", "dir"],
             vec!["completion"],
@@ -1033,7 +1049,6 @@ mod tests {
         };
         assert_eq!(invocation.source, PathBuf::from("repo"));
         assert!(invocation.options.no_banner);
-        assert!(invocation.options.no_color);
         assert!(invocation.options.verbose);
         assert!(invocation.options.ignore_allow_markers);
         assert_eq!(invocation.options.max_target_megabytes, 2);
@@ -1047,6 +1062,8 @@ mod tests {
             invocation.options.git_log_args.as_deref(),
             Some("--all --since=now")
         );
+        assert!(parsed(&["stdin", "--no-color=false"]).is_ok());
+        assert!(parsed(&["stdin", "--no-color=bad"]).is_err());
     }
 
     #[test]

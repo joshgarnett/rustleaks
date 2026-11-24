@@ -31,8 +31,7 @@ const DEFAULT_RULES_SHA256: &str =
     "35c17b31383953534b7e5769082564aab30a52606f32a310a217e99b341280b8";
 const RELEASE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CARGO_FUZZ_VERSION: &str = "cargo-fuzz 0.13.2";
-/// Required compile targets, in the order that `docs/dev/testing.md`
-/// lists them.
+/// The eight required targets. See `docs/dev/testing.md#platforms`.
 pub(crate) const REQUIRED_TARGETS: &[&str] = &[
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
@@ -203,11 +202,8 @@ fn fuzz_build() -> Result<(), String> {
         CARGO_FUZZ_VERSION,
         "cargo-fuzz",
     )?;
-    for manifest in [
-        "crates/rustleaks-core/fuzz/Cargo.toml",
-        "crates/rustleaks-sources/fuzz/Cargo.toml",
-        "crates/rustleaks-report/fuzz/Cargo.toml",
-    ] {
+    for workspace in fuzzing::workspaces() {
+        let manifest = format!("crates/{workspace}/fuzz/Cargo.toml");
         command_output(Command::new("cargo").current_dir(&root).args([
             toolchain.as_str(),
             "check",
@@ -215,10 +211,13 @@ fn fuzz_build() -> Result<(), String> {
             "--offline",
             "--all-targets",
             "--manifest-path",
-            manifest,
+            manifest.as_str(),
         ]))?;
     }
-    println!("all eight fuzz targets compile with their locked standalone manifests");
+    println!(
+        "all {} fuzz targets compile with their locked standalone manifests",
+        fuzzing::TARGETS.len()
+    );
     Ok(())
 }
 

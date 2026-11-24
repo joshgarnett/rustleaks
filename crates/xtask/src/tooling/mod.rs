@@ -1,4 +1,4 @@
-//! Rust-owned repository maintenance tooling.
+//! Repository generators and shared helpers.
 
 mod archive_fuzz_seeds;
 mod artifacts;
@@ -15,7 +15,7 @@ mod vet_inventory;
 pub(crate) use archive_fuzz_seeds::generate_archive_fuzz_seeds;
 pub(crate) use fuzz_seeds::generate_regex_fuzz_seeds;
 pub(crate) use generate::{GENERATE_TARGETS, run as run_generate};
-pub(crate) use native_assets::generate as generate_native_pack_identity;
+pub(crate) use native_assets::generate as generate_rule_file_identity;
 pub(crate) use support::{
     ScopedTempDir, hex_lower, sha256_bytes, terminate_process_tree, wait_with_deadline,
 };

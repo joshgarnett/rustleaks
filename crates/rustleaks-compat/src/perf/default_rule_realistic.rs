@@ -294,7 +294,7 @@ pub(super) fn multi_language(ctx: &mut Context<'_>, size: usize) -> Fallible<(Sc
 }
 
 /// Invalid UTF-8 made of NUL and high bytes, holding three synthetic tokens.
-/// No byte is LF, so upstream's one virtual newline places each finding on line
+/// No byte is LF, so the one virtual newline places each finding on line
 /// zero and its line is the whole fragment.
 pub(super) fn binary(ctx: &mut Context<'_>, size: usize) -> Fallible<(Scan, Value)> {
     let rule = ctx.rule_index(GITHUB_PAT_RULE)?;

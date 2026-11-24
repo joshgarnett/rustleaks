@@ -1,9 +1,7 @@
 //! `rustleaks_bzip2` is a pure Rust bzip2 decoder.
 //!
-//! ## Main APIs
-//!
-//! * [`Decoder`]: low-level, no IO, bzip2 decoder
-//! * [`DecoderReader`]: high-level synchronous bzip2 decoder
+//! [`DecoderReader`] wraps a [`Read`](std::io::Read) of compressed bytes and
+//! yields the decoded bytes of every stream in the input.
 //!
 //! ## Usage
 //!
@@ -21,8 +19,6 @@
 //! # Ok(())
 //! # }
 //! ```
-//!
-//! [`Decoder`]: crate::decoder::Decoder
 
 #![deny(
     trivial_casts,
@@ -34,16 +30,14 @@
 )]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![forbid(unsafe_code)]
-#![allow(clippy::manual_range_contains)]
 
-#[doc(no_inline)]
 pub use self::decoder::DecoderReader;
 
 mod bitreader;
-pub mod block;
+mod block;
 mod crc;
-pub mod decoder;
-pub mod header;
+mod decoder;
+mod header;
 mod huffman;
 mod move_to_front;
 

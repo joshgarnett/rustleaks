@@ -209,12 +209,11 @@ pub(super) fn collect(
 }
 
 fn workspace(target: &str) -> Result<&'static str, String> {
-    match target {
-        "go_regex" | "config" | "fragment_scan" | "session" => Ok("rustleaks-core"),
-        "archive" | "reader_schedule" | "git_patch" => Ok("rustleaks-sources"),
-        "template" => Ok("rustleaks-report"),
-        _ => Err("unknown coverage target".into()),
-    }
+    crate::fuzzing::TARGETS
+        .iter()
+        .find(|candidate| candidate.name == target)
+        .map(|candidate| candidate.workspace)
+        .ok_or_else(|| "unknown coverage target".into())
 }
 
 fn check_tree_size(root: &Path) -> Result<(), String> {

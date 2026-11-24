@@ -2,7 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Raw Rustleaks TOML, including backward-compatible upstream fields.
+/// Raw Rustleaks TOML, including deprecated spellings such as the singular
+/// `allowlist`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct RawConfig {
@@ -19,7 +20,8 @@ pub struct RawConfig {
     pub allowlist: Option<RawGlobalAllowlist>,
     /// Preferred plural global allowlist entries.
     pub allowlists: Vec<RawGlobalAllowlist>,
-    /// Advisory minimum upstream version used for backward compatibility.
+    /// Advisory minimum version, compared with the version given to
+    /// [`crate::config::ConfigLoader::with_current_version`].
     #[serde(alias = "minversion")]
     pub min_version: String,
 }
@@ -30,7 +32,7 @@ pub struct RawConfig {
 pub struct ConfigExtension {
     /// Resolver-specific path to a base configuration.
     pub path: String,
-    /// Reserved URL source. The pinned implementation retains but does not load it.
+    /// Reserved URL source. It is kept but never loaded.
     pub url: String,
     /// Whether to extend the embedded default configuration.
     #[serde(alias = "usedefault")]
@@ -139,7 +141,7 @@ pub enum Condition {
     Unknown(String),
 }
 
-/// Compatibility-facing name used by the public API disposition table.
+/// Another name for [`Condition`].
 pub type AllowlistCondition = Condition;
 
 impl Condition {
@@ -208,7 +210,7 @@ impl RegexTarget {
         }
     }
 
-    /// Returns the Go-compatible serialized spelling.
+    /// Returns the spelling used in configuration files.
     #[must_use]
     pub fn as_str(&self) -> &str {
         match self {

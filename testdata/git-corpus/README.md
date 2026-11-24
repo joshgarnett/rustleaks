@@ -34,10 +34,6 @@ On Windows it fills in the expected backslash form of archive paths
 
 ## Origin and changes
 
-The cases were recorded from Gitleaks at commit
-`b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b` (MIT, see the repository
-[`NOTICE`](../../NOTICE)). The outcomes are the expected Rustleaks behavior.
-To change a case, edit the JSONL by hand or with a small script in a
-reviewed change, keep byte fields in base64, and write the expected value
-from the intended behavior. Never change the fixture repositories in
-place. See [Changing a case](../README.md#changing-a-case).
+The cases were recorded from Gitleaks at commit `b58d3f1` (MIT, see
+[`NOTICE`](../../NOTICE)). Never change the fixture repositories in place.
+See [Changing a case](../README.md#changing-a-case).

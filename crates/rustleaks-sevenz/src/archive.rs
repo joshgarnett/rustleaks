@@ -1,8 +1,8 @@
-use crate::{NtTime, bitset::BitSet, block::*};
+use crate::{bitset::BitSet, block::*};
 
 /// Size of the 7z signature header in bytes (32 bytes).
 /// This is needed for calculating absolute byte offsets within the archive.
-pub const SIGNATURE_HEADER_SIZE: u64 = 32;
+pub(crate) const SIGNATURE_HEADER_SIZE: u64 = 32;
 pub(crate) const SEVEN_Z_SIGNATURE: &[u8] = &[b'7', b'z', 0xBC, 0xAF, 0x27, 0x1C];
 
 pub(crate) const K_END: u8 = 0x00;
@@ -29,7 +29,6 @@ pub(crate) const K_M_TIME: u8 = 0x14;
 pub(crate) const K_WIN_ATTRIBUTES: u8 = 0x15;
 pub(crate) const K_ENCODED_HEADER: u8 = 0x17;
 pub(crate) const K_START_POS: u8 = 0x18;
-pub(crate) const K_DUMMY: u8 = 0x19;
 
 /// Represents a parsed 7z archive structure.
 ///
@@ -40,17 +39,13 @@ pub struct Archive {
     /// Offset from beginning of file + SIGNATURE_HEADER_SIZE to packed streams.
     pub(crate) pack_pos: u64,
     pub(crate) pack_sizes: Vec<u64>,
-    pub(crate) pack_crcs_defined: BitSet,
-    pub(crate) pack_crcs: Vec<u64>,
     pub(crate) sub_streams_info: Option<SubStreamsInfo>,
     /// Compression blocks in the archive.
     pub blocks: Vec<Block>,
     /// File and directory entries in the archive.
     pub files: Vec<ArchiveEntry>,
     /// Mapping between files, blocks, and pack streams.
-    pub stream_map: StreamMap,
-    /// Whether this is a solid archive (better compression, slower random access).
-    pub is_solid: bool,
+    pub(crate) stream_map: StreamMap,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -62,44 +57,22 @@ pub(crate) struct SubStreamsInfo {
 
 /// Represents a single file or directory entry within a 7z archive.
 ///
-/// Contains metadata about the entry including name, timestamps, attributes,
-/// and size information.
+/// The parser reads timestamps and attributes and discards them. An entry
+/// keeps its name, kind, size and CRC.
 #[derive(Debug, Default, Clone)]
 pub struct ArchiveEntry {
     /// Name/path of the entry within the archive.
-    pub name: String,
+    pub(crate) name: String,
     /// Whether this entry has associated data stream.
-    pub has_stream: bool,
+    pub(crate) has_stream: bool,
     /// Whether this entry is a directory.
-    pub is_directory: bool,
-    /// Whether this is an anti-item (used for deletion in updates).
-    pub is_anti_item: bool,
-    /// Whether creation date is present.
-    pub has_creation_date: bool,
-    /// Whether last modified date is present.
-    pub has_last_modified_date: bool,
-    /// Whether access date is present.
-    pub has_access_date: bool,
-    /// Creation date and time.
-    pub creation_date: NtTime,
-    /// Last modified date and time.
-    pub last_modified_date: NtTime,
-    /// Last access date and time.
-    pub access_date: NtTime,
-    /// Whether Windows file attributes are present.
-    pub has_windows_attributes: bool,
-    /// Windows file attributes.
-    pub windows_attributes: u32,
+    pub(crate) is_directory: bool,
     /// Whether CRC is present.
-    pub has_crc: bool,
+    pub(crate) has_crc: bool,
     /// CRC32 checksum of uncompressed data.
-    pub crc: u64,
-    /// CRC32 checksum of compressed data.
-    pub compressed_crc: u64,
+    pub(crate) crc: u64,
     /// Uncompressed size in bytes.
-    pub size: u64,
-    /// Compressed size in bytes.
-    pub compressed_size: u64,
+    pub(crate) size: u64,
 }
 
 impl ArchiveEntry {
@@ -118,40 +91,15 @@ impl ArchiveEntry {
         self.has_stream
     }
 
-    /// Returns the creation date of this entry.
-    pub fn creation_date(&self) -> NtTime {
-        self.creation_date
-    }
-
-    /// Returns the last modified date of this entry.
-    pub fn last_modified_date(&self) -> NtTime {
-        self.last_modified_date
-    }
-
     /// Returns the uncompressed size of this entry in bytes.
     pub fn size(&self) -> u64 {
         self.size
-    }
-
-    /// Returns the Windows file attributes of this entry.
-    pub fn windows_attributes(&self) -> u32 {
-        self.windows_attributes
-    }
-
-    /// Returns the last access date of this entry.
-    pub fn access_date(&self) -> NtTime {
-        self.access_date
-    }
-
-    /// Returns whether this entry is an anti-item (used for deletion in updates).
-    pub fn is_anti_item(&self) -> bool {
-        self.is_anti_item
     }
 }
 
 /// Encoder method that can be chained (filter, compression and encryption).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default, Hash)]
-pub struct EncoderMethod(&'static str, &'static [u8]);
+pub(crate) struct EncoderMethod(&'static str, &'static [u8]);
 
 impl EncoderMethod {
     /// Method ID for COPY (no compression).
@@ -308,27 +256,15 @@ impl EncoderMethod {
 /// This structure maintains the relationships between archive entries and their
 /// corresponding compression blocks and packed data streams.
 #[derive(Debug, Default, Clone)]
-pub struct StreamMap {
+pub(crate) struct StreamMap {
+    /// Index of the first pack stream for each block.
     pub(crate) block_first_pack_stream_index: Vec<usize>,
+    /// Byte offset of each pack stream within the packed data region.
     pub(crate) pack_stream_offsets: Vec<u64>,
     /// Index of first file for each block.
-    pub block_first_file_index: Vec<usize>,
+    pub(crate) block_first_file_index: Vec<usize>,
     /// Block index for each file (None if file has no data).
-    pub file_block_index: Vec<Option<usize>>,
-}
-
-impl StreamMap {
-    /// Returns the index of the first pack stream for each block.
-    /// Used for mapping blocks to their packed data streams.
-    pub fn block_first_pack_stream_index(&self) -> &[usize] {
-        &self.block_first_pack_stream_index
-    }
-
-    /// Returns byte offsets of each pack stream within the packed data region.
-    /// Combined with pack_pos and SIGNATURE_HEADER_SIZE to get absolute offsets.
-    pub fn pack_stream_offsets(&self) -> &[u64] {
-        &self.pack_stream_offsets
-    }
+    pub(crate) file_block_index: Vec<Option<usize>>,
 }
 
 #[derive(Debug, Clone, Copy)]

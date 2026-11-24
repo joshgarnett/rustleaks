@@ -69,6 +69,24 @@ struct ReleaseEvidence<'a> {
     lock_digests: &'a Value,
 }
 
+/// Subcommands accepted by [`run`]. The documentation command check reads this
+/// list, and a unit test keeps it in step with the dispatch.
+pub(crate) const RELEASE_ARTIFACT_SUBCOMMANDS: &[&str] = &[
+    "notices",
+    "prepare-source",
+    "fetch-source",
+    "relink-source",
+    "compare",
+    "compare-bundles",
+    "prepare",
+    "prepare-windows",
+    "package-input",
+    "add-packages",
+    "package-managers",
+    "check-upgrade",
+    "verify",
+];
+
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
         [command] if command == "notices" => notices::generate(root, false),
@@ -1979,6 +1997,27 @@ mod tests {
         sha256_bytes, sha256_file, target_config, validate_archive, validate_commit,
         validate_glibc, validate_output_directory, write_archive,
     };
+
+    #[test]
+    fn listed_subcommands_match_dispatch() {
+        let source = include_str!("release_artifact.rs");
+        let start = source.find("pub(crate) fn run(").unwrap();
+        let end = start + source[start..].find("\nfn compare_bundles(").unwrap();
+        let dispatch = &source[start..end];
+        let pattern = "command == \"";
+        let dispatched = dispatch
+            .match_indices(pattern)
+            .filter_map(|(index, _)| dispatch[index + pattern.len()..].split_once('"'))
+            .map(|(name, _)| name)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            dispatched,
+            super::RELEASE_ARTIFACT_SUBCOMMANDS
+                .iter()
+                .copied()
+                .collect()
+        );
+    }
 
     #[test]
     fn accepts_only_the_release_matrix() {

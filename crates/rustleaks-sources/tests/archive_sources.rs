@@ -1,12 +1,12 @@
-//! Optional archive decorator coverage against committed upstream fixtures.
+//! Archive source tests with the committed archive fixtures.
 #![cfg(feature = "archives")]
 #![forbid(unsafe_code)]
 
 #[path = "../fuzz/support/archive_frame.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_frame;
 #[path = "../fuzz/support/archive_seeds.rs"]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 mod archive_seeds;
 
 use std::fs;
@@ -146,6 +146,35 @@ fn concatenated_gzip_members_are_decoded_in_order() {
     let mut expected = single_fragments[0].content().as_bytes().to_vec();
     expected.extend_from_slice(single_fragments[0].content().as_bytes());
     assert_eq!(fragments[0].content().as_bytes(), expected);
+}
+
+/// `first stream\n` and `second stream\n`, each compressed on its own with
+/// Python's `bz2.compress(data, 9)`.
+const BZIP2_FIRST: &[u8] = &[
+    0x42, 0x5a, 0x68, 0x39, 0x31, 0x41, 0x59, 0x26, 0x53, 0x59, 0x2a, 0x04, 0x5d, 0x38, 0x00, 0x00,
+    0x02, 0x51, 0x80, 0x00, 0x10, 0x40, 0x00, 0x23, 0x22, 0x1c, 0x00, 0x20, 0x00, 0x31, 0x00, 0x30,
+    0x20, 0x1a, 0x62, 0x73, 0x0b, 0x49, 0x08, 0x27, 0x1e, 0x2e, 0xe4, 0x8a, 0x70, 0xa1, 0x20, 0x54,
+    0x08, 0xba, 0x70,
+];
+const BZIP2_SECOND: &[u8] = &[
+    0x42, 0x5a, 0x68, 0x39, 0x31, 0x41, 0x59, 0x26, 0x53, 0x59, 0x84, 0x52, 0x90, 0x94, 0x00, 0x00,
+    0x05, 0xd1, 0x80, 0x00, 0x10, 0x40, 0x00, 0x2e, 0x03, 0x9c, 0x00, 0x20, 0x00, 0x22, 0x00, 0xd0,
+    0xd0, 0x40, 0xd0, 0x34, 0x05, 0x04, 0xbd, 0x38, 0x4f, 0x1e, 0x1e, 0x2e, 0xe4, 0x8a, 0x70, 0xa1,
+    0x21, 0x08, 0xa5, 0x21, 0x28,
+];
+
+#[test]
+fn concatenated_bzip2_streams_are_decoded_in_order() {
+    let mut concatenated = BZIP2_FIRST.to_vec();
+    concatenated.extend_from_slice(BZIP2_SECOND);
+    let mut source = ArchiveSource::new(Cursor::new(concatenated), "combined.txt.bz2");
+    let (fragments, issues) = collect(&mut source).expect("concatenated bzip2 streams");
+    assert!(issues.is_empty());
+    assert_eq!(fragments.len(), 1);
+    assert_eq!(
+        fragments[0].content().as_bytes(),
+        b"first stream\nsecond stream\n"
+    );
 }
 
 #[test]

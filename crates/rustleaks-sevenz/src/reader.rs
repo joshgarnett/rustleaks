@@ -14,7 +14,7 @@ use crate::{
     block::*,
     crc,
     crc::Hasher,
-    decoder::{ZstdPool, add_decoder, zstd_buffers},
+    decoder::{ZstdBufferCache, ZstdPool, add_decoder},
     error::Error,
 };
 
@@ -29,8 +29,9 @@ struct HeaderLimits {
     entries: usize,
 }
 
-// Each packed stream is read through a 4 KiB buffer, the size of Gitleaks'
-// 7z reader buffer, so member reads in a solid block split at the same places.
+// Each packed stream is read through a 4 KiB buffer. 7z member reads reach
+// the scanner with the sizes the decoder returns (see `Replay` in
+// `rustleaks-sources`), so this value sets fragment boundaries.
 const PACKED_STREAM_BUFFER_SIZE: usize = 4_096;
 
 fn allocation_error(context: &'static str) -> Error {
@@ -77,7 +78,7 @@ impl<R: Read> Read for BoundedReader<R> {
     }
 }
 
-/// A special reader that shares it's inner reader with other instances and
+/// A special reader that shares its inner reader with other instances and
 /// needs to re-seek every read operation.
 #[derive(Debug)]
 pub(crate) struct SharedBoundedReader<'a, R> {
@@ -177,21 +178,13 @@ impl<R: Read> Read for Crc32VerifyingReader<R> {
 }
 
 impl Archive {
-    /// Reads archive metadata while bounding codec working memory.
-    pub fn read_with_memory_limit_kb<R: Read + Seek>(
-        reader: &mut R,
-        memory_limit_kb: usize,
-    ) -> Result<Archive, Error> {
-        Self::read_with_limits(reader, memory_limit_kb, usize::MAX)
-    }
-
     /// Reads archive metadata while bounding codec working memory and the
     /// number of entries.
     ///
     /// The memory limit also bounds the decoded size of an encoded header.
     /// An archive that declares more than `max_entries` entries is rejected
     /// with [`Error::MaxEntriesLimited`] before its file table is allocated.
-    pub fn read_with_limits<R: Read + Seek>(
+    pub(crate) fn read_with_limits<R: Read + Seek>(
         reader: &mut R,
         memory_limit_kb: usize,
         max_entries: usize,
@@ -203,7 +196,6 @@ impl Archive {
         if memory_limit_kb == 0 {
             return Err(Error::other("7z memory limit must be positive"));
         }
-        let reader_len = reader.seek(SeekFrom::End(0))?;
         reader.seek(SeekFrom::Start(0))?;
 
         let mut signature = [0; 6];
@@ -223,22 +215,8 @@ impl Archive {
         }
 
         let start_header_crc = reader.read_u32()?;
-
-        let header_valid = if start_header_crc == 0 {
-            let current_position = reader.stream_position()?;
-            let mut buf = [0; 20];
-            reader.read_exact(&mut buf)?;
-            reader.seek(SeekFrom::Start(current_position))?;
-            buf.iter().any(|a| *a != 0)
-        } else {
-            true
-        };
-        if header_valid {
-            let start_header = Self::read_start_header(reader, start_header_crc)?;
-            Self::init_archive(reader, start_header, true, limits)
-        } else {
-            Self::try_to_locale_end_header(reader, reader_len, limits)
-        }
+        let start_header = Self::read_start_header(reader, start_header_crc)?;
+        Self::init_archive(reader, start_header, limits)
     }
 
     fn read_start_header<R: Read>(
@@ -247,6 +225,11 @@ impl Archive {
     ) -> Result<StartHeader, Error> {
         let mut buf = [0; 20];
         reader.read_exact(&mut buf)?;
+        // An empty start header gives no next-header location. This reader
+        // does not search the file for the end header.
+        if start_header_crc == 0 && buf == [0; 20] {
+            return Err(Error::other("7z start header is empty"));
+        }
         let crc32 = crc::hash(&buf);
         if crc32 != start_header_crc {
             return Err(Error::ChecksumVerificationFailed);
@@ -305,52 +288,9 @@ impl Archive {
         Ok(())
     }
 
-    fn try_to_locale_end_header<R: Read + Seek>(
-        reader: &mut R,
-        reader_len: u64,
-        limits: HeaderLimits,
-    ) -> Result<Self, Error> {
-        let search_limit = 1024 * 1024;
-        let prev_data_size = reader.stream_position()? + 20;
-        let size = reader_len;
-        let min_pos = if reader.stream_position()? + search_limit > size {
-            reader.stream_position()?
-        } else {
-            size - search_limit
-        };
-        let mut pos = reader_len - 1;
-        while pos > min_pos {
-            pos -= 1;
-
-            reader.seek(SeekFrom::Start(pos))?;
-            let nid = reader.read_u8()?;
-            if nid == K_ENCODED_HEADER || nid == K_HEADER {
-                // `pos` scans down and can fall below `prev_data_size`; skip such candidates
-                // instead of underflowing the subtraction.
-                let Some(next_header_offset) = pos.checked_sub(prev_data_size) else {
-                    continue;
-                };
-                let start_header = StartHeader {
-                    next_header_offset,
-                    next_header_size: reader_len - pos,
-                    next_header_crc: 0,
-                };
-                let result = Self::init_archive(reader, start_header, false, limits)?;
-
-                if !result.files.is_empty() {
-                    return Ok(result);
-                }
-            }
-        }
-        Err(Error::other(
-            "Start header corrupt and unable to guess end header",
-        ))
-    }
-
     fn init_archive<R: Read + Seek>(
         reader: &mut R,
         start_header: StartHeader,
-        verify_crc: bool,
         limits: HeaderLimits,
     ) -> Result<Self, Error> {
         // Bound the declared next-header size against the actual file length before allocating.
@@ -381,7 +321,7 @@ impl Archive {
             "unable to allocate the 7z next-header buffer",
         )?;
         reader.read_exact(&mut buf)?;
-        if verify_crc && u64::from(crc::hash(&buf)) != start_header.next_header_crc {
+        if u64::from(crc::hash(&buf)) != start_header.next_header_crc {
             return Err(Error::NextHeaderCrcMismatch);
         }
 
@@ -416,11 +356,6 @@ impl Archive {
         } else {
             return Err(Error::other("Broken or unsupported archive: no Header"));
         }
-
-        archive.is_solid = archive
-            .blocks
-            .iter()
-            .any(|block| block.num_unpack_sub_streams > 1);
 
         Ok(archive)
     }
@@ -460,8 +395,8 @@ impl Archive {
             })?;
 
         reader.seek(SeekFrom::Start(block_offset))?;
-        let mut zstd = zstd_buffers(block, memory_limit_kb)?;
-        let mut zstd = zstd.iter_mut();
+        let mut zstd_cache = ZstdBufferCache::default();
+        let mut zstd = zstd_cache.for_block(block, memory_limit_kb)?;
         let coder_len = block.coders.len();
         let pack_size = archive.pack_sizes[first_pack_stream_index] as usize;
         let input_reader = BufReader::with_capacity(
@@ -473,7 +408,7 @@ impl Archive {
             for (index, coder) in block.ordered_coder_iter() {
                 if coder.num_in_streams != 1 || coder.num_out_streams != 1 {
                     return Err(Error::other(
-                        "Multi input/output stream coders are not yet supported",
+                        "7z multi-stream coders are unsupported in an encoded header",
                     ));
                 }
                 let next = add_decoder(
@@ -556,7 +491,6 @@ impl Archive {
 
         let mut is_empty_stream: Option<BitSet> = None;
         let mut is_empty_file: Option<BitSet> = None;
-        let mut is_anti: Option<BitSet> = None;
         loop {
             let prop_type = header.read_u8()?;
             if prop_type == 0 {
@@ -578,19 +512,21 @@ impl Archive {
                     is_empty_file = Some(read_bits(header, n)?);
                 }
                 K_ANTI => {
+                    // Anti-items mark deletions in an update archive. They have
+                    // no data, so the bits are read and discarded.
                     let n = if let Some(s) = is_empty_stream.as_ref() {
                         s.len()
                     } else {
                         return Err(Error::other(
-                            "Header format error: kEmptyStream must appear before kEmptyFile",
+                            "Header format error: kEmptyStream must appear before kAnti",
                         ));
                     };
-                    is_anti = Some(read_bits(header, n)?);
+                    read_bits(header, n)?;
                 }
                 K_NAME => {
                     let external = header.read_u8()?;
                     if external != 0 {
-                        return Err(Error::other("Not implemented:external != 0"));
+                        return Err(Error::other("7z external file names are unsupported"));
                     }
                     // A zero `size` would underflow `size - 1`; reject it explicitly.
                     if size == 0 || (size - 1) & 1 != 0 {
@@ -598,8 +534,6 @@ impl Archive {
                     }
 
                     let size = bounded_count(size, limit, "file names length")?;
-                    // let mut names = vec![0u8; size - 1];
-                    // header.read_exact(&mut names)?;
                     let names_reader = NamesReader::new(header, size - 1);
 
                     let mut next_file = 0;
@@ -618,74 +552,18 @@ impl Archive {
                         return Err(Error::other("Error parsing file names"));
                     }
                 }
-                K_C_TIME => {
-                    let times_defined = read_all_or_bits(header, num_files)?;
-                    let external = header.read_u8()?;
-                    if external != 0 {
-                        return Err(Error::other(format!(
-                            "kCTime Unimplemented:external={external}"
-                        )));
-                    }
-                    for (i, file) in files.iter_mut().enumerate() {
-                        file.has_creation_date = times_defined.contains(i);
-                        if file.has_creation_date {
-                            file.creation_date = header.read_u64()?.into();
-                        }
-                    }
-                }
-                K_A_TIME => {
-                    let times_defined = read_all_or_bits(header, num_files)?;
-                    let external = header.read_u8()?;
-                    if external != 0 {
-                        return Err(Error::other(format!(
-                            "kATime Unimplemented:external={external}"
-                        )));
-                    }
-                    for (i, file) in files.iter_mut().enumerate() {
-                        file.has_access_date = times_defined.contains(i);
-                        if file.has_access_date {
-                            file.access_date = header.read_u64()?.into();
-                        }
-                    }
-                }
-                K_M_TIME => {
-                    let times_defined = read_all_or_bits(header, num_files)?;
-                    let external = header.read_u8()?;
-                    if external != 0 {
-                        return Err(Error::other(format!(
-                            "kMTime Unimplemented:external={external}"
-                        )));
-                    }
-                    for (i, file) in files.iter_mut().enumerate() {
-                        file.has_last_modified_date = times_defined.contains(i);
-                        if file.has_last_modified_date {
-                            file.last_modified_date = header.read_u64()?.into();
-                        }
-                    }
+                K_C_TIME | K_A_TIME | K_M_TIME => {
+                    // Timestamps are read and discarded.
+                    skip_file_values(header, num_files, prop_type, 8)?;
                 }
                 K_WIN_ATTRIBUTES => {
-                    let times_defined = read_all_or_bits(header, num_files)?;
-                    let external = header.read_u8()?;
-                    if external != 0 {
-                        return Err(Error::other(format!(
-                            "kWinAttributes Unimplemented:external={external}"
-                        )));
-                    }
-                    for (i, file) in files.iter_mut().enumerate() {
-                        file.has_windows_attributes = times_defined.contains(i);
-                        if file.has_windows_attributes {
-                            file.windows_attributes = header.read_u32()?;
-                        }
-                    }
+                    // Attributes are read and discarded.
+                    skip_file_values(header, num_files, prop_type, 4)?;
                 }
-                K_START_POS => return Err(Error::other("kStartPos is unsupported, please report")),
-                K_DUMMY => {
+                K_START_POS => return Err(Error::other("7z kStartPos property is unsupported")),
+                _ => {
                     // Bound the skip against the buffer: an unbounded value cast to `i64`
                     // could go negative and seek backwards, re-reading the same bytes forever.
-                    let skip = bounded_count(size, limit, "files-info property size")?;
-                    header.seek(SeekFrom::Current(skip as i64))?;
-                }
-                _ => {
                     let skip = bounded_count(size, limit, "files-info property size")?;
                     header.seek(SeekFrom::Current(skip as i64))?;
                 }
@@ -708,7 +586,6 @@ impl Archive {
                     ));
                 };
                 file.is_directory = false;
-                file.is_anti_item = false;
                 // The count of streamed files and `total_unpack_streams` are independent
                 // header quantities. Reject a mismatch instead of indexing out of bounds.
                 let (Some(&crc), Some(&size)) = (
@@ -729,10 +606,6 @@ impl Archive {
                 } else {
                     true
                 };
-                file.is_anti_item = is_anti
-                    .as_ref()
-                    .map(|s| s.contains(empty_file_counter))
-                    .unwrap_or(false);
                 file.has_crc = false;
                 file.size = 0;
                 empty_file_counter += 1;
@@ -812,19 +685,15 @@ impl Archive {
                 continue;
             }
 
-            //set `compressed_size` of first file in block
+            // The first file of a block needs the block's first pack stream.
             if stream_map.block_first_file_index[next_block_index] == i {
                 let first_pack_stream_index =
                     stream_map.block_first_pack_stream_index[next_block_index];
-                let pack_size =
-                    *archive
-                        .pack_sizes
-                        .get(first_pack_stream_index)
-                        .ok_or_else(|| {
-                            Error::other("block references a pack stream index beyond pack_sizes")
-                        })?;
-
-                archive.files[i].compressed_size = pack_size;
+                if first_pack_stream_index >= archive.pack_sizes.len() {
+                    return Err(Error::other(
+                        "block references a pack stream index beyond pack_sizes",
+                    ));
+                }
             }
 
             next_block_unpack_stream_index += 1;
@@ -878,15 +747,12 @@ impl Archive {
         }
 
         if nid == K_CRC {
-            archive.pack_crcs_defined = read_all_or_bits(header, num_pack_streams)?;
-            archive.pack_crcs = try_vec_filled(
-                num_pack_streams,
-                0,
-                "unable to allocate the 7z pack-CRC table",
-            )?;
+            // Pack stream CRCs are read and not checked. Decoded data is
+            // checked with the block and file CRCs.
+            let crcs_defined = read_all_or_bits(header, num_pack_streams)?;
             for i in 0..num_pack_streams {
-                if archive.pack_crcs_defined.contains(i) {
-                    archive.pack_crcs[i] = header.read_u32()? as u64;
+                if crcs_defined.contains(i) {
+                    header.read_u32()?;
                 }
             }
             nid = header.read_u8()?;
@@ -1148,11 +1014,8 @@ impl Archive {
                 coder.properties = props;
             }
             coders.push(coder);
-            // would need to keep looping as above:
             if more_alternative_methods {
-                return Err(Error::other(
-                    "Alternative methods are unsupported, please report. The reference implementation doesn't support them either.",
-                ));
+                return Err(Error::other("7z alternative coder methods are unsupported"));
             }
         }
         block.coders = coders;
@@ -1321,6 +1184,30 @@ fn read_variable_u64<R: Read>(reader: &mut R) -> io::Result<u64> {
     Ok(value)
 }
 
+/// Reads and discards a files-info property that holds one value of `width`
+/// bytes for each file whose bit is set.
+fn skip_file_values<R: Read>(
+    header: &mut R,
+    num_files: usize,
+    property: u8,
+    width: usize,
+) -> Result<(), Error> {
+    let defined = read_all_or_bits(header, num_files)?;
+    let external = header.read_u8()?;
+    if external != 0 {
+        return Err(Error::other(format!(
+            "7z external data for property {property:#04x} is unsupported"
+        )));
+    }
+    let mut value = [0_u8; 8];
+    for i in 0..num_files {
+        if defined.contains(i) {
+            header.read_exact(&mut value[..width])?;
+        }
+    }
+    Ok(())
+}
+
 fn read_all_or_bits<R: Read>(header: &mut R, size: usize) -> io::Result<BitSet> {
     let all = header.read_u8()?;
     if all != 0 {
@@ -1442,8 +1329,11 @@ impl<R: Read + Seek> ArchiveReader<R> {
     }
 
     /// Creates a reader with a positive codec working-memory ceiling and a
-    /// ceiling on the entries the archive may declare. See
-    /// [`Archive::read_with_limits`].
+    /// ceiling on the entries the archive may declare.
+    ///
+    /// The memory limit also bounds the decoded size of an encoded header.
+    /// An archive that declares more than `max_entries` entries is rejected
+    /// with [`Error::MaxEntriesLimited`] before its file table is allocated.
     pub fn new_with_limits(
         mut source: R,
         memory_limit_kb: usize,
@@ -1472,7 +1362,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
         block_index: usize,
         memory_limit_kb: usize,
         zstd: &mut ZstdPool<'r>,
-    ) -> Result<(Box<dyn Read + 'r>, usize), Error> {
+    ) -> Result<Box<dyn Read + 'r>, Error> {
         let block = &archive.blocks[block_index];
         if block.total_input_streams > block.total_output_streams {
             return Self::build_decode_stack2(source, archive, block_index, memory_limit_kb, zstd);
@@ -1487,7 +1377,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
 
         let (mut has_crc, mut crc) = (block.has_crc, block.crc);
 
-        // Single stream blocks might have it's CRC stored in the single substream information.
+        // A block with one sub-stream may store its CRC in the sub-stream info.
         if !has_crc
             && block.num_unpack_sub_streams == 1
             && let Some(sub_streams_info) = archive.sub_streams_info.as_ref()
@@ -1497,8 +1387,8 @@ impl<R: Read + Seek> ArchiveReader<R> {
                 substream_index += archive.blocks[i].num_unpack_sub_streams;
             }
 
-            // Only when there is a single stream, we can use it's CRC to verify the compressed block data.
-            // Multiple streams would contain the CRC of the compressed data for each file in the block.
+            // With several sub-streams, those CRCs belong to the files, so they
+            // cannot check the block.
             if sub_streams_info.has_crc.contains(substream_index) {
                 has_crc = true;
                 crc = sub_streams_info.crcs[substream_index];
@@ -1536,7 +1426,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
             ));
         }
 
-        Ok((decoder, pack_size))
+        Ok(decoder)
     }
 
     fn build_decode_stack2<'r>(
@@ -1545,7 +1435,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
         block_index: usize,
         memory_limit_kb: usize,
         zstd: &mut ZstdPool<'r>,
-    ) -> Result<(Box<dyn Read + 'r>, usize), Error> {
+    ) -> Result<Box<dyn Read + 'r>, Error> {
         const MAX_CODER_COUNT: usize = 32;
         let block = &archive.blocks[block_index];
         if block.coders.len() > MAX_CODER_COUNT {
@@ -1633,10 +1523,7 @@ impl<R: Read + Seek> ArchiveReader<R> {
                 block.crc,
             ));
         }
-        Ok((
-            decoder,
-            archive.pack_sizes[first_pack_stream_index] as usize,
-        ))
+        Ok(decoder)
     }
 
     fn get_in_stream<'r>(
@@ -1769,17 +1656,23 @@ impl<R: Read + Seek> ArchiveReader<R> {
     /// Attention about solid archive:
     /// When decoding a solid archive, the data to be decompressed depends on the data in front of it,
     /// you cannot simply skip the previous data and only decompress the data in the back.
+    ///
+    /// Returning `Ok(false)` from the closure skips the rest of the current
+    /// block only, and decoding goes on with the next block. Return an error
+    /// to stop.
     pub fn for_each_entries<F: FnMut(&ArchiveEntry, &mut dyn Read) -> Result<bool, Error>>(
         &mut self,
         mut each: F,
     ) -> Result<(), Error> {
         let block_count = self.archive.blocks.len();
+        let mut zstd = ZstdBufferCache::default();
         for block_index in 0..block_count {
             let block_decoder = BlockDecoder::new(
                 self.memory_limit_kb,
                 block_index,
                 &self.archive,
                 &mut self.source,
+                &mut zstd,
             );
             block_decoder.for_each_entries(&mut each)?;
         }
@@ -1802,11 +1695,12 @@ impl<R: Read + Seek> ArchiveReader<R> {
 ///
 /// Provides access to entries within a single compression block and allows
 /// decoding files from that block.
-pub struct BlockDecoder<'a, R: Read + Seek> {
+pub(crate) struct BlockDecoder<'a, R: Read + Seek> {
     memory_limit_kb: usize,
     block_index: usize,
     archive: &'a Archive,
     source: &'a mut R,
+    zstd: &'a mut ZstdBufferCache,
 }
 
 impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
@@ -1817,17 +1711,20 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
     /// * `block_index` - Index of the block to decode within the archive
     /// * `archive` - Reference to the archive containing the block
     /// * `source` - Mutable reference to the reader providing archive data
-    pub fn new(
+    /// * `zstd` - Zstandard working memory, reused from block to block
+    pub(crate) fn new(
         memory_limit_kb: usize,
         block_index: usize,
         archive: &'a Archive,
         source: &'a mut R,
+        zstd: &'a mut ZstdBufferCache,
     ) -> Self {
         Self {
             memory_limit_kb,
             block_index,
             archive,
             source,
+            zstd,
         }
     }
 
@@ -1837,7 +1734,9 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
     /// it, you cannot simply skip the previous data and only decompress the data in the back.
     ///
     /// Non-solid archives use one block per file and allow more effective decoding of single files.
-    pub fn for_each_entries<F: FnMut(&ArchiveEntry, &mut dyn Read) -> Result<bool, Error>>(
+    pub(crate) fn for_each_entries<
+        F: FnMut(&ArchiveEntry, &mut dyn Read) -> Result<bool, Error>,
+    >(
         self,
         each: &mut F,
     ) -> Result<bool, Error> {
@@ -1846,10 +1745,10 @@ impl<'a, R: Read + Seek> BlockDecoder<'a, R> {
             block_index,
             archive,
             source,
+            zstd,
         } = self;
-        let mut zstd = zstd_buffers(&archive.blocks[block_index], memory_limit_kb)?;
-        let mut zstd = zstd.iter_mut();
-        let (mut block_reader, _size) = ArchiveReader::build_decode_stack(
+        let mut zstd = zstd.for_block(&archive.blocks[block_index], memory_limit_kb)?;
+        let mut block_reader = ArchiveReader::build_decode_stack(
             source,
             archive,
             block_index,
@@ -2056,6 +1955,16 @@ mod tests {
         assert_eq!(block.total_output_streams, 2);
         assert!(input.is_empty());
         assert!(Archive::read_block(&mut header.as_slice(), 1).is_err());
+    }
+
+    #[test]
+    fn empty_start_header_is_an_error() {
+        let mut input = b"7z\xbc\xaf\x27\x1c\x00\x04".to_vec();
+        input.extend_from_slice(&[0; 24]);
+        let result = Archive::read_with_limits(&mut Cursor::new(input), 1024, usize::MAX);
+        assert!(
+            matches!(&result, Err(Error::Other(message)) if message == "7z start header is empty")
+        );
     }
 
     #[test]

@@ -1,10 +1,8 @@
-//! Top-level MIME classification compatible with h2non/filetype v1.1.3.
+//! Decides whether a file's first bytes have an `application` MIME type, by
+//! the first matching file type. Such files are skipped as binary.
 //!
-//! The pinned upstream compatibility behavior observes whether the first
-//! matching type's top-level MIME is
-//! `application`. All matchers within one upstream category share a top-level
-//! type, so category precedence is sufficient and avoids reproducing Go map
-//! iteration order that is unobservable to this decision.
+//! All matchers in one category share a top-level MIME type, so checking the
+//! categories in order gives the same answer as checking each matcher.
 
 pub(crate) fn is_application(data: &[u8]) -> bool {
     if application(data) {

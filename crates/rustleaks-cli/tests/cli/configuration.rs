@@ -120,7 +120,7 @@ fn a_linked_source_local_config_does_not_print_the_linked_file() {
 }
 
 #[test]
-fn native_config_names_precede_backward_compatible_aliases() {
+fn rustleaks_config_names_precede_legacy_names() {
     let fixture = Fixture::new();
     fixture.write("native.toml", no_match_config());
     fixture.write("legacy.toml", matching_config());

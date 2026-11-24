@@ -141,7 +141,7 @@ fn tail_location_fixture(bytes: usize, matches: usize) -> Result<Fixture, Box<dy
         return Err("tail-location fixture must retain trailing padding".into());
     }
     input.resize(bytes, b'x');
-    // Every literal follows the sole newline. The pinned location helper's
+    // Every literal follows the sole newline. The location rule's
     // no-line-matched branch searches the remaining suffix for CR or LF and
     // exposes the prefix beginning at zero as the finding line. The marker
     // near its beginning suppresses each candidate without a long marker scan.

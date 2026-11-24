@@ -1,4 +1,4 @@
-//! Provider-grounded synthetic controls for the `rustleaks-extra-v1` rules.
+//! Cases for the rules in rustleaks-extra-v1.toml.
 #![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
@@ -234,7 +234,7 @@ fn targeted_global_allowlist_does_not_suppress_other_native_rules() {
 }
 
 #[test]
-fn native_composition_is_explicit_and_keeps_legacy_outcomes() {
+fn native_composition_is_explicit_and_matches_engine_outcomes() {
     use rustleaks_core::explanation::ExplanationOptions;
     use rustleaks_core::native::{EXTRA_RULES_V1, NativePolicy};
     let native = NativePolicy::builder()

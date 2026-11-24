@@ -4,7 +4,7 @@
 //! Dense scaling and multiple decoded values in one carrier are independently
 //! authored adaptations of benchmark ideas in Kingfisher commit
 //! `01e7b817376fbf2272be8f162bd32309bf97ee1f`. No upstream code or fixture bytes
-//! are incorporated. The existing performance workload lists are unchanged.
+//! are incorporated.
 
 use std::collections::BTreeSet;
 use std::fs;

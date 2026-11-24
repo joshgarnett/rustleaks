@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -9,7 +10,7 @@ use rustleaks_core::config::{CompiledConfig, ConfigLoader, ConfigOrigin, Virtual
 use rustleaks_core::model::{CommitMetadata, Finding, Fragment, ScanOptions};
 use serde::Deserialize;
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Each test uses part of the shared module.
 #[path = "support/corpus.rs"]
 mod corpus;
 

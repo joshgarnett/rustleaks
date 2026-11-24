@@ -12,8 +12,8 @@ rustleaks_library(
 )
 
 rustleaks_integration_test(
-    name = "oracle_codecs_test",
-    src = "tests/oracle_codecs.rs",
+    name = "method_fixtures_test",
+    src = "tests/method_fixtures.rs",
     data = ["//testdata:fixtures"],
     deps = [":rustleaks_sevenz"],
 )
@@ -21,7 +21,7 @@ rustleaks_integration_test(
 test_suite(
     name = "all_tests",
     tests = [
-        ":oracle_codecs_test",
+        ":method_fixtures_test",
         ":rustleaks_sevenz_doc_test",
         ":rustleaks_sevenz_unit_test",
     ],

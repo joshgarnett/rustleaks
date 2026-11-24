@@ -4,7 +4,7 @@ use rustleaks_core::config::{CompiledConfig, CompiledRule};
 use rustleaks_core::model::{ByteText, Finding};
 
 use crate::go_json::{write_indent, write_string, write_string_body};
-use crate::{ReportError, Reporter};
+use crate::{ReportError, Reporter, try_copy_str};
 
 /// Rule metadata retained in `SARIF` configuration order.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,8 +22,8 @@ impl ReportRule {
     /// cannot be reserved.
     pub fn try_new(id: &str, description: &str) -> Result<Self, ReportError> {
         Ok(Self {
-            id: try_copy_string(id)?,
-            description: try_copy_string(description)?,
+            id: try_copy_str(id).map_err(ReportError::Allocation)?,
+            description: try_copy_str(description).map_err(ReportError::Allocation)?,
         })
     }
 
@@ -56,7 +56,8 @@ impl SarifReporter {
         Ok(Self { rules: collected })
     }
 
-    /// Copies rule metadata in the configuration's compatibility order.
+    /// Copies rule metadata in report order (see
+    /// [`CompiledConfig::ordered_rules`]).
     ///
     /// # Errors
     ///
@@ -72,15 +73,6 @@ impl SarifReporter {
         }
         Ok(Self { rules })
     }
-}
-
-fn try_copy_string(value: &str) -> Result<String, ReportError> {
-    let mut copied = String::new();
-    copied
-        .try_reserve_exact(value.len())
-        .map_err(ReportError::Allocation)?;
-    copied.push_str(value);
-    Ok(copied)
 }
 
 impl Reporter for SarifReporter {

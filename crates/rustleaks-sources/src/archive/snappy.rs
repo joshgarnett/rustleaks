@@ -109,11 +109,14 @@ pub(crate) fn decode_framed(
 
 // This implements the MinLZ specification v1.0.
 //
-// The archive source intentionally supports only native MinLZ framing. The
-// optional legacy Snappy/S2 fallback is rejected, matching the pinned Go
-// archive reader's default configuration. Keeping the framing state machine
-// together makes the resource and transition checks directly auditable.
-#[allow(clippy::too_many_lines)]
+// The archive source supports only native MinLZ framing. The optional
+// Snappy and S2 fallback inside a MinLZ stream is rejected. The framing state
+// machine stays in one function so its resource and transition checks can be
+// read together.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the MinLZ framing state machine stays in one function"
+)]
 pub(crate) fn decode_minlz_framed(
     input: &[u8],
     limit: usize,
@@ -255,7 +258,10 @@ pub(crate) fn decode_minlz_framed(
 
 // Keep the tag state machine aligned with sections 2.1 through 2.5 of the
 // MinLZ specification so each bounds check remains adjacent to its encoding.
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "each bounds check stays next to its MinLZ tag encoding"
+)]
 fn decode_minlz_block(
     input: &[u8],
     decoded_length: usize,
@@ -432,9 +438,12 @@ fn minlz_copy_length(
     Ok((extra.checked_add(64).ok_or(SnappyFailure::Limit)?, next))
 }
 
-// Snappy and S2 share a compact tag state machine whose flavor-dependent
-// repeat behavior is clearer when audited in one place.
-#[allow(clippy::too_many_lines)]
+// Snappy and S2 share one tag state machine. The repeat behavior that
+// differs between them is easier to check in one place.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Snappy and S2 tag state machine stays in one function"
+)]
 fn decode_block(
     input: &[u8],
     limit: usize,

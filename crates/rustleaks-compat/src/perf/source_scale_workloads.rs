@@ -458,7 +458,7 @@ fn expected_chunks(content: &[u8]) -> Vec<Chunk> {
     chunks
 }
 
-/// Returns the absolute one-based line and upstream column of a planted match.
+/// Returns the absolute one-based line and reported column of a planted match.
 ///
 /// The engine reports `start - previous_newline + 1` within a fragment, and
 /// `start + 1` on the fragment's first line, so the column depends on where

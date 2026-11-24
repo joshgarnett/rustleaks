@@ -33,7 +33,6 @@ filegroup(
 rustleaks_library(
     name = "rustleaks_core",
     compile_data = glob(["default/**", "data/**"]) + [
-        "Cargo.toml",
         "README.md",
         "//testdata:corpora",
     ],
@@ -43,11 +42,13 @@ rustleaks_library(
     unit_test_tags = ["exclusive"],
 )
 
-# Tests that need neither support modules nor compatibility data.
+# Tests that need no support module and no file under testdata/.
 _PLAIN_TESTS = [
     "controlled_scan",
     "decoded_locations",
+    "default_rules",
     "engine",
+    "generic_recall",
     "language_fixtures",
     "location_lookup",
     "model",
@@ -72,8 +73,6 @@ _TESTDATA_TESTS = [
     "config",
     "default_rule_cases",
     "default_rule_corpus",
-    "default_rules",
-    "generic_recall",
 ]
 
 # Tests that read a corpus under testdata/ with the shared corpus module.

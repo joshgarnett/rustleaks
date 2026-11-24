@@ -19,13 +19,6 @@ pub use template::{SAFE_TEMPLATE_PROFILE, TemplateError, TemplateLimits, Templat
 
 use rustleaks_core::model::Finding;
 
-/// CWE for hard-coded credentials, for callers that label findings. Reports
-/// do not include it.
-pub const CWE: &str = "CWE-798";
-
-/// Human-readable description for [`CWE`].
-pub const CWE_DESCRIPTION: &str = "Use of Hard-coded Credentials";
-
 /// A reusable synchronous finding writer.
 pub trait Reporter {
     /// Writes the complete report without closing or flushing the destination.
@@ -52,4 +45,12 @@ pub enum ReportError {
     /// JSON cannot represent a non-finite entropy value.
     #[error("could not serialize non-finite finding entropy {0}")]
     NonFiniteEntropy(f32),
+}
+
+/// Copies text into a new string after a fallible, exact reservation.
+pub(crate) fn try_copy_str(source: &str) -> Result<String, TryReserveError> {
+    let mut copied = String::new();
+    copied.try_reserve_exact(source.len())?;
+    copied.push_str(source);
+    Ok(copied)
 }

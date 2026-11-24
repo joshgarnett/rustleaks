@@ -1,8 +1,12 @@
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 use rustleaks_core::explanation::ExplanationOptions;
 use rustleaks_core::model::{FindingRange, Fragment, ScanOptions};
-use rustleaks_core::native::{NativeEngine, NativeExtension, NativePolicy, NativeScanOutcome};
+use rustleaks_core::native::{
+    CONNECTION_RULES_V1, EXTRA_RULES_V1, NativeEngine, NativeExtension, NativePolicy,
+    NativeScanOutcome, PROVIDER_RULES_V1,
+};
 use rustleaks_core::triage::{
     MAX_REVIEW_RECORDS, PresentationGroups, RecordState, ReviewClassification, ReviewError,
     ReviewOccurrence, ReviewPolicy, ReviewReason, ReviewRecord, ReviewSource, validate_records,
@@ -297,4 +301,24 @@ fn records_and_identifiers_have_hard_limits_and_ambiguous_duplicates_fail() {
         validate_records(&vec![record; MAX_REVIEW_RECORDS + 1]),
         Err(ReviewError::LimitExceeded)
     );
+}
+
+#[test]
+fn builtin_review_policy_accepts_every_built_in_rule_file() {
+    let policy = NativePolicy::builder()
+        .with_pack("rustleaks-extra-v1", EXTRA_RULES_V1)
+        .unwrap()
+        .with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)
+        .unwrap()
+        .with_pack("rustleaks-connections-v1", CONNECTION_RULES_V1)
+        .unwrap()
+        .build()
+        .unwrap();
+    let review = ReviewPolicy::for_builtin(policy.identity()).unwrap();
+    assert!(
+        review
+            .reference()
+            .contains("|pack-order:extra,providers,connections")
+    );
+    assert!(ReviewPolicy::caller_bound(policy.identity(), "store:policy,7").is_ok());
 }

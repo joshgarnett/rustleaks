@@ -8,10 +8,13 @@ mod archive_frame;
 mod archive_harness;
 #[path = "../fuzz/support/archive_seeds.rs"]
 mod archive_seeds;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "shared fuzz support; this binary uses part of it")]
 #[path = "../../rustleaks-core/tests/support/fuzz_profile.rs"]
 mod fuzz_profile;
-#[allow(dead_code)] // COPY is exercised by archive_semantics; these seeds use compression.
+#[allow(
+    dead_code,
+    reason = "COPY is covered by archive_semantics; these seeds use compression"
+)]
 #[path = "../fuzz/support/sevenz_seeds.rs"]
 mod sevenz_seeds;
 

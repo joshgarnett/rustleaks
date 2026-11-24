@@ -10,7 +10,7 @@ These pages are for contributors and maintainers. User documentation is in
 | --- | --- |
 | [Architecture](architecture.md) | Learn the crates, how data moves between them, and where to add a rule, source, report format or flag |
 | [Engine internals](engine-internals.md) | Change scan budgets, cancellation, caches, threads, Git processes or complete-target scanning |
-| [Rule pack authoring](rule-pack-authoring.md) | Add or change a rule in a native rule pack |
+| [Rule authoring](rule-authoring.md) | Add or change a default rule or a Rustleaks rule file |
 | [Testing](testing.md) | Run tests, add a test, and change the test data under `testdata/` |
 | [Performance](performance.md) | Run the in-repository performance tools and keep their results |
 
@@ -30,7 +30,7 @@ These pages are for contributors and maintainers. User documentation is in
 | [Security checks](security-checks.md) | Run the local security checks, fuzzing and self-scan, and see the hosted schedule |
 | [Dependencies](dependencies.md) | Apply the dependency policy and the archive codec decisions |
 | [Incident response](incident-response.md) | Handle a vulnerability, exposed credential or compromised input |
-| [Releasing](releasing.md) | Qualify and publish a release |
+| [Releasing](releasing.md) | Check and publish a release |
 
 Related folders: [`testdata/`](../../testdata/README.md) holds the test
 corpora, copied fixtures and generated test files, and

@@ -2,12 +2,6 @@ load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 load(":execution_tool.bzl", "execution_tool")
 
-exports_files([
-    "execution_tool.bzl",
-    "platform_matrix.bzl",
-    "rust_crate.bzl",
-])
-
 execution_tool(
     name = "git",
     tool = "@git//:git",

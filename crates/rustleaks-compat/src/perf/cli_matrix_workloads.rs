@@ -2,11 +2,11 @@
 //! and as Git history.
 //!
 //! The repository holds plain source files with planted GitHub tokens, one
-//! database URI for the connections pack, Base64 values encoded once and six
-//! times, and a TAR file nested two levels deep. Each phase starts a fresh CLI
-//! process with fixed flags. The expected findings for each flag set come from
-//! the plant list: a plant is found when its decode depth, archive depth and
-//! pack fit the flags. Nothing is read back from an earlier scan.
+//! database URI for the connection rule file, Base64 values encoded once and
+//! six times, and a TAR file nested two levels deep. Each phase starts a fresh
+//! CLI process with fixed flags. The expected findings for each flag set come
+//! from the plant list: a plant is found when its decode depth, archive depth
+//! and rule file fit the flags. Nothing is read back from an earlier scan.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -22,8 +22,8 @@ use super::source_scale_workloads::{
     token_row,
 };
 use super::suite_support::{
-    DATABASE_URI_RULE, Lcg, PACKS, Result, checked_github_token, database_uri, go_entropy,
-    keyword_census, pack_config, prose_line, prose_line_of, tar,
+    DATABASE_URI_RULE, Lcg, RULE_FILES, Result, checked_github_token, database_uri, go_entropy,
+    keyword_census, prose_line, prose_line_of, rule_file_config, tar,
 };
 use super::{Phase, fingerprint};
 use crate::representative_io;
@@ -89,7 +89,8 @@ struct Flags {
     mode: Mode,
     decode: usize,
     archive: usize,
-    packs: bool,
+    /// Whether the scan uses the Rustleaks rule files.
+    rustleaks_rules: bool,
     workers: Option<usize>,
     report: Report,
 }
@@ -100,7 +101,7 @@ impl Flags {
             mode,
             decode: 0,
             archive: 0,
-            packs: false,
+            rustleaks_rules: false,
             workers: None,
             report: Report::Stdout,
         }
@@ -117,7 +118,8 @@ struct Plant {
     secret: Vec<u8>,
     decode_depth: usize,
     archive_depth: usize,
-    pack: bool,
+    /// Whether only a Rustleaks rule file reports this plant.
+    rustleaks_rule: bool,
     commit: usize,
 }
 
@@ -151,7 +153,7 @@ impl Repository {
             .filter(|plant| {
                 plant.decode_depth <= flags.decode
                     && plant.archive_depth <= flags.archive
-                    && (flags.packs || !plant.pack)
+                    && (flags.rustleaks_rules || !plant.rustleaks_rule)
             })
             .map(|plant| Expected {
                 rule: plant.rule.into(),
@@ -223,7 +225,8 @@ fn line_start(before: &[u8]) -> (usize, usize) {
     reason = "the repository layout and its plant list stay together"
 )]
 fn repository() -> Result<Repository> {
-    let (census_config, _, _) = pack_config(&PACKS.iter().map(|(id, _)| *id).collect::<Vec<_>>())?;
+    let (census_config, _, _) =
+        rule_file_config(&RULE_FILES.iter().map(|(id, _)| *id).collect::<Vec<_>>())?;
     let mut rng = Lcg::new(0x636c_6900);
     let mut plants = Vec::new();
     let mut filler = Vec::new();
@@ -241,7 +244,7 @@ fn repository() -> Result<Repository> {
             let (uri, password) = database_uri(0);
             let (line, column) = line_start(&content);
             let mut uri_plant = plant(DATABASE_URI_RULE, &path, line, column, &password, 0);
-            uri_plant.pack = true;
+            uri_plant.rustleaks_rule = true;
             plants.push(uri_plant);
             content.extend_from_slice(&uri);
             content.push(b'\n');
@@ -357,7 +360,7 @@ fn plant(
         secret: secret.to_vec(),
         decode_depth,
         archive_depth: 0,
-        pack: false,
+        rustleaks_rule: false,
         commit: 0,
     }
 }
@@ -477,7 +480,7 @@ fn invocation(run: &Run<'_>, flags: Flags, extra: &[&str]) -> Command {
             command.env("PATH", parent);
         }
     }
-    if !flags.packs {
+    if !flags.rustleaks_rules {
         // The CLI always adds the built-in rules to the default rules. A
         // config with the Gitleaks-derived default rules alone turns them off.
         command.args(["--config", GITLEAKS_RULES]);
@@ -485,8 +488,8 @@ fn invocation(run: &Run<'_>, flags: Flags, extra: &[&str]) -> Command {
     if let Some(workers) = flags.workers {
         command.args(["--complete-profile", &format!("profile-w{workers}.limits")]);
     } else {
-        // One thread, as before --jobs, so phases do not depend on the
-        // number of CPUs of the host.
+        // One detection thread, so phases do not depend on the number of
+        // CPUs of the host.
         command.args(["--jobs", "1"]);
     }
     match flags.report {
@@ -639,7 +642,7 @@ fn measure(
         unit: "input-bytes",
         units: bytes,
         input_fingerprint,
-        config: if flags.packs {
+        config: if flags.rustleaks_rules {
             b"default-and-all-packs"
         } else {
             b"default"
@@ -648,7 +651,7 @@ fn measure(
         findings: expected.len(),
         counts: json!({
             "mode": flags.mode.name(), "decode_depth": flags.decode,
-            "archive_depth": flags.archive, "packs": flags.packs,
+            "archive_depth": flags.archive, "packs": flags.rustleaks_rules,
             "complete_profile_workers": flags.workers, "report": report,
             "commits": if flags.mode == Mode::Git { commits } else { 0 },
             "process_state": "fresh-child-per-iteration",
@@ -750,17 +753,17 @@ fn matrix(
             cases.push((phase_name(flags, label), flags));
         }
     } else if id.ends_with("-packs-profile") {
-        for packs in [false, true] {
+        for rustleaks_rules in [false, true] {
             for workers in [None, Some(1)] {
                 let flags = Flags {
                     decode: 5,
-                    packs,
+                    rustleaks_rules,
                     workers,
                     ..base
                 };
                 let label = format!(
                     "packs-{}-profile-{}",
-                    if packs { "on" } else { "off" },
+                    if rustleaks_rules { "on" } else { "off" },
                     if workers.is_some() { "on" } else { "off" }
                 );
                 cases.push((phase_name(flags, &label), flags));
@@ -770,7 +773,7 @@ fn matrix(
         for workers in [1, 4, 8] {
             let flags = Flags {
                 decode: 5,
-                packs: true,
+                rustleaks_rules: true,
                 workers: Some(workers),
                 ..base
             };
@@ -816,9 +819,9 @@ fn startup(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
         target: "",
     };
     let mut phases = Vec::new();
-    for (label, packs) in [("none", false), ("all", true)] {
+    for (label, rustleaks_rules) in [("none", false), ("all", true)] {
         let mut flags = Flags::new(Mode::Stdin);
-        flags.packs = packs;
+        flags.rustleaks_rules = rustleaks_rules;
         phases.push(measure(
             &run,
             iterations,
@@ -837,7 +840,7 @@ fn startup(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
 /// Folders of 64 KiB files with one token each, from empty to 128 MiB, so the
 /// empty folder gives the fixed cost and the others the cost per byte.
 fn size_series(cli: &Path, iterations: usize) -> Result<Vec<Phase>> {
-    let (config, _, _) = pack_config(&[])?;
+    let (config, _, _) = rule_file_config(&[])?;
     let scratch = Scratch::new("scale")?;
     let mut rng = Lcg::new(0x7365_7269);
     let mut phases = Vec::new();
@@ -939,7 +942,7 @@ fn ignore_baseline(
     )?;
     fs::write(run.root.join("ignore-10000"), ignore)?;
 
-    let (config, _, _) = pack_config(&[])?;
+    let (config, _, _) = rule_file_config(&[])?;
     let description = config
         .rule(GITHUB_RULE)
         .ok_or("default configuration lacks github-pat")?
@@ -1109,7 +1112,7 @@ mod tests {
     }
 
     #[test]
-    fn plants_follow_depth_archive_and_pack_flags() {
+    fn plants_follow_depth_archive_and_rule_file_flags() {
         let repository = shared();
         let count = |flags| repository.expected(flags).len();
         let base = Flags::new(Mode::Dir);
@@ -1123,7 +1126,7 @@ mod tests {
         assert_eq!(count(Flags { archive: 8, ..base }), raw + 1);
         assert_eq!(
             count(Flags {
-                packs: true,
+                rustleaks_rules: true,
                 ..base
             }),
             raw + 1

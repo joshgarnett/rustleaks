@@ -10,14 +10,16 @@ Without a configuration file, Rustleaks scans with all of its built-in rules:
   Gitleaks default configuration; and
 - the Rustleaks rules, which add more providers and connection strings.
 
-The Rustleaks rules come from three rule files. They never change or remove a
-default rule.
+The Rustleaks rules come from three rule files. They do not change the
+default rules. For a few reviewed pairs, a Rustleaks rule's finding replaces a
+default rule's finding for the same secret; see [Findings from two
+rules](#findings-from-two-rules).
 
 | Rule file | What it adds | Details |
 | --- | --- | --- |
-| `rustleaks-extra-v1` | Azure Service Bus and Event Hubs keys, Azure App Configuration secrets, and MongoDB URI passwords | [rule file notes](../../crates/rustleaks-core/default/rustleaks-extra-v1.md) |
-| `rustleaks-providers-v1` | API keys and tokens for many service providers, such as Groq, NVIDIA, Figma, Slack session tokens, Mapbox and Vercel | [rule file notes](../../crates/rustleaks-core/default/rustleaks-providers-v1.md) |
-| `rustleaks-connections-v1` | Passwords in database connection strings, JDBC and ODBC URLs, libpq keyword strings, service URIs and Git URLs with credentials | [rule file notes](../../crates/rustleaks-core/default/rustleaks-connections-v1.md) |
+| `rustleaks-extra-v1` | Azure Service Bus and Event Hubs keys, Azure App Configuration secrets, and MongoDB URI passwords | [rule reference (for maintainers)](../../crates/rustleaks-core/default/rustleaks-extra-v1.md) |
+| `rustleaks-providers-v1` | API keys and tokens for many service providers, such as Groq, NVIDIA, Figma, Slack session tokens, Mapbox and Vercel | [rule reference (for maintainers)](../../crates/rustleaks-core/default/rustleaks-providers-v1.md) |
+| `rustleaks-connections-v1` | Passwords in database connection strings, JDBC and ODBC URLs, libpq keyword strings, service URIs and Git URLs with credentials | [rule reference (for maintainers)](../../crates/rustleaks-core/default/rustleaks-connections-v1.md) |
 
 Some Rustleaks rules are helpers that other rules depend on. They do not
 report findings by themselves.
@@ -48,14 +50,11 @@ allowlists:
     documents as safe to expose;
   - UUIDs under identifier names such as `token_id`, `client_id` or
     `keycloak.client-id`. Names that contain `secret`, such as `secret_id`,
-    and key names such as `api_key` are not affected.
+    and key names such as `api_key` are not affected. Some tools treat these
+    identifiers as secrets; Rustleaks does not.
 - A global allowlist hides, from every rule, the exact example values that
   Discord, Azurite, Telegram, Slack and Google publish in their
   documentation.
-
-Known loss: UUIDs under names such as `client_id` or `keycloak.client-id`
-are public OAuth and Keycloak identifiers, but some test sets label them as
-secrets. `generic-api-key` does not report them.
 
 The global `[allowlist]` table of the Gitleaks file is written as the first
 `[[allowlists]]` entry, which has the same meaning.
@@ -76,12 +75,12 @@ regex = '''my_token_[0-9a-f]{32}'''
 
 `useDefault = true` gives the default rules and all Rustleaks rules.
 `disabledRules` can turn off any of them by ID. A rule in your file with the
-same ID as a built-in rule changes it, as in Gitleaks. If you set `regex` or
-`entropy` on a Rustleaks rule, your value replaces the built-in matcher or
-entropy check. A `regex` also removes the rule's built-in link to its helper
-rules, so the rule then reports every match of your regex on its own.
+same ID as a built-in rule changes it. If you set `regex` or `entropy` on a
+Rustleaks rule, your value replaces the built-in matcher or entropy check. A
+`regex` also removes the rule's built-in link to its helper rules, so the
+rule then reports every match of your regex on its own.
 
-To scan with the Gitleaks-derived default rules only, pass a configuration
+To scan with the default rules only, pass a configuration
 that does not extend the default, such as a copy of
 [`gitleaks.toml`](../../crates/rustleaks-core/default/gitleaks.toml).
 
@@ -98,20 +97,15 @@ instead.
 
 ## Built-in rules in the library
 
-In `rustleaks-core`, `ConfigLoader::load_default` and `useDefault` give
-every built-in rule, as the CLI does. `ConfigLoader::with_default_config`
-replaces the default, for example with `config::DEFAULT_CONFIG` for the
-default rules alone. `NativePolicy` builds a custom composition. See [Using
-rustleaks-core](library.md#built-in-rules).
+For the library, see [Using rustleaks-core](library.md#built-in-rules).
 
 ## Findings from two rules
 
 Two built-in rules can match the same secret. Two filters keep some of these
 to one finding.
 
-Rustleaks uses the same filter as Gitleaks for rules with `generic` in their
-ID, such as `generic-api-key`. The filter drops a finding from such a rule
-only when all of these are true:
+For rules with `generic` in their ID, such as `generic-api-key`, a filter
+drops a finding only when all of these are true:
 
 - another rule finds a secret on the same line and in the same commit;
 - that rule has no `generic` in its ID; and

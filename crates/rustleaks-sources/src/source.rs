@@ -78,7 +78,8 @@ pub enum SourceIssueKind {
     ArchiveMember,
     /// Compressed data could not be decoded or verified.
     Decode,
-    /// A recognized format is outside the selected native decoder boundary.
+    /// A recognized archive uses a feature that the archive source does not
+    /// support.
     UnsupportedArchive,
     /// A path or object was not present.
     NotFound,
@@ -118,8 +119,10 @@ pub enum SourceIssueDisposition {
 /// Structured, recoverable source diagnostic.
 ///
 /// Issues are data, not logging side effects. A [`SourceEvent::Fragment`] can
-/// carry one together with successfully read bytes, preserving upstream's
-/// `n > 0` plus non-EOF error outcome without making the fragment unobservable.
+/// carry one together with bytes from the same read. [`SourceRunner`] does
+/// not scan such bytes.
+///
+/// [`SourceRunner`]: crate::SourceRunner
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceIssue {
     stage: SourceStage,

@@ -1,17 +1,16 @@
 use std::io::{self, Read};
 
-use crate::Error;
+use crate::{Error, decoder::ZstdSlot};
 
 const INPUT_BUFFER_SIZE: usize = 8 * 1024;
 const MAX_IDLE_STEPS: usize = 16;
 
-/// Working memory for one Zstandard coder.
+/// Fixed working memory for one Zstandard coder, apart from its history.
 ///
 /// The decoder borrows these buffers, so the caller that builds a decode
 /// stack owns one set for each Zstandard coder in the block. None of them
 /// grows with the size of the member.
 pub(crate) struct ZstdBuffers {
-    history: Vec<u8>,
     block: Vec<u8>,
     literals: Vec<u8>,
     fse: Vec<zstd_zero::FseEntry>,
@@ -22,16 +21,12 @@ pub(crate) struct ZstdBuffers {
 }
 
 impl ZstdBuffers {
-    pub(crate) fn new(memory_limit_kb: usize) -> Result<Self, Error> {
-        let memory_limit = memory_limit_kb
-            .checked_mul(1024)
-            .ok_or_else(|| Error::other("7z decoder memory limit overflow"))?;
+    pub(crate) fn new() -> Result<Self, Error> {
         let mut pending = Vec::new();
         pending
             .try_reserve_exact(zstd_zero::MAX_BLOCK_SIZE)
             .map_err(|_| Error::other("unable to allocate the 7z Zstandard output buffer"))?;
         Ok(Self {
-            history: try_zeroed(memory_limit, "Zstandard history")?,
             block: try_zeroed(zstd_zero::MAX_BLOCK_SIZE, "Zstandard block scratch")?,
             literals: try_zeroed(zstd_zero::MAX_BLOCK_SIZE, "Zstandard literal scratch")?,
             fse: try_zeroed(zstd_zero::FSE_ENTRIES, "Zstandard FSE scratch")?,
@@ -70,10 +65,10 @@ impl<'b, R: Read> ZstdDecoder<'b, R> {
     pub(crate) fn new(
         input: R,
         uncompressed_len: usize,
-        buffers: &'b mut ZstdBuffers,
+        slot: ZstdSlot<'b>,
     ) -> Result<Self, Error> {
+        let ZstdSlot { history, buffers } = slot;
         let ZstdBuffers {
-            history,
             block,
             literals,
             fse,
@@ -333,9 +328,15 @@ mod tests {
         frame
     }
 
+    fn slot<'b>(history: &'b mut [u8], buffers: &'b mut ZstdBuffers) -> ZstdSlot<'b> {
+        ZstdSlot { history, buffers }
+    }
+
     fn decode_all(input: &[u8], declared: usize, read_size: usize) -> io::Result<Vec<u8>> {
-        let mut buffers = ZstdBuffers::new(1024).unwrap();
-        let mut decoder = ZstdDecoder::new(input, declared, &mut buffers).unwrap();
+        let mut history = vec![0; 1024 * 1024];
+        let mut buffers = ZstdBuffers::new().unwrap();
+        let mut decoder =
+            ZstdDecoder::new(input, declared, slot(&mut history, &mut buffers)).unwrap();
         let mut output = Vec::new();
         let mut buffer = vec![0; read_size];
         loop {
@@ -354,8 +355,10 @@ mod tests {
         let blocks = 128;
         let size = blocks * zstd_zero::MAX_BLOCK_SIZE;
         let input = rle_frame(b'a', blocks);
-        let mut buffers = ZstdBuffers::new(1024).unwrap();
-        let mut decoder = ZstdDecoder::new(input.as_slice(), size, &mut buffers).unwrap();
+        let mut history = vec![0; 1024 * 1024];
+        let mut buffers = ZstdBuffers::new().unwrap();
+        let mut decoder =
+            ZstdDecoder::new(input.as_slice(), size, slot(&mut history, &mut buffers)).unwrap();
         let mut buffer = vec![0; 100_000];
         let mut total = 0;
         loop {
@@ -415,11 +418,43 @@ mod tests {
         input.extend_from_slice(&[b'z'; 1000]);
         // Zero is not the checksum of this content.
         input.extend_from_slice(&[0; 4]);
-        let mut buffers = ZstdBuffers::new(1024).unwrap();
-        let mut decoder = ZstdDecoder::new(input.as_slice(), 1000, &mut buffers).unwrap();
+        let mut history = vec![0; 1024 * 1024];
+        let mut buffers = ZstdBuffers::new().unwrap();
+        let mut decoder =
+            ZstdDecoder::new(input.as_slice(), 1000, slot(&mut history, &mut buffers)).unwrap();
         // The block decodes in one step that reaches the declared size, so
         // the frame end is checked before the first read returns.
         let error = decoder.read(&mut [0; 10]).unwrap_err();
+        assert!(error.to_string().contains("decode failed"), "{error}");
+    }
+
+    #[test]
+    fn reused_buffers_decode_later_frames_like_new_buffers() {
+        let first: Vec<u8> = (0..200_000_u32).map(|value| (value % 241) as u8).collect();
+        let second = b"second synthetic member".to_vec();
+        let mut history = vec![0; 1024 * 1024];
+        let mut buffers = ZstdBuffers::new().unwrap();
+        for content in [&first, &second, &first] {
+            let input = raw_frame(content);
+            let mut decoder = ZstdDecoder::new(
+                input.as_slice(),
+                content.len(),
+                slot(&mut history, &mut buffers),
+            )
+            .unwrap();
+            let mut output = Vec::new();
+            decoder.read_to_end(&mut output).unwrap();
+            assert_eq!(&output, content);
+        }
+        // A frame whose window is above the history length is rejected.
+        let input = raw_frame(b"x");
+        let mut decoder = ZstdDecoder::new(
+            input.as_slice(),
+            1,
+            slot(&mut history[..64 * 1024], &mut buffers),
+        )
+        .unwrap();
+        let error = decoder.read(&mut [0; 4]).unwrap_err();
         assert!(error.to_string().contains("decode failed"), "{error}");
     }
 

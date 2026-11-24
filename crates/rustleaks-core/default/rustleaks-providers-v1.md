@@ -1,27 +1,20 @@
 # Rustleaks provider rules v1
 
-The `rustleaks-providers-v1` pack adds 303 namespaced rules for provider API
-keys, tokens and related credentials. 31 of them are hidden helper rules: 30
-association helpers and 1 Azure Service Bus tuple helper. The other 272 rules
-report findings. Every default scan uses the pack. It runs locally. It does
-not contact a provider or check whether a credential is active, and it does
-not change the packaged default rules. It covers selected formats. It does
-not claim complete coverage of any provider or scanner.
+This file is the reference for maintainers of the `rustleaks-providers-v1`
+rules. For the rules a scan uses, see [Built-in
+rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md).
+
+This rule file adds 303 namespaced rules for provider API keys, tokens and
+related credentials. 31 of them are hidden helper rules: 30 association
+helpers and 1 Azure Service Bus tuple helper. The other 272 rules report
+findings. Every default scan uses these rules. They run locally. They do not
+contact a provider or check whether a credential is active. They cover
+selected formats. They do not claim complete coverage of any provider or
+scanner.
 
 ## Selection
 
-- CLI: always used, with the default rules, when no configuration is
-  selected and in a configuration with `[extend] useDefault = true`.
-- Library: `ConfigLoader::load_default` and `[extend] useDefault = true`
-  use all built-in rule files, unless `ConfigLoader::with_default_config`
-  replaces the default.
-  `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)?.build()?`
-  builds a custom composition, with `PROVIDER_RULES_V1` from `rustleaks_core::native`.
-- The pack can be combined with `rustleaks-extra-v1` and
-  `rustleaks-connections-v1` in any order. The exact bytes and the order of
-  the packs are part of the policy identity.
-- The rules do not turn on `--complete-profile`.
-- The pack uses native-only tables:
+- The rule file uses native-only tables:
   - 213 rules use `byte-shannon-f64-v1` byte entropy: 151 reject values
     below the threshold (`lt`) and 62 reject values at or below it (`le`).
     18 rules use scalar entropy and 72 have no entropy check.
@@ -30,13 +23,16 @@ not claim complete coverage of any provider or scanner.
   - 2 rules use secret predicates.
 - The normal configuration loader (`ConfigLoader`, `--config`, inline
   configuration or joined TOML files) rejects these tables before scanning.
-- An explicit rule selection must include every hidden helper that a selected
-  rule needs. A selected parent without its helpers fails to build.
+- A rule selection, such as `--enable-rule`, keeps the hidden helpers that a
+  selected rule needs. They do not report findings of their own.
+- In a custom composition, add it with
+  `NativePolicy::builder().with_pack("rustleaks-providers-v1", PROVIDER_RULES_V1)`.
+  `PROVIDER_RULES_V1` is in `rustleaks_core::native`.
 
-See [Built-in
-rules](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/built-in-rules.md)
-for users and [Rule pack
-authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md)
+See [Using
+rustleaks-core](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/library.md#built-in-rules)
+for the library and [Rule
+authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md)
 for contributors, including the meaning of the native tables.
 
 ## Rules
@@ -181,7 +177,7 @@ of the match; only the token is the secret.
 - The source `MaxLen` equals the full match length. This is a rule on the
   expression only, not a claim of equal behavior with the source scanner's
   streaming code.
-- Low-entropy matches are reported when the pack runs alone. Global
+- Low-entropy matches are reported when these rules run alone. Global
   allowlists still apply in a composition.
 - `xai-api-key-80` uses only the Apache 80-byte body expression, and
   `xai-token-` management keys do not match it. The MIT form for 70 to 120
@@ -544,21 +540,25 @@ pinned Apache-2.0 Veles detectors.
   the default `jwt` finding for a Monday token includes one extra backslash,
   while the Monday rule extracts the exact credential. Ordinary Monday JWT
   and Grafana forms can gain provider attribution without a new occurrence.
-- Three rules report the same secret span as another rule for a shared
-  form. Nothing removes these duplicate findings:
+- Three rules match the same secret span as another rule for a shared form.
+  For these, the overlap filter reports one finding; see [Same secret from
+  two rules](#same-secret-from-two-rules):
   - `alibaba-access-key-id-boundary` and the default `alibaba-access-key-id`
-    rule both report a 20-byte body before a delimiter that the default rule
-    accepts, such as a space. Other lengths and a comma give only the pack
+    rule both match a 20-byte body before a delimiter that the default rule
+    accepts, such as a space. Only the default rule's finding is reported.
+    Other lengths and a comma give only the `alibaba-access-key-id-boundary`
     finding.
   - `slack-config-access-token-166` and the default
-    `slack-config-access-token` rule both report a one-digit segment with a
-    166-byte body. Segments of 2 to 10 digits give only the pack finding.
-  - `xai-api-key-delimiter` and `xai-api-key-80` both report an 80-byte body
-    before a delimiter or the end of input. On an 81 to 120 byte alphanumeric
-    body, `xai-api-key-80` reports its 84-byte prefix and
-    `xai-api-key-delimiter` reports the full token.
+    `slack-config-access-token` rule both match a one-digit segment with a
+    166-byte body. Only the default rule's finding is reported. Segments of 2
+    to 10 digits give only the `slack-config-access-token-166` finding.
+  - `xai-api-key-delimiter` and `xai-api-key-80` both match an 80-byte body
+    before a delimiter or the end of input. Only the `xai-api-key-delimiter`
+    finding is reported. On an 81 to 120 byte alphanumeric body,
+    `xai-api-key-80` reports its 84-byte prefix and `xai-api-key-delimiter`
+    reports the full token. The secrets differ, so both are reported.
 - The source marks the Betterleaks Alibaba rule `skipReport`, as a part of
-  its `alibaba-secret-key` rule. This pack reports it, as the default rule
+  its `alibaba-secret-key` rule. This rule file reports it, as the default rule
   does. `xai-api-key-delimiter` also reports `xai-token-` management keys,
   as the source does. `slack-config-refresh-token-147` keeps a one-digit
   segment.
@@ -574,13 +574,12 @@ pinned Apache-2.0 Veles detectors.
 | `kubernetes-secret-yaml-long-context` | One Kubernetes Secret data item with 201 to 1000 ASCII bytes between `kind` and the data item, in either order | Data item, key and value | Source YAML path, keyword, template and empty value predicates |
 | `cloudflare-api-token-context` | One of 7 credential labels and a 40-byte token before a comma | Token | None |
 
-- The Azure key rules in the default rules and the extra pack still apply
+- The Azure key rules in the default rules and the extra rule file still apply
   on their own.
 - The Service Bus parent needs its own complete tuple through the helper. The
   helper keeps the source whole-tuple entropy and exclusions, and the parent
   also needs key entropy above 3.5. The detection input and both ends of the
-  full match must be the same, also inside decoded inputs. An explicit rule
-  selection must name both IDs.
+  full match must be the same, also inside decoded inputs.
 - The JWT rule is a text pattern for an authentication candidate. It is not a
   JSON or JOSE parser and does not check signatures. Bare unsigned data and
   signed JWTs do not match. The default `jwt` rule can report a signed
@@ -637,8 +636,8 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
 - All edges use the `full-match-window` relation. The source contract is
   pinned Kingfisher `scan_blob_with_context` without `DetectionOptions`. The
   window and buffer rules are in
-  [Rule pack
-  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md).
+  [Rule
+  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md).
   Raw, decoded, sibling and nested buffers cannot supply each other's
   helpers.
   Native depth-two isolation does not claim that the source API decodes
@@ -726,8 +725,8 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
   2.5 and is rejected. The predicate covers the full source alphabet and
   case range. It uses no dictionary or approximation.
 - Predicate details and costs are in
-  [Rule pack
-  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-pack-authoring.md).
+  [Rule
+  authoring](https://github.com/joshgarnett/rustleaks/blob/main/docs/dev/rule-authoring.md).
   The tokenizer data is described in the [tokenizer data
   README](../data/README.md).
 
@@ -756,12 +755,12 @@ out `rustleaks.association.helper.`. A window of `0` has no line limit.
 
 ## Same secret from two rules
 
-The `[[overlaps]]` entries at the end of the pack list 15 reviewed rule pairs.
-When both rules of a pair report the same file, commit, secret and secret
-range, only the `keep` rule's finding is reported. Where both rules name the
-same provider, the default rule is kept: Grafana, Alibaba Cloud, PlanetScale,
-JFrog (two rules each for API keys and reference tokens), GitLab incoming mail
-and Slack configuration tokens. `xai-api-key-delimiter` is kept over
+The `[[overlaps]]` entries at the end of the rule file list 15 reviewed
+rule pairs. When both rules of a pair report the same file, commit, secret
+and secret range, only the `keep` rule's finding is reported. Where both
+rules name the same provider, the default rule is kept: Grafana, Alibaba
+Cloud, PlanetScale, JFrog (two rules each for API keys and reference tokens),
+GitLab incoming mail and Slack configuration tokens. `xai-api-key-delimiter` is kept over
 `xai-api-key-80`. Where a provider rule names the issuer of a key that a
 broader rule also accepts, the provider rule is kept: WorkOS and Highnote over
 `stripe-access-token`, Clerk over `stripe-access-token-delimiter`, and Temporal
@@ -811,7 +810,7 @@ Inherited policy:
   A local copy cannot undo a global exclusion.
 - Native allow comments, decoding, required-rule behavior and resource
   controls still apply. There is no switch to turn off inherited filtering.
-  The pack does not claim the same policy as any source scanner.
+  The rule file does not claim the same policy as any source scanner.
 
 Overlap:
 
@@ -828,7 +827,7 @@ Overlap:
   credentials. Output across provider rules is not guaranteed to be
   disjoint.
 - Count exact occurrences apart from attribution and duplicates when you
-  evaluate the pack.
+  evaluate these rules.
 
 Resources:
 
@@ -879,7 +878,7 @@ commit IDs and the SHA-256 of each source file.
 - `rustleaks-providers-v1.provenance.json` records, for each rule, the source
   URL and SHA-256, original pattern, filters, keywords, selection and every
   change. The `NOTICE` keeps the attribution for each source.
-- No downloaded scanner code runs or ships in the pack.
+- No downloaded scanner code runs or ships with the rules.
 
 Changes made:
 

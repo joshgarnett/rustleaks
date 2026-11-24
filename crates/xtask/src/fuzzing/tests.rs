@@ -16,6 +16,27 @@ use process::Outcome;
 
 const SENTINEL: &str = "SYNTHETIC_PRIVATE_FUZZ_SENTINEL";
 
+#[test]
+fn listed_subcommands_match_dispatch() {
+    let source = include_str!("../fuzzing.rs");
+    let start = source
+        .find("let rest = match operation.as_str() {")
+        .unwrap();
+    let end = start
+        + source[start..]
+            .find("_ => return Err(usage.into()),")
+            .unwrap();
+    let dispatched = source[start..end]
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        dispatched,
+        super::FUZZ_SUBCOMMANDS.iter().copied().collect()
+    );
+}
+
 fn shell(root: &Path, script: &str) -> Command {
     process::command(root, "/bin/sh", &["-c".into(), script.into()])
 }

@@ -1,8 +1,15 @@
-use std::io::{self, Read, Result};
+use std::io::{Read, Result};
 
-use super::{Decoder, ReadState, WriteState};
+use super::{Decoder, ReadState};
+
+/// Size of the buffer that carries compressed input to the decoder.
+const INPUT_CHUNK: usize = 8 * 1024;
 
 /// A high-level decoder that wraps a [`Read`] and implements [`Read`], yielding decompressed bytes
+///
+/// Streams that follow each other in the input, as `pbzip2` or `cat` write
+/// them, are decoded in order. Data after the last stream that is not
+/// another bzip2 stream is an error.
 ///
 /// ```no_run
 /// use std::fs::File;
@@ -40,37 +47,13 @@ impl<R> DecoderReader<R> {
 impl<R: Read> Read for DecoderReader<R> {
     /// Decompress bzip2 data from the underlying reader
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let mut read_zero = false;
-        let mut tmp_buf = [0; 1024];
+        let mut input = [0; INPUT_CHUNK];
 
         loop {
             match self.decoder.read(buf)? {
                 ReadState::NeedsWrite(space) => {
-                    let read = self.reader.read(&mut tmp_buf[..space.min(1024)])?;
-
-                    if read_zero && self.decoder.header_block.is_none() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "The reader is empty?",
-                        ));
-                    }
-                    read_zero = read == 0;
-
-                    match self.decoder.write(&tmp_buf[..read])? {
-                        WriteState::NeedsRead => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "decoder requested output while accepting input",
-                            ));
-                        }
-                        WriteState::Written(written) if written == read => {}
-                        WriteState::Written(_) => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "decoder did not consume the accepted input",
-                            ));
-                        }
-                    }
+                    let read = self.reader.read(&mut input[..space.min(INPUT_CHUNK)])?;
+                    self.decoder.write(&input[..read]);
                 }
                 ReadState::Read(n) => return Ok(n),
                 ReadState::Eof => return Ok(0),

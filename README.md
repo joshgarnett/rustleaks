@@ -78,9 +78,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The value above is synthetic test data. The `rustleaks:allow` comment stops
-Rustleaks from reporting it when it scans this repository. The engine is
-synchronous, does no I/O and starts no threads. See [Using
+The value above is synthetic test data. The engine is synchronous and starts
+no threads. It reads files only through two helpers that you call yourself.
+See [Using
 rustleaks-core](docs/user/library.md) and the [API
 documentation](https://docs.rs/rustleaks-core).
 

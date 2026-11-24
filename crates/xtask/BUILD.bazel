@@ -10,7 +10,6 @@ rust_binary(
     aliases = aliases(),
     compile_data = glob([
         "src/**/*.py",
-        "src/**/*.txt",
         "src/tooling/native_coverage/*.json",
         "src/tooling/native_coverage/*.toml",
     ]),
@@ -70,7 +69,7 @@ _CLI_REGRESSION_ENV = select({
     },
 })
 
-# The ignored Rust test is explicitly selected here and remains part of CI.
+# Runs the ignored CLI corpus replay test.
 rust_test(
     name = "cli_regression_test",
     aliases = aliases(normal = True, normal_dev = True),

@@ -1,5 +1,4 @@
 title = "Rustleaks repository self-scan"
-minVersion = "0.1.0-alpha.5"
 
 [extend]
 useDefault = true
@@ -14,6 +13,14 @@ paths = [
 description = "Copied fixtures intentionally contain upstream secret-shaped test data"
 paths = [
   '''(^|/)testdata/fixtures/''',
+]
+
+[[allowlists]]
+description = "Older commits hold the same test corpora and fixtures under compat/"
+paths = [
+  '''^compat/(allowlist|assertion|cli|composite|config|decoder|detect|generator|git|regex|report|session|source)-corpus/''',
+  '''^compat/(api-dispositions-v1\.jsonl|api-inventory-v1\.json)$''',
+  '''^compat/fixtures/''',
 ]
 
 [[allowlists]]

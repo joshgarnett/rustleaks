@@ -214,9 +214,7 @@ impl SourceOutcome {
 /// The runner owns no global pool and exports no synchronization primitive.
 /// Both single-worker and multi-worker operation use the same bounded queue and
 /// session-batch path. Findings are merged in producer fragment order, so a
-/// complete run returns the single-worker order for any worker count. Finding
-/// order is not a compatibility contract with the pinned upstream; complete
-/// duplicate-preserving multisets are invariant for complete runs. Budget stops
+/// complete run returns the single-worker order for any worker count. Budget stops
 /// can return a scheduling-dependent subset of completely scanned fragments,
 /// and their finding order remains unspecified.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -535,10 +533,9 @@ fn run_scheduled(
                     }
                     SourceEvent::Fragment { fragment, issue } => {
                         if let Some(issue) = issue {
-                            // Gitleaks does not scan a read that reported an
-                            // issue, even when the same read returned bytes.
-                            // The source event keeps them for lower-level
-                            // protocol consumers.
+                            // A read that reported an issue is not scanned,
+                            // even when it returned bytes. The source event
+                            // keeps the bytes for lower-level consumers.
                             return Ok(retained(control.retain_issue(
                                 &mut issues,
                                 &mut omitted_issues,

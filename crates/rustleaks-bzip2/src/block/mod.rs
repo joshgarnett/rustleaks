@@ -1,13 +1,11 @@
-//! bzip2 low-level block APIs
+//! bzip2 block decoder
 
 use std::mem;
 
 use tinyvec::ArrayVec;
 
-pub use self::error::BlockError;
-use crate::bitreader::BitReader;
-#[cfg(target_pointer_width = "64")]
-use crate::bitreader::CachedBitReader;
+pub(crate) use self::error::BlockError;
+use crate::bitreader::{BitReader, CachedBitReader};
 use crate::crc::Hasher;
 use crate::header::Header;
 use crate::huffman::HuffmanTree;
@@ -16,8 +14,8 @@ use crate::move_to_front::MoveToFrontDecoder;
 mod bwt;
 mod error;
 
-const BLOCK_MAGIC: u64 = 0x314159265359;
-const FINAL_MAGIC: u64 = 0x177245385090;
+pub(crate) const BLOCK_MAGIC: u64 = 0x314159265359;
+pub(crate) const FINAL_MAGIC: u64 = 0x177245385090;
 
 pub(crate) struct Block {
     header: Header,
@@ -40,6 +38,8 @@ enum State {
     ReadyForRead,
     Reading,
     NotReady,
+    /// The end-of-stream marker and a matching combined CRC were read.
+    StreamEnd,
 }
 
 impl Block {
@@ -64,24 +64,25 @@ impl Block {
         }
     }
 
-    pub fn is_ready_for_read(&self) -> bool {
-        match self.state {
-            State::ReadyForRead => true,
-            State::Reading | State::NotReady => false,
-        }
-    }
-
-    pub fn is_reading(&self) -> bool {
-        match self.state {
-            State::Reading => true,
-            State::ReadyForRead | State::NotReady => false,
-        }
+    /// Prepares the block for the next stream and keeps its buffer.
+    pub fn restart(&mut self, header: Header) {
+        self.header = header;
+        self.tt.clear();
+        self.combined_crc = 0;
+        self.state = State::NotReady;
     }
 
     pub fn is_not_ready(&self) -> bool {
         match self.state {
             State::NotReady => true,
-            State::ReadyForRead | State::Reading => false,
+            State::ReadyForRead | State::Reading | State::StreamEnd => false,
+        }
+    }
+
+    pub fn is_stream_end(&self) -> bool {
+        match self.state {
+            State::StreamEnd => true,
+            State::ReadyForRead | State::Reading | State::NotReady => false,
         }
     }
 
@@ -110,10 +111,11 @@ impl Block {
                         let expected_combined_crc = reader
                             .read_u32(32)
                             .ok_or_else(|| BlockError::new("whole stream crc truncated"))?;
-                        self.state = State::NotReady;
                         if expected_combined_crc == self.combined_crc {
+                            self.state = State::StreamEnd;
                             Ok(0)
                         } else {
+                            self.state = State::NotReady;
                             Err(BlockError::new("combined stream crc mismatch"))
                         }
                     }
@@ -131,7 +133,7 @@ impl Block {
 
                 Ok(n)
             }
-            State::NotReady => Err(BlockError::new("not ready")),
+            State::NotReady | State::StreamEnd => Err(BlockError::new("not ready")),
         }
     }
 
@@ -236,7 +238,7 @@ impl Block {
         let huffman_groups = reader
             .read_u8(3)
             .ok_or_else(|| BlockError::new("huffman groups truncated"))?;
-        if huffman_groups < 2 || huffman_groups > 6 {
+        if !(2..=6).contains(&huffman_groups) {
             return Err(BlockError::new("invalid number of huffman trees"));
         }
 
@@ -264,7 +266,7 @@ impl Block {
             *selector_item = move_to_front_decoder.decode(trees);
         }
 
-        // limited in length of huffman_used_symbols
+        // limited in length of huffman_used_bitmaps
         let mut symbols = [0u8; 256];
         symbols[..huffman_used_bitmaps.len()].copy_from_slice(&huffman_used_bitmaps);
         let mut move_to_front_decoder_2 = MoveToFrontDecoder::new_from_symbols(symbols);
@@ -281,7 +283,7 @@ impl Block {
 
             for length_item in &mut *lengths {
                 loop {
-                    if length < 1 || length > 20 {
+                    if !(1..=20).contains(&length) {
                         return Err(BlockError::new("huffman length out of range"));
                     }
 
@@ -321,7 +323,6 @@ impl Block {
         let mut c = [0u32; 256];
 
         let mut decoded = 0;
-        #[cfg(target_pointer_width = "64")]
         let mut r = CachedBitReader::new(reader)
             .ok_or_else(|| BlockError::new("huffman bitstream truncated"))?;
         loop {
@@ -336,7 +337,6 @@ impl Block {
                 decoded = 0;
             }
 
-            #[cfg(target_pointer_width = "64")]
             let v = {
                 let read = r.read();
                 let v = current_huffman_tree.decode(&mut r);
@@ -351,8 +351,6 @@ impl Block {
                     v
                 }
             };
-            #[cfg(not(target_pointer_width = "64"))]
-            let v = current_huffman_tree.decode(reader);
 
             let v = v.ok_or_else(|| BlockError::new("huffman bitstream truncated"))?;
             decoded += 1;
@@ -395,7 +393,6 @@ impl Block {
             self.tt.push(u32::from(b));
             c[usize::from(b)] += 1;
         }
-        #[cfg(target_pointer_width = "64")]
         r.restore(reader, r.read());
 
         if (orig_ptr as usize) >= self.tt.len() {
@@ -412,9 +409,9 @@ impl Block {
     }
 }
 
-const fn combine_crc(combined_crc: u32, block_crc: u32) -> u32 {
+pub(crate) const fn combine_crc(combined_crc: u32, block_crc: u32) -> u32 {
     combined_crc.rotate_left(1) ^ block_crc
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -87,7 +87,7 @@ impl CompiledAllowlist {
                 .is_some_and(|matcher| matcher.is_match(path))
     }
 
-    // Retained as an unbudgeted reference for the controlled allowlist tests.
+    // Unbudgeted version used by the allowlist tests as a reference.
     #[cfg(test)]
     pub(crate) fn regex_allowed(&self, target: &[u8]) -> bool {
         !target.is_empty()
@@ -160,8 +160,6 @@ pub struct CompiledRule {
     pub(crate) allowlists: Vec<CompiledAllowlist>,
     pub(crate) required: Vec<RequiredRuleSpec>,
     pub(crate) skip_report: bool,
-    /// Whether the rule comes from a native rule pack.
-    pub(crate) native_pack: bool,
     /// IDs of the rules whose finding replaces a finding of this rule with
     /// the same file, commit, secret and exact secret range. Set only from
     /// the reviewed `[[overlaps]]` entries of native rule packs.
@@ -290,7 +288,8 @@ pub struct CompiledConfig {
 }
 
 impl CompiledConfig {
-    /// Maximum ordered rule IDs accepted by one projected configuration.
+    /// Maximum rule IDs, distinct keywords, and targeted allowlist entries in
+    /// one projected configuration.
     pub const MAX_SELECTED_RULES: usize = 4_096;
     /// Maximum inspectable source text copied into one rule projection.
     pub const MAX_SELECTED_BYTES: usize = 8 * 1_024 * 1_024;
@@ -331,7 +330,8 @@ impl CompiledConfig {
         self.rules.get(id)
     }
 
-    /// IDs in Go-compatible report order. Duplicate IDs remain duplicate.
+    /// IDs in the order that findings are reported. Duplicate IDs remain
+    /// duplicate.
     #[must_use]
     pub fn ordered_rule_ids(&self) -> &[String] {
         &self.ordered_rule_ids
@@ -494,8 +494,8 @@ impl CompiledConfig {
         }
         for id in selected_ids {
             // A rule that `disabledRules` turned off but another rule still
-            // needs is compiled without being listed. Selecting it by ID is
-            // an unknown rule, as it was before it was kept.
+            // needs is compiled without being listed. Selecting it by ID
+            // gives an unknown-rule error.
             let listed = self.ordered_rule_ids.iter().any(|listed| listed == id);
             let Some(rule) = self.rules.get(id).filter(|_| listed) else {
                 return Err(RuleSelectionError::not_found(try_copy_selection_string(
@@ -565,7 +565,10 @@ impl CompiledConfig {
     }
 }
 
-/// An enabled-rule request named no effective configured rule.
+/// A rule selection failed.
+///
+/// A requested rule ID is unknown, the selection exceeds a count or size
+/// limit, or memory for the selected rules cannot be reserved.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuleSelectionError {
     rule_id: String,
@@ -609,7 +612,8 @@ impl RuleSelectionError {
         }
     }
 
-    /// Returns the missing rule ID.
+    /// Returns the unknown rule ID, or an empty string when a limit or an
+    /// allocation failed.
     #[must_use]
     pub fn rule_id(&self) -> &str {
         &self.rule_id

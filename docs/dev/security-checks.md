@@ -184,8 +184,8 @@ malicious processes of the same user.
 
 ## Deep security profile
 
-`just security-deep` is an optional local review. It is not part of release
-qualification, pull request CI or a hosted schedule. It keeps its report and
+`just security-deep` is an optional local review. It is not part of the release
+checks, pull request CI or a hosted schedule. It keeps its report and
 private evidence on success and failure.
 
 ```sh
@@ -362,7 +362,8 @@ and has no calendar expiry. It covers only the reviewed registry source, the
 resolution, and the eight maintained 64-bit targets. The vet check enforces
 these limits and keeps the crate out of every core feature selection. The
 published core package excludes `compcol`, and binary release archives
-contain only the executable, README, LICENSE and NOTICE. The decision does
+contain the executable, README, LICENSE, NOTICE and the `licenses/` notice
+tree, which holds license and notice texts only. The decision does
 not cover redistribution of unselected codec sources. Any scope change needs
 a new review. No other exemption without a date is accepted.
 
@@ -378,27 +379,30 @@ package set is enforced by `xtask`; it is not a security conclusion. See
 
 ### Public API
 
-The committed public API snapshot is the exact workspace baseline. For every
-release candidate, run `cargo-semver-checks` for each public crate and feature
-profile against the latest version on crates.io, then review the API by hand.
-See the [public API README](../../testdata/public-api/README.md).
+For the public API snapshot and the `cargo-semver-checks` run of each release
+candidate, see the [public API README](../../testdata/public-api/README.md).
 
 ## Repository self-scan
 
 Scan the worktree and Git history with Rustleaks before a release. Pull
 requests run the worktree scan, and the nightly workflow runs both scans.
 
-- The root `.rustleaks.toml` extends the default rules and skips only
-  generated compatibility corpora, the two generated API traceability
-  indexes, copied fixtures, the native rule pack test fixtures, Git
-  metadata and build output. In the providers pack provenance record and
-  the native coverage review record it allows only Git revision lines, and
-  in the release license index only SHA-256 hash lines. A directory scan
+- The root `.rustleaks.toml` extends the default rules and skips the test
+  corpora under `testdata/` (and under `compat/` in older commits), copied
+  fixtures, the rule test fixtures and
+  case files, a few rule tests, examples and rule documents that hold
+  synthetic credentials, Git metadata and build output. In `CHANGELOG.md` it
+  allows only two quoted synthetic passwords. In the providers pack
+  provenance record and the native coverage review record it allows only Git
+  revision lines, and in the release license index only SHA-256 hash lines. A directory scan
   skips every file that matches an allowlist path, so only the Git history
   scan applies these line rules.
 - The root `.rustleaksignore` lists reviewed fingerprints of synthetic
   examples and generated hashes. A worktree fingerprint includes the line
-  number, so update it when an edit moves the reviewed line.
+  number. When an edit moves a reviewed line, add the entry for the new line
+  and keep the old one, because the Git history scan still finds the value
+  at the old line in older commits. Before you remove an entry as stale, run
+  both the `git` history scan and the `dir` scan without it.
 - GitHub secret scanning skips only the generated corpora, copied fixtures and
   the default configuration files listed in `.github/secret_scanning.yml`.
   Repository checks require that exact list. Generator source, examples and
@@ -431,13 +435,11 @@ Untrusted pull request code never runs from `pull_request_target`,
 | --- | --- |
 | Pull request | `just ci`, the worktree self-scan, `just security` (cargo-deny, RustSec, locked cargo-vet, unsafe inventory, Miri and panic policy), `just fuzz-smoke` (builds and runs the fuzz targets), `just release-dry-run`, dependency review on graph changes, current stable and MSRV, and the native platform lanes. No pull request job gets secrets |
 | Nightly | Longer fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 120 seconds), newest allowed dependency resolution in a checkout that is not committed, and the worktree and history self-scan |
-| Weekly | Pinned Miri, unsafe inventory, cargo-vet, RustSec and all native target lanes. The weekly fuzz job raises run and time budgets but keeps the smoke input limits; it does not run the deep profile. A Bazel coverage review measures ordinary tests, not fuzz coverage. CodeQL and OpenSSF Scorecard run on their own schedules |
+| Weekly | The CI workflow on its weekly schedule runs every CI job, including `just security` and all native target lanes. `weekly.yml` runs slower fuzz campaigns (`RUSTLEAKS_FUZZ_RUNS=1000000`, 600 seconds), which keep the smoke input limits and do not run the deep profile, and a Bazel coverage review, which measures ordinary tests, not fuzz coverage. CodeQL and OpenSSF Scorecard run on their own schedules |
 | Release candidate | A manual dry run without secrets for the exact `main` commit and version. See [Releasing](releasing.md) |
 
-The protected publication workflow accepts only a current `main` commit, a
-matching version and a successful kept dry run. It compares the source
-package byte for byte before it requests a crates.io OIDC token. No
-long-lived registry token belongs in GitHub Actions or local configuration.
+For the publication workflows, see
+[Publishing the crate](releasing.md#publishing-the-crate).
 
 Rustleaks is not in OSS-Fuzz. Applying to OSS-Fuzz is a separately approved
 external action. Scheduled CI runs the fuzz targets.

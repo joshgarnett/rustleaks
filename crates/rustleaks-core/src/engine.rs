@@ -44,9 +44,8 @@ const KEYWORD_DFA_BYTE_LIMIT: usize = 16 * 1024;
 /// Building a state's row follows a failure chain for each byte class the
 /// state has no transition on, and that chain is no longer than the state's
 /// depth. Every state is a keyword prefix, so this sum bounds the summed
-/// depths, and a long keyword counts quadratically. The default keywords
-/// sum to 9,339 and the longest is 34 bytes. Larger sums keep the automaton
-/// kind chosen by the builder.
+/// depths, and a long keyword counts quadratically. Larger sums keep the
+/// automaton kind chosen by the builder.
 const KEYWORD_DFA_PREFIX_LIMIT: usize = 64 * 1024;
 const ALLOW_SIGNATURE: &[u8] = b"gitleaks:allow";
 const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
@@ -698,8 +697,6 @@ struct NativeCandidate {
     finding: Finding,
     input: NativeInputId,
     whole: ByteSpan,
-    // Selected capture in input coordinates; source/report ranges stay separate.
-    _secret: Option<ByteSpan>,
     start_line: usize,
     end_line: usize,
 }
@@ -1120,9 +1117,8 @@ impl Engine {
     /// This allocates a Go-compatible lowercase view for keyword filtering and
     /// an outcome vector. `max_target_bytes` is checked before content-regexp
     /// matching, after the keyword and path gates; path-only rules bypass it.
-    /// This compatibility entry point has no aggregate budgets and cannot be
-    /// cancelled. Use [`Engine::scan_fragment_controlled`] for defensive
-    /// embedding limits.
+    /// It has no aggregate budgets and cannot be cancelled. Use
+    /// [`Engine::scan_fragment_controlled`] for defensive embedding limits.
     #[must_use]
     pub fn scan_fragment(&self, fragment: &Fragment, options: &ScanOptions) -> ScanOutcome {
         self.scan_fragment_controlled(fragment, options, &ScanControl::unlimited())
@@ -2149,7 +2145,6 @@ impl Engine {
                     finding,
                     input: input.id,
                     whole,
-                    _secret: secret,
                     start_line,
                     end_line,
                 });
@@ -2351,7 +2346,7 @@ impl Engine {
             .original
             .newlines
             .get_or_init(|| newline_indices(original_raw));
-        let source = upstream_location(
+        let source = source_location(
             newlines,
             original_raw,
             adjusted_start,
@@ -2485,7 +2480,7 @@ impl Engine {
             }
         }
 
-        let location = Location::from_upstream(
+        let location = Location::from_parts_unchecked(
             fragment.start_line().saturating_add(source.start_line),
             fragment.start_line().saturating_add(source.end_line),
             source.start_column,
@@ -2594,7 +2589,8 @@ fn commit_or_path_allowed(
     allowlists: &[CompiledAllowlist],
     context: &mut ScanContext<'_>,
 ) -> Result<bool, ScanTermination> {
-    // Preserve the pinned Windows-only guard.
+    // A fragment with neither a path nor a commit matches no commit or path
+    // allowlist.
     if fragment.file_path().is_empty() && fragment.commit().is_empty() {
         return Ok(false);
     }
@@ -2746,7 +2742,6 @@ mod native_relation_tests {
                 .unwrap(),
             input: NativeInputId { pass, segment },
             whole: ByteSpan { start: 2, end },
-            _secret: Some(ByteSpan { start: 3, end: 4 }),
             start_line: 2,
             end_line: 4,
         }
@@ -3639,7 +3634,7 @@ fn newline_indices(raw: &[u8]) -> Vec<usize> {
     newlines
 }
 
-fn upstream_location(
+fn source_location(
     newlines: &[usize],
     raw: &[u8],
     start: usize,
@@ -3656,8 +3651,8 @@ fn upstream_location(
     let start_line = newlines.partition_point(|newline| *newline <= start);
     if start_line == newlines.len() {
         let previous = newlines[newlines.len() - 1];
-        // Preserve the pinned helper's no-line-matched path, including the
-        // zero start index and its special search for a trailing CR or LF.
+        // When no line contains the start, keep the start index at zero and
+        // search for the next CR or LF, as Gitleaks does.
         return SourceLocation {
             start_line,
             end_line: start_line,
@@ -4029,7 +4024,7 @@ fn path_finding(fragment: &Fragment, rule: &CompiledRule) -> Option<Finding> {
     let mut builder = Finding::builder()
         .rule_id(rule.id.as_str())
         .description(rule.description.as_str())
-        .location(Location::from_upstream(0, 0, 0, 0))
+        .location(Location::from_parts_unchecked(0, 0, 0, 0))
         .match_text(matched)
         .file(fragment.file_path().as_bytes())
         .symlink_file(fragment.symlink_file().as_bytes())

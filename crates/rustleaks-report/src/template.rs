@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! A small, capability-free template engine for compatible report templates.
+//! A small, capability-free template engine for report templates.
 
 use std::fmt;
 use std::fs::File;
@@ -251,12 +251,6 @@ impl TemplateReporter {
             source.extend_from_slice(&buffer[..count]);
         }
         Self::from_bytes(&source, limits)
-    }
-
-    /// Returns the active ceilings.
-    #[must_use]
-    pub const fn limits(&self) -> TemplateLimits {
-        self.limits
     }
 
     /// Renders findings without closing or flushing the destination.
@@ -1680,10 +1674,5 @@ fn try_copy(bytes: &[u8]) -> Result<Vec<u8>, TemplateError> {
 
 /// Copies text into a new string after a fallible reservation.
 fn try_string(source: &str) -> Result<String, TemplateError> {
-    let mut value = String::new();
-    value
-        .try_reserve(source.len())
-        .map_err(|_| TemplateError::Allocation)?;
-    value.push_str(source);
-    Ok(value)
+    crate::try_copy_str(source).map_err(|_| TemplateError::Allocation)
 }
