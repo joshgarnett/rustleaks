@@ -1,4 +1,4 @@
-//! Rust-owned repository maintenance tooling.
+//! Repository generators and shared helpers.
 
 mod archive_fuzz_seeds;
 mod artifacts;

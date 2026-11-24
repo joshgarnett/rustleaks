@@ -13,8 +13,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::{
-    MEASUREMENT_SCOPE, Prepared, Request as LegacyRequest, prepare, sha256_bytes, validate_records,
-    workspace_root,
+    MEASUREMENT_SCOPE, Prepared, Request as StandardRequest, prepare, sha256_bytes,
+    validate_records, workspace_root,
 };
 use crate::fuzzing::private;
 mod import;
@@ -201,7 +201,7 @@ fn runner_failure(stderr: &str) -> &'static str {
 fn collect(output: &Path) -> Result<(), String> {
     // The supervising parent bounds preparation and the entire process tree.
     let prepared = prepare(&workspace_root()?)?;
-    let request = LegacyRequest::parse(&[])?;
+    let request = StandardRequest::parse(&[])?;
     let mut record = json!({"schema_version":1,"kind":KIND,"complete":false,
         "source":prepared.source,"build":prepared.build,"host":prepared.host,
         "executable_bytes":prepared.executable_bytes,"executable_fnv1a64":prepared.executable_fnv1a64,

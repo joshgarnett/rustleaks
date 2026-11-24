@@ -891,6 +891,7 @@ pub(super) fn classify_windows(
         let right = exact_product(band_numerator, u128::from(*a))?;
         slowdown_detected &= b > a && left > right;
     }
+    // Display only; the gate uses the exact integer comparison above.
     #[allow(clippy::cast_precision_loss)]
     let display = |values: &[[u64; 2]]| {
         values
@@ -898,6 +899,7 @@ pub(super) fn classify_windows(
             .map(|[a, b]| *b as f64 / *a as f64 - 1.0)
             .collect::<Vec<_>>()
     };
+    // Display only; the gate uses the exact integer comparison above.
     #[allow(clippy::cast_precision_loss)]
     let maximum_display = maximum.0 as f64 / maximum.1 as f64;
     let status = if maximum.0 == 0 {
@@ -938,6 +940,7 @@ fn ratios(rows: &[Value], stage: &str, pairs: usize) -> Result<(Vec<f64>, u64), 
         let a = select("a")?;
         let b = select("b")?;
         minimum = minimum.min(a);
+        // Elapsed nanoseconds stay far below 2^53, so the conversion is exact.
         #[allow(clippy::cast_precision_loss)]
         ratios.push(b as f64 / a as f64 - 1.0);
     }
@@ -952,6 +955,7 @@ pub(super) fn classify(rows: &[Value], pairs: usize) -> Result<Value, String> {
     let (validation, _) = ratios(rows, "validation-aa", pairs)?;
     let (control, _) = ratios(rows, "control-ab", pairs)?;
     let maximum = training.iter().map(|value| value.abs()).fold(0.0, f64::max);
+    // Elapsed nanoseconds stay far below 2^53, so the conversion is exact.
     #[allow(clippy::cast_precision_loss)]
     let band = 2.0 * maximum + 2.0 / minimum as f64;
     let held_out_passed = validation.iter().all(|value| value.abs() <= band);
