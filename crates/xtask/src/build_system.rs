@@ -165,10 +165,9 @@ fn check_crate(
     }
 
     if let Some(features) = manifest.get("features").and_then(Value::as_table) {
-        for feature in features.keys() {
-            if feature == "default"
-                && (build.contains("_DEFAULT_FEATURES") || build.contains("profile_minimal"))
-            {
+        for (feature, enables) in features {
+            // An empty default feature set is the target without `crate_features`.
+            if feature == "default" && enables.as_array().is_some_and(Vec::is_empty) {
                 continue;
             }
             require_contains(
@@ -482,13 +481,11 @@ fn check_profiles(root: &Path) -> Result<(), String> {
         "feature_profiles",
         "rustleaks-sources feature profiles",
     )?;
-    for profile in ["fuzzing", "minimal"] {
-        require_contains(
-            &sources,
-            &format!("profile_{profile}"),
-            &format!("rustleaks-sources {profile} profile"),
-        )?;
-    }
+    require_contains(
+        &sources,
+        "profile_fuzzing",
+        "rustleaks-sources fuzzing profile",
+    )?;
     require_not_contains(
         named_call(&sources, "rustleaks_library", "rustleaks_sources")?,
         "crate_features",
