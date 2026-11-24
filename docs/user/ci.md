@@ -66,6 +66,9 @@ Notes:
 - `fetch-depth: 0` fetches the full history. The default checkout has only the
   last commit.
 - `--redact` keeps secret values out of the uploaded SARIF file.
+- The report is written inside the checkout. If the repository has a
+  symbolic link at `results.sarif`, the scan fails with exit code 1 and the
+  link is not followed. See [Report files](reports.md#report-files).
 - The SARIF tool name is `rustleaks`. See [SARIF](reports.md#sarif).
 - The upload step runs even when the scan step fails, for example because it
   found secrets.

@@ -29,6 +29,13 @@ const IMPLEMENTED_GITLEAKS_VERSION: &str = "8.30.0";
 /// limit.
 const MAX_CONFIG_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Largest baseline file, in bytes, that Rustleaks reads.
+///
+/// A baseline is a JSON report with one entry for each finding, so it can be
+/// much larger than a configuration. A larger file fails before more than
+/// this many bytes are read, as an unreadable baseline does.
+const MAX_BASELINE_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Bytes in the longest ignore file line, without its line feed, that the
 /// core parser rejects. It matches the default Go scanner token limit.
 const IGNORE_LINE_LIMIT: u64 = 64 * 1024;
@@ -74,25 +81,43 @@ impl ConfigResolver for CwdResolver {
 ///
 /// Errors other than the size limit are the errors of `fs::read_to_string`.
 fn read_config_file(path: &Path) -> io::Result<String> {
-    let mut bytes = Vec::new();
-    fs::File::open(path)?
-        .take(MAX_CONFIG_FILE_BYTES + 1)
-        .read_to_end(&mut bytes)?;
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_CONFIG_FILE_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "configuration file is larger than the {} MiB limit",
-                MAX_CONFIG_FILE_BYTES / (1024 * 1024)
-            ),
-        ));
-    }
+    let bytes = read_limited(path, MAX_CONFIG_FILE_BYTES, "configuration")?;
     String::from_utf8(bytes).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             "stream did not contain valid UTF-8",
         )
     })
+}
+
+/// Reads a file of at most `limit` bytes.
+///
+/// A file that is larger fails with `InvalidData` before more than `limit`
+/// bytes are read. A regular file whose size is already over the limit is
+/// not read at all. `kind` names the file in the error.
+fn read_limited(path: &Path, limit: u64, kind: &str) -> io::Result<Vec<u8>> {
+    let too_large = || {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{kind} file is larger than the {} MiB limit",
+                limit / (1024 * 1024)
+            ),
+        )
+    };
+    let file = fs::File::open(path)?;
+    if file
+        .metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() > limit)
+    {
+        return Err(too_large());
+    }
+    let mut bytes = Vec::new();
+    file.take(limit.saturating_add(1)).read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit {
+        return Err(too_large());
+    }
+    Ok(bytes)
 }
 
 pub(crate) fn assemble(
@@ -477,9 +502,14 @@ impl IgnoreLoader<'_> {
 /// Reads a baseline report and parses it with the file-free core parser.
 ///
 /// The CLI reads the file itself so that the core engine reads no files.
-/// The errors are the same as those of `Baseline::load_go_json`.
+/// The errors are those of `Baseline::load_go_json`. A file larger than
+/// [`MAX_BASELINE_FILE_BYTES`] gives `BaselineLoadError::Io`.
 fn load_baseline(path: &Path) -> Result<Baseline, BaselineLoadError> {
-    let bytes = fs::read(path).map_err(|source| BaselineLoadError::Io {
+    load_baseline_limited(path, MAX_BASELINE_FILE_BYTES)
+}
+
+fn load_baseline_limited(path: &Path, limit: u64) -> Result<Baseline, BaselineLoadError> {
+    let bytes = read_limited(path, limit, "baseline").map_err(|source| BaselineLoadError::Io {
         path: path.to_path_buf(),
         source,
     })?;
@@ -912,6 +942,54 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn baseline_over_256_mib_is_not_read() {
+        assert_eq!(MAX_BASELINE_FILE_BYTES, 256 * 1024 * 1024);
+        let root = temporary_directory("baseline-cap");
+        let path = root.join("baseline.json");
+        let expected_error = format!(
+            "could not read baseline {}: baseline file is larger than the 256 MiB limit",
+            path.display()
+        );
+
+        // A file one byte over the limit fails without being read. The file
+        // is sparse, so the test writes no data.
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_BASELINE_FILE_BYTES + 1).unwrap();
+        drop(file);
+        let error = load_baseline(&path).unwrap_err();
+        assert!(matches!(error, BaselineLoadError::Io { .. }), "{error}");
+        assert_eq!(error.to_string(), expected_error);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn baseline_of_exactly_the_limit_is_read() {
+        // A smaller limit keeps the test fast. `load_baseline` passes
+        // MAX_BASELINE_FILE_BYTES to the same function.
+        let root = temporary_directory("baseline-limit");
+        let path = root.join("baseline.json");
+        let report = b"[]   ";
+        std::fs::write(&path, report).unwrap();
+        let limit = u64::try_from(report.len()).unwrap();
+        assert!(load_baseline_limited(&path, limit).unwrap().is_empty());
+        let error = load_baseline_limited(&path, limit - 1).unwrap_err();
+        assert!(matches!(error, BaselineLoadError::Io { .. }), "{error}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_limit_applies_to_a_stream() {
+        // /dev/zero has no size and never ends, so only the read limit stops it.
+        let error = read_limited(Path::new("/dev/zero"), 1024 * 1024, "baseline").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            error.to_string(),
+            "baseline file is larger than the 1 MiB limit"
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod config;
 mod help;
 mod limits;
 mod output;
+mod report_file;
 mod run;
 mod source;
 

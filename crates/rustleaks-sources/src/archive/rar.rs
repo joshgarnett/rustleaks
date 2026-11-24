@@ -15,6 +15,11 @@ use crate::Cancellation;
 const RAR_PREFIX: &[u8] = b"Rar!\x1a\x07";
 const MAX_SFX_BYTES: usize = 1 << 20;
 const SKIP_BUFFER: usize = 64 * 1024;
+/// Largest PPMd model that a RAR3 member may set, in bytes. The format
+/// allows 256 MiB, and the recorded RAR3 fixtures set 25 MiB. The member
+/// limit does not lower it: RAR sets the model size without regard to the
+/// member size, so small members also set 25 MiB.
+const MAX_PPMD_MODEL_BYTES: usize = 64 * 1024 * 1024;
 
 const V15_BLOCK_ARCHIVE: u8 = 0x73;
 const V15_BLOCK_FILE: u8 = 0x74;
@@ -225,6 +230,7 @@ fn extract_v15(
     }
     let archive_solid = archive.flags & V15_ARCHIVE_SOLID != 0;
     let mut decoder29 = rustleaks_rar_codec::codec::rar29::Unpack29::new();
+    decoder29.set_ppmd_model_limit(MAX_PPMD_MODEL_BYTES);
     let mut entries = 0_usize;
     let mut decoded_total = 0usize;
 
@@ -445,6 +451,9 @@ fn decode_rar3(
         match result {
             Ok(output) => Ok(output),
             Err(rustleaks_rar_codec::codec::Error::Cancelled) => Err(RarFailure::Cancelled),
+            Err(rustleaks_rar_codec::codec::Error::Limit(message)) => {
+                Err(RarFailure::Limit(message))
+            }
             Err(error) => Err(corrupt(format!("RAR3 decompression failed: {error}"))),
         }
     }
@@ -1110,6 +1119,55 @@ mod tests {
     }
 
     #[test]
+    fn rejects_rar3_ppmd_model_above_limit_before_building_it() {
+        let cancelled = AtomicBool::new(false);
+        // A PPMd block that builds a new order-8 model, then the model size
+        // byte (the size in MiB minus one) and a range coder header. The
+        // limit is checked before the range coder bytes are read.
+        let ppmd = |model_byte: u8| vec![0x80 | 0x20 | 7, model_byte, 0, 0, 0, 0];
+        assert_eq!((63 + 1) << 20, MAX_PPMD_MODEL_BYTES);
+        for model_byte in [64, u8::MAX] {
+            let packed = ppmd(model_byte);
+            let archive = v15_archive_members(&[
+                V15Member {
+                    name: b"first.txt",
+                    packed: b"stored",
+                    unpacked: b"stored",
+                    version: 29,
+                    method: 0x30,
+                },
+                V15Member {
+                    name: b"model.txt",
+                    packed: &packed,
+                    unpacked: b"value",
+                    version: 29,
+                    method: 0x35,
+                },
+            ]);
+            let mut names = Vec::new();
+            let result = extract(
+                &mut archive.as_slice(),
+                4,
+                1 << 20,
+                1 << 20,
+                &cancelled,
+                &mut |entry| {
+                    names.push(entry.name);
+                    true
+                },
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(RarFailure::Limit("RAR PPMd model exceeds memory limit"))
+                ),
+                "model byte {model_byte}: {result:?}"
+            );
+            assert_eq!(names, [b"first.txt".to_vec()], "model byte {model_byte}");
+        }
+    }
+
+    #[test]
     fn rejects_rar5_name_above_member_limit_before_copying_it() {
         let cancelled = AtomicBool::new(false);
         let archive = stored_v5(&vec![b'n'; 4096], b"payload");
@@ -1125,26 +1183,46 @@ mod tests {
     }
 
     fn v15_archive(name: &[u8], packed: &[u8], unpacked: &[u8], method: u8) -> Vec<u8> {
+        v15_archive_members(&[V15Member {
+            name,
+            packed,
+            unpacked,
+            version: 20,
+            method,
+        }])
+    }
+
+    struct V15Member<'a> {
+        name: &'a [u8],
+        packed: &'a [u8],
+        unpacked: &'a [u8],
+        version: u8,
+        method: u8,
+    }
+
+    fn v15_archive_members(members: &[V15Member<'_>]) -> Vec<u8> {
         let mut archive = b"Rar!\x1a\x07\x00".to_vec();
         append_v15_header(&mut archive, V15_BLOCK_ARCHIVE, 0, &[0; 6], &[]);
-        let mut body = Vec::new();
-        body.extend_from_slice(&u32::try_from(packed.len()).unwrap().to_le_bytes());
-        body.extend_from_slice(&u32::try_from(unpacked.len()).unwrap().to_le_bytes());
-        body.push(2);
-        body.extend_from_slice(&crc32(unpacked).to_le_bytes());
-        body.extend_from_slice(&0u32.to_le_bytes());
-        body.push(20);
-        body.push(method);
-        body.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
-        body.extend_from_slice(&0u32.to_le_bytes());
-        body.extend_from_slice(name);
-        append_v15_header(
-            &mut archive,
-            V15_BLOCK_FILE,
-            V15_BLOCK_HAS_DATA,
-            &body,
-            packed,
-        );
+        for member in members {
+            let mut body = Vec::new();
+            body.extend_from_slice(&u32::try_from(member.packed.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(&u32::try_from(member.unpacked.len()).unwrap().to_le_bytes());
+            body.push(2);
+            body.extend_from_slice(&crc32(member.unpacked).to_le_bytes());
+            body.extend_from_slice(&0u32.to_le_bytes());
+            body.push(member.version);
+            body.push(member.method);
+            body.extend_from_slice(&u16::try_from(member.name.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(&0u32.to_le_bytes());
+            body.extend_from_slice(member.name);
+            append_v15_header(
+                &mut archive,
+                V15_BLOCK_FILE,
+                V15_BLOCK_HAS_DATA,
+                &body,
+                member.packed,
+            );
+        }
         append_v15_header(&mut archive, V15_BLOCK_END, 0, &[], &[]);
         archive
     }

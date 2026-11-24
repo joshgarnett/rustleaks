@@ -24,6 +24,7 @@ with `--complete-profile` turns every coverage gap into a failure. See
 | One archive, decompressed in total | 16 GiB | Profile key `archive_total_bytes` | Warning; the rest of the archive is skipped. |
 | Temporary storage for one archive | 1 GiB | Profile key `archive_spool_bytes` | Warning; the ZIP, 7z, Zstandard or LZ4 archive that needs it is skipped. |
 | Archive parts kept in memory | 64 MiB, or the member limit if it is lower | Fixed | Warning; the member or archive is skipped. See [Archives](#archives). |
+| PPMd model size that a RAR3 member sets | 64 MiB | Fixed | Warning; the member and the rest of the RAR archive are skipped. See [Archives](#archives). |
 | File size | No limit | `--max-target-megabytes N` (N times 1,000,000 bytes) | Warning; the file is skipped. |
 | Size of one scanned piece of a file | About 100,000 bytes | Profile key `target_bytes`, which makes each file one piece | Larger files are scanned in several pieces. |
 | Symbolic link hops | 64 | Fixed | Warning; the link is skipped. |
@@ -211,10 +212,22 @@ The limits work as follows:
   headers, and the decoder dictionaries of 7z, Zstandard and LZIP. Each is
   limited to 64 MiB, or to the member limit if it is lower. A RAR member over
   the limit skips the rest of the RAR archive. A larger dictionary or 7z
-  header skips the stream or archive. The model of a RAR3 member compressed with
-  PPMd is limited only by the model size that the archive sets, which can
-  take more than 2 GB. It grows with the decoded data: in a measured worst
-  case, 1 MiB of decoded data used about 49 MB and 4 MiB used up to 330 MB.
+  header skips the stream or archive.
+- **RAR3 PPMd model.** A RAR3 member compressed with PPMd sets the size of
+  its PPMd model, up to 256 MiB. Rustleaks reads a model of up to 64 MiB.
+  The member limit does not lower this limit. A member that sets a larger
+  model is not decoded: Rustleaks reports a warning and skips that member
+  and the rest of the RAR archive. The RAR3 test archives in Rustleaks, made
+  with RAR at its best compression (`-m5`), set 25 MiB. Rustleaks keeps the
+  model in larger structures than RAR does. The worst case measured so far
+  took about 200 MiB of memory when set to 25 MiB, and about 450 MiB when
+  set to 64 MiB. These are measurements, not limits. From the sizes of its
+  structures, the model can take at most about 34 times the size it sets,
+  about 2.1 GiB at 64 MiB. The model grows with the decoded data, so it
+  reaches its size only when a member fills it. A RAR archive inside a RAR
+  archive keeps the outer model while it reads the inner one. With
+  `--max-archive-depth N`, nested RAR archives can hold up to N models at
+  once, so up to N times these amounts.
 - **Git.** An archive file from Git history is copied to temporary storage
   before it is read. A file larger than `git_blob_bytes` or the temporary
   storage limit is skipped with a warning, and the history scan continues.
@@ -243,6 +256,7 @@ archives inside it at the same time.
 | `--enable-rule` IDs | 4,096. The selected rules and the rules they require can hold at most 8 MiB of rule source text. |
 | `extend` levels in a configuration | 2 |
 | One configuration file, including `.gitleaks.toml` or `.rustleaks.toml` in the scanned folder and each `[extend]` file | 16 MiB. A larger file fails to load before Rustleaks reads more than 16 MiB of it. |
+| `--baseline-path` file | 256 MiB. Rustleaks reads no more than 256 MiB of a larger file. It logs an error and scans without the baseline, as for a baseline it cannot read. See [Baselines](configuration.md#baselines). |
 | One regular expression | 1 MiB of source, 4,096 levels of nesting, and 256 MiB for each compiled form. A repeat count can be at most 1,000, and the counts of nested repeats multiplied together can be at most 1,000. |
 | Native rule files in one `NativePolicy` (library) | 32 files, 1 MiB of TOML, 1,024 rules |
 | One line of an ignore file | 64 KiB. Parsing of that file stops at a longer line. Rustleaks reads an ignore file one line at a time, so it never holds more than one line of the file in memory, plus the entries it keeps. |

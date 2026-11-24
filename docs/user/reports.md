@@ -15,7 +15,7 @@ rustleaks dir . --report-format sarif --report-path -
 
 | Flag | Meaning |
 | --- | --- |
-| `--report-path PATH`, `-r PATH` | Where to write the report. `-` means standard output. The parent folder must exist. An existing file is replaced. |
+| `--report-path PATH`, `-r PATH` | Where to write the report. `-` means standard output. The parent folder must exist. See [Report files](#report-files). |
 | `--report-format NAME`, `-f NAME` | `json`, `csv`, `junit`, `sarif` or `template`. |
 | `--report-template FILE` | The template file for `--report-format template`. |
 
@@ -27,6 +27,52 @@ give `--report-format`. To use a template, give both
 The report is written at the end of the scan, even when there are no findings.
 Log lines go to standard error, so `--report-path -` gives clean report output
 on standard output.
+
+### Report files
+
+A report without `--redact` holds secrets. Rustleaks writes the report file
+with these rules:
+
+- If nothing is at the path, Rustleaks creates a new file. On Unix, the new
+  file has mode `0600`, so only its owner can read it.
+- If a regular file is at the path, Rustleaks replaces its contents. The
+  file keeps its owner and mode. To make an old report private, delete it
+  or change its mode before the scan.
+- If a symbolic link is at the path, the scan fails before it starts, with
+  exit code 1. Rustleaks does not follow the link and does not change the
+  file it points to. A link that is put at the path during the scan is also
+  refused.
+- If a device or a named pipe is at the path, such as `/dev/null`,
+  Rustleaks writes to it.
+- On Unix, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` (N is a number)
+  are opened by name, and their links are followed. These names lead to
+  streams that Rustleaks already has open, such as a pipe or a file that the
+  shell redirects to. Only these exact names are treated this way. `-` is
+  the portable way to write to standard output.
+- On Windows, a DOS device name such as `NUL`, `CON`, `AUX`, `PRN`, `COM1`
+  to `COM9` or `LPT1` to `LPT9`, in any letter case and with or without an
+  extension, and a path that starts with `\\.\` are opened by name.
+  `--report-path NUL` discards the report.
+
+Rustleaks checks only the last part of the path. Symbolic links in the
+folders above it are followed. For example, with `--report-path
+out/report.json`, a link named `report.json` is refused, but if `out` is a
+link to another folder, the report is written in that folder.
+
+Mode `0600` also applies when Rustleaks runs as root in a container. A
+report that root writes to a folder shared with the host can then be read
+on the host only by root. Run the container as the host user, or change the
+mode of the report after the scan.
+
+On Windows, a new file gets the default permissions of its folder. A
+symbolic link at the path is refused in the same way.
+
+In a folder that other users can write to, such as `/tmp`, another user can
+create a file at the report path before the scan. Rustleaks then writes the
+report to that file, which keeps that user as its owner, unless the system
+refuses to open it. Linux refuses this in a sticky folder such as `/tmp`
+when `fs.protected_regular` is on. Write reports to a folder that only you
+can write to.
 
 ## Redaction
 

@@ -13,6 +13,7 @@ use rustleaks_report::{
 
 use crate::args::Options;
 use crate::config::resolve;
+use crate::report_file;
 
 const BANNER: &str = "\n    ○\n    │╲\n    │ ○\n    ○ ░\n    ░    rustleaks\n\n";
 const STDOUT_REPORT_BUFFER_BYTES: usize = 64 * 1024;
@@ -146,7 +147,14 @@ impl ReportPlan {
                 )
             }
         };
+        if let ReportTarget::File(path) = &target {
+            report_file::check(path).map_err(|error| {
+                format!("could not use report path {}: {error}", path.display())
+            })?;
+        }
+        // A stream name, such as `/dev/stdout` or `NUL`, needs no folder.
         if let ReportTarget::File(path) = &target
+            && !report_file::is_stream_name(path)
             && let Some(parent) = path
                 .parent()
                 .filter(|parent| !parent.as_os_str().is_empty())
@@ -203,7 +211,7 @@ impl ReportPlan {
                     .map_err(|error| format!("could not flush stdout report: {error}"))
             }
             ReportTarget::File(path) => {
-                let file = fs::File::create(path).map_err(|error| {
+                let file = report_file::open(path).map_err(|error| {
                     format!("could not open report {}: {error}", path.display())
                 })?;
                 let mut writer = BufWriter::new(file);
