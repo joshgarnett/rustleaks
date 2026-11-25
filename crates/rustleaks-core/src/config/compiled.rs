@@ -882,15 +882,19 @@ mod tests {
             .filter(|word| !word.is_empty())
             .map(String::as_bytes)
             .collect::<Vec<_>>();
-        let mut secrets = MIXED_INPUTS.to_vec();
-        secrets.extend([b"ab_cd".as_slice(), b"AB_CD", b"ab-cd"]);
-        for secret in secrets {
-            let lowered = lowercase_bytes(secret);
-            let expected = !secret.is_empty()
+        let mut inputs = MIXED_INPUTS.to_vec();
+        inputs.extend([b"ab_cd".as_slice(), b"AB_CD", b"ab-cd"]);
+        for (index, input) in inputs.into_iter().enumerate() {
+            let lowered = lowercase_bytes(input);
+            let expected = !input.is_empty()
                 && words
                     .iter()
                     .any(|word| lowered.windows(word.len()).any(|window| window == *word));
-            assert_eq!(compiled.contains_stop_word(secret), expected, "{secret:?}");
+            assert_eq!(
+                compiled.contains_stop_word(input),
+                expected,
+                "input {index}"
+            );
         }
         assert!(compiled.contains_stop_word(b"AB_CD"));
         assert!(compiled.contains_stop_word("\u{212a}X".as_bytes()));

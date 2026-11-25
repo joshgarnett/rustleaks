@@ -23,8 +23,10 @@
   `Engine::scan_fragment_controlled`. The new
   `ScanCancellation::reads_state_only` method lets the engine poll a signal
   that only reads a flag once for a run of work units instead of once per
-  unit. It returns false by default and true for `AtomicBool`. A scan
-  cancelled through such a signal can report fewer work units than before.
+  unit. It returns false by default and true for `AtomicBool`, and the
+  `rustleaks` command's scan threads use it too. A scan cancelled through
+  such a signal can stop at a later checkpoint and report more work units
+  than before.
 
 ## [0.2.0] - 2026-11-24
 

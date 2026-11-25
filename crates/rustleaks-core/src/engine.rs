@@ -67,9 +67,9 @@ pub trait ScanCancellation: Send + Sync {
     ///
     /// When this is true, the engine polls once for a run of work units that
     /// it charges together, such as one unit per byte of an input, instead of
-    /// once per unit. Cancellation is then seen at the same checkpoints, but
-    /// a cancelled scan can report fewer work units than with one poll per
-    /// unit. The default is false.
+    /// once per unit. Cancellation that arrives during such a run is then
+    /// seen at a later checkpoint, so a cancelled scan can report more work
+    /// units than with one poll per unit, never fewer. The default is false.
     fn reads_state_only(&self) -> bool {
         false
     }

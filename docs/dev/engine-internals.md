@@ -193,7 +193,10 @@ check in [Native rule costs](#native-rule-costs) would skip is not visited
 either, and the pass charges its units in rule order before the next visited
 rule. Rules run in the same order as in a
 scan that visits every rule, so findings, usage and the point where a budget
-or cancellation stops the scan do not change. The test module
+stops the scan do not change. Cancellation stops at the same point when the
+signal is polled once per work unit. A signal that only reads its state is
+polled once for the charged units, so cancellation that arrives during them
+can stop the scan at a later checkpoint. The test module
 `engine::rule_index_tests` compares the two.
 
 ## Required literals
@@ -548,7 +551,7 @@ grows with these numbers:
   (691 MB) with every built-in rule. Peak RSS was about 95 MB with one
   detection thread, 177 MB with 4, 211 MB with 12 and 285 MB with 24. At 12
   threads, the limit costs about 5 percent more instructions than keeping
-  every cache, and saves about 50 MB.
+  every cache, which peaked at about 340 MB.
 
 The figures in this paragraph were measured for pull request #163 on macOS
 with 36 CPUs. With 12 detection threads, history scans of six public
