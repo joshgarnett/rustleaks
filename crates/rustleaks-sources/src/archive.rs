@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use rustleaks_core::config::CompiledConfig;
 
-use crate::file::{FileTarget, FragmentCommit, visit_borrowed};
+use crate::commit::FragmentCommit;
+use crate::file::{FileTarget, visit_borrowed};
 use crate::source::emit_issue;
 use crate::{
     CallbackError, Cancellation, FileOptions, LogicalPath, Source, SourceConfigError,
@@ -317,8 +318,8 @@ impl ArchiveSource {
     }
 
     /// Gives every fragment the commit of the Git blob being scanned.
-    pub(crate) fn with_commit(mut self, commit: FragmentCommit) -> Self {
-        self.commit = Some(Arc::new(commit));
+    pub(crate) fn with_commit(mut self, commit: Arc<FragmentCommit>) -> Self {
+        self.commit = Some(commit);
         self
     }
 }

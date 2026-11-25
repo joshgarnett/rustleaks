@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use rustleaks_core::model::CommitMetadata;
 
@@ -8,13 +9,14 @@ use super::text::{
     git_date_to_rfc3339, split_inclusive_lines, trim_line, trim_unicode_space,
     trim_unicode_space_end, trim_unicode_space_start,
 };
+use crate::commit::FragmentCommit;
 use crate::{Cancellation, SourceError, SourceStage};
 
 #[derive(Clone, Eq, PartialEq)]
 pub(super) struct ParsedFile {
     pub(super) path: Vec<u8>,
-    pub(super) commit: Vec<u8>,
-    pub(super) metadata: Option<CommitMetadata>,
+    /// The commit of the file, shared with every other file of the commit.
+    pub(super) commit: Arc<FragmentCommit>,
     pub(super) deleted: bool,
     pub(super) binary: bool,
     pub(super) hunks: Vec<ParsedHunk>,
@@ -90,40 +92,6 @@ pub(super) fn reserve_input(
     output
         .try_reserve_exact(additional)
         .map_err(|error| patch_allocation(context, error))
-}
-
-pub(super) fn fallible_clone_metadata(
-    metadata: &CommitMetadata,
-    limit: usize,
-) -> PatchResult<CommitMetadata> {
-    let sha = copy_limited(metadata.sha().as_bytes(), limit, "Git metadata SHA")?;
-    let author_name = copy_limited(metadata.author_name().as_bytes(), limit, "Git author name")?;
-    let author_email = copy_limited(
-        metadata.author_email().as_bytes(),
-        limit,
-        "Git author email",
-    )?;
-    let date = copy_limited(metadata.date().as_bytes(), limit, "Git commit date")?;
-    let message = copy_limited(metadata.message().as_bytes(), limit, "Git commit message")?;
-    let total = sha
-        .len()
-        .checked_add(author_name.len())
-        .and_then(|size| size.checked_add(author_email.len()))
-        .and_then(|size| size.checked_add(date.len()))
-        .and_then(|size| size.checked_add(message.len()))
-        .ok_or_else(|| PatchError::Limit("Git metadata size overflowed usize".to_owned()))?;
-    if total > limit {
-        return Err(PatchError::Limit(format!(
-            "Git commit metadata exceeds the configured {limit}-byte ceiling"
-        )));
-    }
-    Ok(CommitMetadata::builder()
-        .sha(sha)
-        .author_name(author_name)
-        .author_email(author_email)
-        .date(date)
-        .message(message)
-        .build())
 }
 
 fn zero_commit_metadata() -> CommitMetadata {
@@ -327,8 +295,7 @@ impl PatchStream {
 /// Parser state carried from one unit to the next.
 struct UnitParser {
     limits: GitLimits,
-    commit: Vec<u8>,
-    metadata: Option<CommitMetadata>,
+    commit: Arc<FragmentCommit>,
     /// Files and hunks of the current commit.
     files: usize,
     hunks: usize,
@@ -341,8 +308,10 @@ impl UnitParser {
     fn new(limits: GitLimits) -> Self {
         Self {
             limits,
-            commit: Vec::new(),
-            metadata: Some(zero_commit_metadata()),
+            commit: Arc::new(FragmentCommit::new(
+                Vec::new(),
+                Some(zero_commit_metadata()),
+            )),
             files: 0,
             hunks: 0,
             #[cfg(any(test, feature = "fuzzing"))]
@@ -369,19 +338,14 @@ impl UnitParser {
             {
                 self.commits += 1;
             }
-            self.commit = copy_limited(
+            let sha = copy_limited(
                 trim_line(value),
                 self.limits.metadata_bytes(),
                 "Git commit SHA",
             )?;
-            let (metadata, next) = parse_commit_header(
-                &lines,
-                0,
-                &self.commit,
-                self.limits.metadata_bytes(),
-                cancellation,
-            )?;
-            self.metadata = Some(metadata);
+            let (metadata, next) =
+                parse_commit_header(&lines, 0, &sha, self.limits.metadata_bytes(), cancellation)?;
+            self.commit = Arc::new(FragmentCommit::new(sha, Some(metadata)));
             check_blank_lines(&lines[next..], cancellation)?;
             return Ok(None);
         }
@@ -406,18 +370,22 @@ impl UnitParser {
         let mut file = ParsedFile {
             path: parse_diff_fallback(lines[0], limits.path_bytes(), cancellation)?
                 .unwrap_or_default(),
-            commit: copy_limited(&self.commit, limits.metadata_bytes(), "Git file commit SHA")?,
-            metadata: self
-                .metadata
-                .as_ref()
-                .map(|metadata| fallible_clone_metadata(metadata, limits.metadata_bytes()))
-                .transpose()?,
+            commit: Arc::clone(&self.commit),
             deleted: false,
             binary: false,
             hunks: Vec::new(),
             #[cfg(any(test, feature = "fuzzing"))]
             commit_index: self.commits,
         };
+        // A commit header was checked against this limit when it was read.
+        // Output without one, such as a `git diff`, has default metadata
+        // that must fit as well.
+        if self.commit.metadata_len() > limits.metadata_bytes() {
+            return Err(PatchError::Limit(format!(
+                "Git commit metadata exceeds the configured {}-byte ceiling",
+                limits.metadata_bytes()
+            )));
+        }
         let mut saw_old_path = false;
         let mut saw_new_path = false;
         let mut saw_old_mode = false;

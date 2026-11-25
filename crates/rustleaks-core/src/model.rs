@@ -19,7 +19,9 @@ use serde::{Serialize, Serializer};
 ///
 /// `ByteText` is used for source-derived values, including paths and commit
 /// metadata. Use [`ByteText::as_str`] when valid UTF-8 is required, or
-/// [`ByteText::to_string_lossy`] for presentation only.
+/// [`ByteText::to_string_lossy`] for presentation only. Use
+/// [`ByteText::from_shared`] when many values hold the same bytes, such as
+/// the commit metadata of every fragment of one commit.
 pub struct ByteText(ByteStorage);
 
 enum ByteStorage {
@@ -122,7 +124,15 @@ impl ByteText {
         }
     }
 
-    pub(crate) fn from_shared(bytes: Arc<Vec<u8>>) -> Self {
+    /// Creates byte text that shares `bytes` with other holders instead of
+    /// copying them.
+    ///
+    /// The bytes are not validated or changed. A value built this way behaves
+    /// like one built with [`ByteText::new`]: [`Clone`] still returns an
+    /// independent copy, and [`ByteText::into_bytes`] copies the bytes only
+    /// while another holder keeps them.
+    #[must_use]
+    pub fn from_shared(bytes: Arc<Vec<u8>>) -> Self {
         Self(ByteStorage::Shared(bytes))
     }
 

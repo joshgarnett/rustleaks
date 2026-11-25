@@ -295,7 +295,7 @@ fn text_patch_hunks_preserve_added_bytes_and_no_newline() {
     assert_eq!(files[0].path, b"a.txt");
     assert_eq!(files[0].hunks[0].added, b"new\ntail");
     assert_eq!(files[0].hunks[0].new_position, 1);
-    let metadata = files[0].metadata.as_ref().expect("metadata");
+    let metadata = files[0].commit.metadata().expect("metadata");
     assert_eq!(metadata.author_name().as_bytes(), b"Test User");
     assert_eq!(metadata.author_email().as_bytes(), b"user@example.com");
     assert_eq!(metadata.date().as_bytes(), b"2021-11-02T23:37:53Z");
@@ -1074,7 +1074,7 @@ fn metadata_trims_unicode_whitespace() {
         &crate::CancellationToken::new(),
     )
     .expect("Unicode metadata patch");
-    let metadata = files[0].metadata.as_ref().expect("metadata");
+    let metadata = files[0].commit.metadata().expect("metadata");
     assert_eq!(metadata.author_name().as_bytes(), b"A User");
     assert_eq!(metadata.message().as_bytes(), b"title");
 
@@ -1085,7 +1085,7 @@ fn metadata_trims_unicode_whitespace() {
         &crate::CancellationToken::new(),
     )
     .expect("fuller metadata patch");
-    let metadata = files[0].metadata.as_ref().expect("fuller metadata");
+    let metadata = files[0].commit.metadata().expect("fuller metadata");
     assert_eq!(metadata.author_name().as_bytes(), b"A User");
     assert_eq!(metadata.date().as_bytes(), b"2021-11-02T23:37:53Z");
     assert_eq!(metadata.message().as_bytes(), b"fuller title");
@@ -1129,8 +1129,8 @@ fn overflowing_git_dates_are_ignored_without_panicking() {
         .expect("invalid date preserves the patch");
         assert_eq!(
             files[0]
-                .metadata
-                .as_ref()
+                .commit
+                .metadata()
                 .expect("metadata")
                 .date()
                 .as_bytes(),
@@ -1306,7 +1306,7 @@ fn summarize(files: &[ParsedFile]) -> Vec<FileSummary> {
         .map(|file| {
             (
                 file.path.clone(),
-                file.commit.clone(),
+                file.commit.sha().to_vec(),
                 file.deleted,
                 file.binary,
                 file.hunks
@@ -1401,11 +1401,11 @@ fn streamed_history_matches_independent_expectations_in_any_chunking() {
         (b"mode.sh".to_vec(), third, false, false, vec![]),
     ];
     assert_eq!(summarize(&files), expected);
-    let metadata = files[0].metadata.as_ref().expect("second commit metadata");
+    let metadata = files[0].commit.metadata().expect("second commit metadata");
     assert_eq!(metadata.author_name().as_bytes(), b"Synthetic Two");
     assert_eq!(metadata.date().as_bytes(), b"2021-11-03T00:02:03Z");
     assert_eq!(metadata.message().as_bytes(), b"second");
-    let metadata = files[5].metadata.as_ref().expect("third commit metadata");
+    let metadata = files[5].commit.metadata().expect("third commit metadata");
     assert_eq!(
         metadata.sha().as_bytes(),
         b"3333333333333333333333333333333333333333"

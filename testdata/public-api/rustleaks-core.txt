@@ -335,6 +335,7 @@ pub struct rustleaks_core::model::ByteText(_)
 impl rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::ByteText::as_bytes(&self) -> &[u8]
 pub fn rustleaks_core::model::ByteText::as_str(&self) -> core::result::Result<&str, core::str::error::Utf8Error>
+pub fn rustleaks_core::model::ByteText::from_shared(alloc::sync::Arc<alloc::vec::Vec<u8>>) -> Self
 pub fn rustleaks_core::model::ByteText::into_bytes(self) -> alloc::vec::Vec<u8>
 pub fn rustleaks_core::model::ByteText::is_empty(&self) -> bool
 pub fn rustleaks_core::model::ByteText::len(&self) -> usize
