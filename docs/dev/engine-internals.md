@@ -604,22 +604,38 @@ files as binary. Any other output or a failure selects the SHA-1 name, and
 the scan command then reports a real failure itself. These commands run
 without `GIT_ATTR_SOURCE`, which would take precedence.
 
-With more than one, and with the default history options, `plan`:
+With more than one, and with the default history options, `visit` in
+`history.rs`:
 
-1. Runs `git rev-list --full-history --all`. Without a pathspec, `git log`
-   shows each commit the same way whether or not it walks the history, so
-   `git log --no-walk=unsorted` gives each listed commit the same text as the
-   default `git log`. The list must succeed, write no standard error, and
-   hold only hexadecimal object names of one length. Checking the names also
-   keeps option text out of `--stdin`, which accepts options.
-2. Splits the list into batches of 250 consecutive commits.
-   `GitSource::history_batch_commits` sets another size. A list of one batch
-   uses one process.
-3. Runs `git config --get format.pretty`, which must exit with 1. One process
+1. Runs `git config --get format.pretty`, which must exit with 1. One process
    writes a blank line between two shown commits in the default format; a
    `tformat` or `oneline` format ends each commit instead.
+2. Runs `git rev-list --full-history --all` on its own thread. Without a
+   pathspec, `git log` shows each commit the same way whether or not it walks
+   the history, so `git log --no-walk=unsorted` gives each listed commit the
+   same text as the default `git log`. The list must succeed, write no
+   standard error, and hold only hexadecimal object names of one length.
+   Checking the names also keeps option text out of `--stdin`, which accepts
+   options.
+3. Splits the list into batches of 250 consecutive commits as it arrives.
+   `GitSource::history_batch_commits` sets another size. A list of one batch
+   uses one process.
 
-If a check fails, the history uses one process. `--log-opts` with a value,
+If a check fails, the history uses one process.
+
+Batches start once the list holds two of them, while `git rev-list` still
+runs. Until the list has passed every check, the parser keeps the events it
+would publish, with the cancellation polls between them, up to 32 MiB of
+fragment bytes, and then waits for the list. When the list succeeds, the
+kept events are published in order and the polls repeated, so a callback
+that stops or cancels the scan ends it at the same record as one process.
+When the list fails, the kept events are dropped, the batch processes are
+stopped, and one process reads the history, unless the scan was cancelled or
+a batch process could not be stopped. A batch failure before the list
+has ended waits for the list: if the list succeeds, the kept events are
+published and the failure is reported, as one process would. On the rails
+history with 12 detection threads, starting batches early cut wall time by
+about 9 percent and raised peak memory by about 30 MB. `--log-opts` with a value,
 `--staged` and `--pre-commit` also use one process, because options such as
 a path, `--follow`, `--reverse` or `-n` change which commits Git shows or how
 it shows them.
@@ -651,8 +667,14 @@ Bounds:
   thread whose output does not fit waits with the Git pipe full, so Git
   waits too. The batch that the parser reads never waits for a later batch,
   so the parser always makes progress. Parsed pieces return to a pool.
-- The commit list keeps one line of 41 or 65 bytes for each commit, up to
-  10,000,000 commits. A longer list uses one process.
+- Listed batches that no process has taken yet keep one line of 41 or 65
+  bytes for each commit, up to 10,000,000 commits. A longer list uses one
+  process.
+- Events kept until the list succeeds hold about 32 MiB of fragment bytes
+  (`HELD_EVENT_BYTES`), plus the fragments of the one file record whose
+  parse passes that size. A history that reads archives waits for the list
+  before it starts batches, because the members of one archive can add up
+  to far more.
 - `git_stderr_bytes` is one `OutputBudget` that all batch processes share.
   A warning that each process repeats counts once for each process.
 - Cancellation, a stop from the consumer and an error end the visit: every
