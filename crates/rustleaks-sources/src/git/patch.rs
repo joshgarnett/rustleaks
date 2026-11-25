@@ -1,6 +1,5 @@
 use std::fmt;
-
-use rustleaks_core::model::CommitMetadata;
+use std::sync::Arc;
 
 use super::GitLimits;
 use super::process::STDOUT_CHUNK_BYTES;
@@ -8,13 +7,14 @@ use super::text::{
     git_date_to_rfc3339, split_inclusive_lines, trim_line, trim_unicode_space,
     trim_unicode_space_end, trim_unicode_space_start,
 };
+use crate::commit::FragmentCommit;
 use crate::{Cancellation, SourceError, SourceStage};
 
 #[derive(Clone, Eq, PartialEq)]
 pub(super) struct ParsedFile {
     pub(super) path: Vec<u8>,
-    pub(super) commit: Vec<u8>,
-    pub(super) metadata: Option<CommitMetadata>,
+    /// The commit of the file, shared with every other file of the commit.
+    pub(super) commit: Arc<FragmentCommit>,
     pub(super) deleted: bool,
     pub(super) binary: bool,
     pub(super) hunks: Vec<ParsedHunk>,
@@ -77,7 +77,10 @@ fn push_limited(
             "{context} exceeds the configured {limit}-byte ceiling"
         )));
     }
-    reserve_input(output, value.len(), context)?;
+    // Values are appended many times, so the capacity grows geometrically.
+    output
+        .try_reserve(value.len())
+        .map_err(|error| patch_allocation(context, error))?;
     output.extend_from_slice(value);
     Ok(())
 }
@@ -92,45 +95,9 @@ pub(super) fn reserve_input(
         .map_err(|error| patch_allocation(context, error))
 }
 
-pub(super) fn fallible_clone_metadata(
-    metadata: &CommitMetadata,
-    limit: usize,
-) -> PatchResult<CommitMetadata> {
-    let sha = copy_limited(metadata.sha().as_bytes(), limit, "Git metadata SHA")?;
-    let author_name = copy_limited(metadata.author_name().as_bytes(), limit, "Git author name")?;
-    let author_email = copy_limited(
-        metadata.author_email().as_bytes(),
-        limit,
-        "Git author email",
-    )?;
-    let date = copy_limited(metadata.date().as_bytes(), limit, "Git commit date")?;
-    let message = copy_limited(metadata.message().as_bytes(), limit, "Git commit message")?;
-    let total = sha
-        .len()
-        .checked_add(author_name.len())
-        .and_then(|size| size.checked_add(author_email.len()))
-        .and_then(|size| size.checked_add(date.len()))
-        .and_then(|size| size.checked_add(message.len()))
-        .ok_or_else(|| PatchError::Limit("Git metadata size overflowed usize".to_owned()))?;
-    if total > limit {
-        return Err(PatchError::Limit(format!(
-            "Git commit metadata exceeds the configured {limit}-byte ceiling"
-        )));
-    }
-    Ok(CommitMetadata::builder()
-        .sha(sha)
-        .author_name(author_name)
-        .author_email(author_email)
-        .date(date)
-        .message(message)
-        .build())
-}
-
-fn zero_commit_metadata() -> CommitMetadata {
-    CommitMetadata::builder()
-        .date(b"0001-01-01T00:00:00Z".as_slice())
-        .build()
-}
+/// The date of a commit whose header has none, and of output without a
+/// commit, such as a `git diff`.
+const ZERO_DATE: &[u8] = b"0001-01-01T00:00:00Z";
 
 /// How a line of Git output relates to parser units.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -327,8 +294,7 @@ impl PatchStream {
 /// Parser state carried from one unit to the next.
 struct UnitParser {
     limits: GitLimits,
-    commit: Vec<u8>,
-    metadata: Option<CommitMetadata>,
+    commit: Arc<FragmentCommit>,
     /// Files and hunks of the current commit.
     files: usize,
     hunks: usize,
@@ -341,8 +307,13 @@ impl UnitParser {
     fn new(limits: GitLimits) -> Self {
         Self {
             limits,
-            commit: Vec::new(),
-            metadata: Some(zero_commit_metadata()),
+            commit: Arc::new(FragmentCommit::new(
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                ZERO_DATE.to_vec(),
+                Vec::new(),
+            )),
             files: 0,
             hunks: 0,
             #[cfg(any(test, feature = "fuzzing"))]
@@ -369,19 +340,14 @@ impl UnitParser {
             {
                 self.commits += 1;
             }
-            self.commit = copy_limited(
+            let sha = copy_limited(
                 trim_line(value),
                 self.limits.metadata_bytes(),
                 "Git commit SHA",
             )?;
-            let (metadata, next) = parse_commit_header(
-                &lines,
-                0,
-                &self.commit,
-                self.limits.metadata_bytes(),
-                cancellation,
-            )?;
-            self.metadata = Some(metadata);
+            let (commit, next) =
+                parse_commit_header(&lines, 0, sha, self.limits.metadata_bytes(), cancellation)?;
+            self.commit = Arc::new(commit);
             check_blank_lines(&lines[next..], cancellation)?;
             return Ok(None);
         }
@@ -406,18 +372,22 @@ impl UnitParser {
         let mut file = ParsedFile {
             path: parse_diff_fallback(lines[0], limits.path_bytes(), cancellation)?
                 .unwrap_or_default(),
-            commit: copy_limited(&self.commit, limits.metadata_bytes(), "Git file commit SHA")?,
-            metadata: self
-                .metadata
-                .as_ref()
-                .map(|metadata| fallible_clone_metadata(metadata, limits.metadata_bytes()))
-                .transpose()?,
+            commit: Arc::clone(&self.commit),
             deleted: false,
             binary: false,
             hunks: Vec::new(),
             #[cfg(any(test, feature = "fuzzing"))]
             commit_index: self.commits,
         };
+        // A commit header was checked against this limit when it was read.
+        // Output without one, such as a `git diff`, has default metadata
+        // that must fit as well.
+        if self.commit.metadata_len() > limits.metadata_bytes() {
+            return Err(PatchError::Limit(format!(
+                "Git commit metadata exceeds the configured {}-byte ceiling",
+                limits.metadata_bytes()
+            )));
+        }
         let mut saw_old_path = false;
         let mut saw_new_path = false;
         let mut saw_old_mode = false;
@@ -686,13 +656,13 @@ pub fn fuzz_parse_patch(
 fn parse_commit_header(
     lines: &[&[u8]],
     start: usize,
-    sha: &[u8],
+    sha: Vec<u8>,
     metadata_limit: usize,
     cancellation: &dyn Cancellation,
-) -> PatchResult<(CommitMetadata, usize)> {
+) -> PatchResult<(FragmentCommit, usize)> {
     let mut author_name = Vec::new();
     let mut author_email = Vec::new();
-    let mut date = copy_limited(b"0001-01-01T00:00:00Z", metadata_limit, "Git commit date")?;
+    let mut date = copy_limited(ZERO_DATE, metadata_limit, "Git commit date")?;
     let mut index = start + 1;
     while index < lines.len()
         && !lines[index].starts_with(b"diff --git ")
@@ -762,15 +732,8 @@ fn parse_commit_header(
             "Git commit metadata exceeds the configured {metadata_limit}-byte ceiling"
         )));
     }
-    let sha = copy_limited(sha, metadata_limit, "Git metadata SHA")?;
     Ok((
-        CommitMetadata::builder()
-            .sha(sha)
-            .author_name(author_name)
-            .author_email(author_email)
-            .date(date)
-            .message(message)
-            .build(),
+        FragmentCommit::new(sha, author_name, author_email, date, message),
         index,
     ))
 }
@@ -889,6 +852,13 @@ fn parse_hunk(
         None => 1,
     };
     let mut added = Vec::new();
+    added
+        .try_reserve_exact(added_bytes(
+            &lines[start + 1..],
+            old_remaining,
+            new_remaining,
+        ))
+        .map_err(|error| patch_allocation("Git hunk bytes", error))?;
     let mut previous_added = false;
     let mut index = start + 1;
     while old_remaining > 0 || new_remaining > 0 {
@@ -952,6 +922,36 @@ fn parse_hunk(
         },
         index,
     ))
+}
+
+/// Counts the added bytes of the hunk lines that start at `lines` the way
+/// [`parse_hunk`] reads them, so that the bytes need one allocation. The
+/// count stops early where [`parse_hunk`] fails.
+pub(super) fn added_bytes(
+    lines: &[&[u8]],
+    mut old_remaining: usize,
+    mut new_remaining: usize,
+) -> usize {
+    let mut total = 0_usize;
+    for line in lines {
+        if old_remaining == 0 && new_remaining == 0 {
+            break;
+        }
+        match line.first() {
+            Some(b'+') if new_remaining > 0 => {
+                new_remaining -= 1;
+                total = total.saturating_add(line.len() - 1);
+            }
+            Some(b'-') if old_remaining > 0 => old_remaining -= 1,
+            Some(b' ' | b'\n') if old_remaining > 0 && new_remaining > 0 => {
+                old_remaining -= 1;
+                new_remaining -= 1;
+            }
+            Some(b'\\') if line.starts_with(b"\\ ") => {}
+            _ => break,
+        }
+    }
+    total
 }
 
 /// A hunk that ends at a commit or record line has an invalid line there;

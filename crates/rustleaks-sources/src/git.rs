@@ -5,13 +5,12 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 #[cfg(feature = "archives")]
 use std::process::ExitStatus;
+use std::sync::Arc;
 
-use rustleaks_core::model::Fragment;
+use rustleaks_core::model::{ByteText, Fragment};
 
 #[cfg(feature = "archives")]
 use crate::archive::spool::{PushSpool, Spool};
-#[cfg(feature = "archives")]
-use crate::file::FragmentCommit;
 use crate::source::emit_issue;
 #[cfg(feature = "archives")]
 use crate::{ArchiveOptions, ArchiveSource};
@@ -28,9 +27,9 @@ mod text;
 #[cfg(feature = "fuzzing")]
 pub use patch::fuzz_parse_patch;
 
-use patch::{
-    ParsedFile, PatchStream, copy_limited, fallible_clone_metadata, patch_error_to_source,
-};
+#[cfg(feature = "archives")]
+use patch::copy_limited;
+use patch::{ParsedFile, PatchStream, patch_error_to_source};
 #[cfg(feature = "archives")]
 use process::stream_command;
 use process::{
@@ -410,6 +409,7 @@ impl GitSource {
                 input: None,
                 stderr: &OutputBudget::new(self.limits.stderr_bytes()),
                 clear_attribute_source: true,
+                buffers: None,
             },
             &self.environment,
             cancellation,
@@ -508,6 +508,7 @@ impl Source for GitSource {
                 input: None,
                 stderr: &OutputBudget::new(this.limits.stderr_bytes()),
                 clear_attribute_source: this.reads_empty_attributes(),
+                buffers: None,
             },
             &this.environment,
             cancellation,
@@ -615,40 +616,18 @@ impl GitSource {
             }
             return Ok(SourceControl::Continue);
         }
-        let mut hunks = file.hunks.into_iter().peekable();
-        while let Some(hunk) = hunks.next() {
-            let (path, commit, metadata) = if hunks.peek().is_none() {
-                // Parsing already checked these limits. The final hunk can
-                // consume the fields that earlier hunks still need to copy.
-                (
-                    std::mem::take(&mut file.path),
-                    std::mem::take(&mut file.commit),
-                    file.metadata.take(),
-                )
-            } else {
-                let path = copy_limited(&file.path, self.limits.path_bytes(), "Git fragment path")
-                    .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                let commit = copy_limited(
-                    &file.commit,
-                    self.limits.metadata_bytes(),
-                    "Git fragment commit SHA",
-                )
-                .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                let metadata = file
-                    .metadata
-                    .as_ref()
-                    .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
-                    .transpose()
-                    .map_err(|error| patch_error_to_source(error, &self.repository))?;
-                (path, commit, metadata)
+        // The hunks of a file share one path, and every file of a commit
+        // shares the commit fields.
+        let shared_path = (file.hunks.len() > 1).then(|| Arc::new(std::mem::take(&mut file.path)));
+        for hunk in file.hunks {
+            let path = match &shared_path {
+                Some(path) => ByteText::from_shared(Arc::clone(path)),
+                None => ByteText::new(std::mem::take(&mut file.path)),
             };
-            let mut builder = Fragment::builder(hunk.added)
+            let builder = Fragment::builder(hunk.added)
                 .file_path(path)
-                .commit(commit)
                 .start_line(hunk.new_position);
-            if let Some(metadata) = metadata {
-                builder = builder.commit_metadata(metadata);
-            }
+            let builder = file.commit.apply(builder);
             let control =
                 emit(SourceEvent::fragment(builder.build())).map_err(SourceError::Callback)?;
             if control == SourceControl::Stop {
@@ -668,7 +647,7 @@ impl GitSource {
         cancellation: &dyn Cancellation,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
-        let object = object_spec(&file.commit, &file.path)?;
+        let object = object_spec(file.commit.sha(), &file.path)?;
         let logical = bytes_to_path_buf(
             copy_limited(&file.path, self.limits.path_bytes(), "Git archive path")
                 .map_err(|error| patch_error_to_source(error, &self.repository))?,
@@ -740,20 +719,6 @@ impl GitSource {
                 return Ok(control);
             }
         }
-        let commit = FragmentCommit {
-            sha: copy_limited(
-                &file.commit,
-                self.limits.metadata_bytes(),
-                "Git archive commit SHA",
-            )
-            .map_err(|error| patch_error_to_source(error, &self.repository))?,
-            metadata: file
-                .metadata
-                .as_ref()
-                .map(|value| fallible_clone_metadata(value, self.limits.metadata_bytes()))
-                .transpose()
-                .map_err(|error| patch_error_to_source(error, &self.repository))?,
-        };
         let archive = match blob.finish() {
             Spool::Memory(bytes) => ArchiveSource::with_options(
                 io::Cursor::new(bytes),
@@ -770,7 +735,9 @@ impl GitSource {
         };
         // Fragments carry the commit from the start, so their bytes are
         // never copied again.
-        archive.with_commit(commit).visit(cancellation, emit)
+        archive
+            .with_commit(Arc::clone(&file.commit))
+            .visit(cancellation, emit)
     }
 }
 

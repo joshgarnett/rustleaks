@@ -9,6 +9,7 @@
 #[cfg(feature = "archives")]
 mod archive;
 mod cancellation;
+mod commit;
 mod directory;
 mod file;
 mod git;

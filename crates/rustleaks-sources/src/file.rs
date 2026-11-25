@@ -335,13 +335,6 @@ pub struct FileSource {
     complete_consumed: bool,
 }
 
-/// Commit fields given to every fragment of an archive read from Git.
-#[cfg(feature = "archives")]
-pub(crate) struct FragmentCommit {
-    pub(crate) sha: Vec<u8>,
-    pub(crate) metadata: Option<rustleaks_core::model::CommitMetadata>,
-}
-
 /// Paths, options and fragment fields of one scanned file.
 pub(crate) struct FileTarget {
     physical_path: PathBuf,
@@ -349,7 +342,7 @@ pub(crate) struct FileTarget {
     symlink_path: Option<PathBuf>,
     options: FileOptions,
     #[cfg(feature = "archives")]
-    commit: Option<std::sync::Arc<FragmentCommit>>,
+    commit: Option<std::sync::Arc<crate::commit::FragmentCommit>>,
 }
 
 impl FileTarget {
@@ -372,7 +365,7 @@ impl FileTarget {
         logical_path: &LogicalPath,
         symlink_path: Option<&PathBuf>,
         options: FileOptions,
-        commit: Option<&std::sync::Arc<FragmentCommit>>,
+        commit: Option<&std::sync::Arc<crate::commit::FragmentCommit>>,
     ) -> Self {
         Self {
             physical_path: physical_path.to_path_buf(),
@@ -419,12 +412,8 @@ impl FileTarget {
         &self,
         builder: rustleaks_core::model::FragmentBuilder,
     ) -> rustleaks_core::model::FragmentBuilder {
-        let Some(commit) = &self.commit else {
-            return builder;
-        };
-        let builder = builder.commit(commit.sha.clone());
-        match &commit.metadata {
-            Some(metadata) => builder.commit_metadata(metadata.clone()),
+        match &self.commit {
+            Some(commit) => commit.apply(builder),
             None => builder,
         }
     }

@@ -295,7 +295,7 @@ fn text_patch_hunks_preserve_added_bytes_and_no_newline() {
     assert_eq!(files[0].path, b"a.txt");
     assert_eq!(files[0].hunks[0].added, b"new\ntail");
     assert_eq!(files[0].hunks[0].new_position, 1);
-    let metadata = files[0].metadata.as_ref().expect("metadata");
+    let metadata = files[0].commit.metadata();
     assert_eq!(metadata.author_name().as_bytes(), b"Test User");
     assert_eq!(metadata.author_email().as_bytes(), b"user@example.com");
     assert_eq!(metadata.date().as_bytes(), b"2021-11-02T23:37:53Z");
@@ -1074,7 +1074,7 @@ fn metadata_trims_unicode_whitespace() {
         &crate::CancellationToken::new(),
     )
     .expect("Unicode metadata patch");
-    let metadata = files[0].metadata.as_ref().expect("metadata");
+    let metadata = files[0].commit.metadata();
     assert_eq!(metadata.author_name().as_bytes(), b"A User");
     assert_eq!(metadata.message().as_bytes(), b"title");
 
@@ -1085,7 +1085,7 @@ fn metadata_trims_unicode_whitespace() {
         &crate::CancellationToken::new(),
     )
     .expect("fuller metadata patch");
-    let metadata = files[0].metadata.as_ref().expect("fuller metadata");
+    let metadata = files[0].commit.metadata();
     assert_eq!(metadata.author_name().as_bytes(), b"A User");
     assert_eq!(metadata.date().as_bytes(), b"2021-11-02T23:37:53Z");
     assert_eq!(metadata.message().as_bytes(), b"fuller title");
@@ -1128,12 +1128,7 @@ fn overflowing_git_dates_are_ignored_without_panicking() {
         )
         .expect("invalid date preserves the patch");
         assert_eq!(
-            files[0]
-                .metadata
-                .as_ref()
-                .expect("metadata")
-                .date()
-                .as_bytes(),
+            files[0].commit.metadata().date().as_bytes(),
             b"0001-01-01T00:00:00Z"
         );
     }
@@ -1306,7 +1301,7 @@ fn summarize(files: &[ParsedFile]) -> Vec<FileSummary> {
         .map(|file| {
             (
                 file.path.clone(),
-                file.commit.clone(),
+                file.commit.sha().to_vec(),
                 file.deleted,
                 file.binary,
                 file.hunks
@@ -1401,11 +1396,11 @@ fn streamed_history_matches_independent_expectations_in_any_chunking() {
         (b"mode.sh".to_vec(), third, false, false, vec![]),
     ];
     assert_eq!(summarize(&files), expected);
-    let metadata = files[0].metadata.as_ref().expect("second commit metadata");
+    let metadata = files[0].commit.metadata();
     assert_eq!(metadata.author_name().as_bytes(), b"Synthetic Two");
     assert_eq!(metadata.date().as_bytes(), b"2021-11-03T00:02:03Z");
     assert_eq!(metadata.message().as_bytes(), b"second");
-    let metadata = files[5].metadata.as_ref().expect("third commit metadata");
+    let metadata = files[5].commit.metadata();
     assert_eq!(
         metadata.sha().as_bytes(),
         b"3333333333333333333333333333333333333333"
@@ -1688,4 +1683,158 @@ fn streamed_command_stops_and_fails_when_the_consumer_does() {
             ..
         })
     ));
+}
+
+/// Returns scripted reads in order, each at most the size of the caller's
+/// buffer, and then end of file.
+struct ScriptedReader(std::collections::VecDeque<io::Result<Vec<u8>>>);
+
+impl ScriptedReader {
+    fn new(reads: impl IntoIterator<Item = io::Result<&'static [u8]>>) -> Self {
+        Self(
+            reads
+                .into_iter()
+                .map(|read| read.map(<[u8]>::to_vec))
+                .collect(),
+        )
+    }
+}
+
+impl Read for ScriptedReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self.0.front_mut() {
+            None => Ok(0),
+            Some(Err(_)) => Err(self.0.pop_front().and_then(Result::err).expect("error")),
+            Some(Ok(bytes)) => {
+                let read = bytes.len().min(buffer.len());
+                buffer[..read].copy_from_slice(&bytes[..read]);
+                bytes.drain(..read);
+                if bytes.is_empty() {
+                    self.0.pop_front();
+                }
+                Ok(read)
+            }
+        }
+    }
+}
+
+/// Collects what a stdout reader sends: chunks, then an error message if
+/// one ended the output.
+fn collect_chunks(
+    read: impl FnOnce(&std::sync::mpsc::SyncSender<io::Result<Vec<u8>>>),
+) -> (Vec<Vec<u8>>, Option<String>) {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(64);
+    read(&sender);
+    drop(sender);
+    let mut chunks = Vec::new();
+    for message in receiver {
+        match message {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => return (chunks, Some(error.to_string())),
+        }
+    }
+    (chunks, None)
+}
+
+fn interrupted() -> io::Result<&'static [u8]> {
+    Err(io::Error::from(io::ErrorKind::Interrupted))
+}
+
+#[test]
+fn stdout_reads_are_sent_one_chunk_for_each_read() {
+    let reader = ScriptedReader::new([Ok(b"abc".as_slice()), interrupted(), Ok(b"defg")]);
+    let (chunks, error) = collect_chunks(|sender| read_chunks(reader, sender));
+    assert_eq!(chunks, [b"abc".to_vec(), b"defg".to_vec()]);
+    assert_eq!(error, None);
+    for chunk in &chunks {
+        assert_eq!(chunk.capacity(), chunk.len());
+    }
+
+    let reader = ScriptedReader::new([
+        Ok(b"ab".as_slice()),
+        Err(io::Error::other("injected pipe read failure")),
+    ]);
+    let (chunks, error) = collect_chunks(|sender| read_chunks(reader, sender));
+    assert_eq!(chunks, [b"ab".to_vec()]);
+    assert_eq!(error.as_deref(), Some("injected pipe read failure"));
+}
+
+#[test]
+fn filled_stdout_chunks_keep_every_byte_in_order() {
+    let buffers = || {
+        let mut buffer = Vec::new();
+        buffer.try_reserve_exact(8).map_err(io::Error::other)?;
+        Ok(buffer)
+    };
+    // 3 + 4 + 6 + 2 bytes fill one 8-byte buffer and part of a second.
+    let reader = ScriptedReader::new([
+        Ok(b"abc".as_slice()),
+        interrupted(),
+        Ok(b"defg"),
+        Ok(b"hijklm"),
+        Ok(b"no"),
+    ]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert_eq!(chunks, [b"abcdefgh".to_vec(), b"ijklmno".to_vec()]);
+    assert_eq!(error, None);
+    for chunk in &chunks {
+        assert_eq!(chunk.capacity(), 8, "a filled chunk keeps its buffer");
+    }
+
+    // Output that ends at a buffer boundary sends no empty chunk.
+    let reader = ScriptedReader::new([Ok(b"abcdefgh".as_slice())]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert_eq!(chunks, [b"abcdefgh".to_vec()]);
+    assert_eq!(error, None);
+
+    let reader = ScriptedReader::new([]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert!(chunks.is_empty());
+    assert_eq!(error, None);
+
+    // Bytes read before an error are sent before it.
+    let reader = ScriptedReader::new([
+        Ok(b"abcdefghij".as_slice()),
+        Err(io::Error::other("injected pipe read failure")),
+    ]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert_eq!(chunks, [b"abcdefgh".to_vec(), b"ij".to_vec()]);
+    assert_eq!(error.as_deref(), Some("injected pipe read failure"));
+
+    let failing = || Err(io::Error::other("injected buffer failure"));
+    let reader = ScriptedReader::new([Ok(b"abc".as_slice())]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &failing));
+    assert!(chunks.is_empty());
+    assert_eq!(error.as_deref(), Some("injected buffer failure"));
+}
+
+#[test]
+fn hunk_bytes_are_allocated_once_at_their_exact_size() {
+    let patch = b"diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,2 +1,4 @@\n-old\n+one\n ctx\n+two\n+three\n@@ -9 +10,2 @@\n-x\n+four\n+five\n\\ No newline at end of file\n";
+    let files = parse_patch(
+        patch,
+        GitLimits::default(),
+        &crate::CancellationToken::new(),
+    )
+    .expect("patch");
+    let hunks = &files[0].hunks;
+    assert_eq!(hunks.len(), 2);
+    assert_eq!(hunks[0].new_position, 1);
+    assert_eq!(hunks[0].added, b"one\ntwo\nthree\n");
+    assert_eq!(hunks[0].added.capacity(), hunks[0].added.len());
+    assert_eq!(hunks[1].new_position, 10);
+    // The final line feed is removed after the bytes are counted.
+    assert_eq!(hunks[1].added, b"four\nfive");
+    assert_eq!(hunks[1].added.capacity(), hunks[1].added.len() + 1);
+}
+
+#[test]
+fn hunk_byte_count_stops_where_hunk_parsing_fails() {
+    let large = [b"+".as_slice(), &[b'x'; 4096], b"\n"].concat();
+    // A no-newline marker keeps the count going; any other `\` line ends it,
+    // as it makes the hunk invalid.
+    let valid: [&[u8]; 3] = [b"+a\n", b"\\ No newline at end of file\n", &large];
+    assert_eq!(added_bytes(&valid, 0, 2), 2 + 4097);
+    let invalid: [&[u8]; 3] = [b"+a\n", b"\\x\n", &large];
+    assert_eq!(added_bytes(&invalid, 0, 2), 2);
 }

@@ -10,6 +10,12 @@ use crate::{Cancellation, SourceControl, SourceError, SourceStage};
 
 pub(super) const STDOUT_CHUNK_BYTES: usize = 64 * 1024;
 const STDOUT_QUEUE_CHUNKS: usize = 16;
+/// Filled buffers that can wait for the consumer. Each is large, and the
+/// consumer accounts for a buffer only once it takes it.
+const FILLED_QUEUE_CHUNKS: usize = 1;
+
+/// Gives the standard output reader an empty buffer to fill.
+pub(super) type OutputBuffers<'a> = &'a (dyn Fn() -> io::Result<Vec<u8>> + Sync);
 
 /// A started Git child with its output pipes, and its input pipe when the
 /// command reads standard input.
@@ -129,6 +135,7 @@ pub(super) fn stream_command(
             input: None,
             stderr: &OutputBudget::new(stderr_limit),
             clear_attribute_source: false,
+            buffers: None,
         },
         environment,
         cancellation,
@@ -148,6 +155,10 @@ pub(super) struct CommandIo<'a> {
     /// Removes `GIT_ATTR_SOURCE` from the environment of a command that sets
     /// `attr.tree`, since the variable takes precedence over the setting.
     pub(super) clear_attribute_source: bool,
+    /// With buffers, each chunk fills the capacity of one buffer unless the
+    /// output ends first, so a consumer that only collects output takes
+    /// fewer chunks. Without them, each chunk is the output of one read.
+    pub(super) buffers: Option<OutputBuffers<'a>>,
 }
 
 /// Runs Git like [`stream_command`], with optional standard input and a
@@ -182,8 +193,17 @@ pub(super) fn stream_command_with(
         let writer = io.input.zip(stdin).map(|(input, mut stdin)| {
             scope.spawn(move || stdin.write_all(input).and_then(|()| stdin.flush()))
         });
-        let (sender, receiver) = mpsc::sync_channel(STDOUT_QUEUE_CHUNKS);
-        let stdout_reader = scope.spawn(move || read_chunks(stdout, &sender));
+        let buffers = io.buffers;
+        let queued = if buffers.is_some() {
+            FILLED_QUEUE_CHUNKS
+        } else {
+            STDOUT_QUEUE_CHUNKS
+        };
+        let (sender, receiver) = mpsc::sync_channel(queued);
+        let stdout_reader = scope.spawn(move || match buffers {
+            Some(buffers) => fill_chunks(stdout, &sender, buffers),
+            None => read_chunks(stdout, &sender),
+        });
         let stderr_reader = scope.spawn(move || read_bounded_and_drain(stderr, budget));
         let end = drive_stream(&mut child, &receiver, budget, cancellation, stage, on_chunk);
         // Dropping the receiver wakes a reader that waits on a full queue.
@@ -288,21 +308,30 @@ fn drive_stream(
 }
 
 /// Sends standard output in chunks until end of file, a read error, or a
-/// closed receiver.
-fn read_chunks(mut reader: impl Read, sender: &SyncSender<io::Result<Vec<u8>>>) {
+/// closed receiver. Each chunk is the output of one read.
+pub(super) fn read_chunks(mut reader: impl Read, sender: &SyncSender<io::Result<Vec<u8>>>) {
+    let reserve = |chunk: &mut Vec<u8>, bytes| {
+        chunk
+            .try_reserve_exact(bytes)
+            .map_err(|error| io::Error::other(format!("could not reserve command output: {error}")))
+    };
+    // One read buffer is reused, and each chunk holds only the bytes read.
+    let mut buffer = Vec::new();
+    if let Err(error) = reserve(&mut buffer, STDOUT_CHUNK_BYTES) {
+        let _ = sender.send(Err(error));
+        return;
+    }
+    buffer.resize(STDOUT_CHUNK_BYTES, 0);
     loop {
-        let mut chunk = Vec::new();
-        if let Err(error) = chunk.try_reserve_exact(STDOUT_CHUNK_BYTES) {
-            let _ = sender.send(Err(io::Error::other(format!(
-                "could not reserve command output: {error}"
-            ))));
-            return;
-        }
-        chunk.resize(STDOUT_CHUNK_BYTES, 0);
-        match reader.read(&mut chunk) {
+        match reader.read(&mut buffer) {
             Ok(0) => return,
             Ok(read) => {
-                chunk.truncate(read);
+                let mut chunk = Vec::new();
+                if let Err(error) = reserve(&mut chunk, read) {
+                    let _ = sender.send(Err(error));
+                    return;
+                }
+                chunk.extend_from_slice(&buffer[..read]);
                 if sender.send(Ok(chunk)).is_err() {
                     return;
                 }
@@ -312,6 +341,47 @@ fn read_chunks(mut reader: impl Read, sender: &SyncSender<io::Result<Vec<u8>>>) 
                 let _ = sender.send(Err(error));
                 return;
             }
+        }
+    }
+}
+
+/// Sends standard output in buffers from `buffers`, each filled to its
+/// capacity unless output ends first, until end of file, a read error, or a
+/// closed receiver. Bytes read before an error are sent before the error.
+pub(super) fn fill_chunks(
+    mut reader: impl Read,
+    sender: &SyncSender<io::Result<Vec<u8>>>,
+    buffers: OutputBuffers<'_>,
+) {
+    loop {
+        let mut chunk = match buffers() {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                let _ = sender.send(Err(error));
+                return;
+            }
+        };
+        let room = chunk.capacity() - chunk.len();
+        if room == 0 {
+            let _ = sender.send(Err(io::Error::other("command output buffer has no space")));
+            return;
+        }
+        // `read_to_end` reads into the spare capacity, so the buffer is not
+        // cleared before each read. A chunk shorter than its capacity means
+        // that output ended.
+        let result = (&mut reader)
+            .take(u64::try_from(room).unwrap_or(u64::MAX))
+            .read_to_end(&mut chunk);
+        let ended = result.is_err() || chunk.len() < chunk.capacity();
+        if !chunk.is_empty() && sender.send(Ok(chunk)).is_err() {
+            return;
+        }
+        if let Err(error) = result {
+            let _ = sender.send(Err(error));
+            return;
+        }
+        if ended {
+            return;
         }
     }
 }

@@ -10,13 +10,15 @@
   for every thread that searched it and never freed them. Scans also skip
   rules whose keywords do not occur without visiting them, allocate less in
   the decoder and in commit and stop word checks, and check for cancellation
-  less often. These numbers compare with 0.2.0 on an Apple M5 Ultra with 12
-  detection threads. A folder scan of the gitlab tree peaked at 211 MB
-  instead of 316 MB and used 5 percent less CPU time. A folder scan of the
-  Linux tree used 14 percent less CPU time. Git history scans of rails and
-  django used 11 and 17 percent less CPU time and up to 9 percent more
-  memory.
-  Findings, reports and exit codes do not change.
+  less often. The decoder skips bytes that cannot start an encoded value.
+  Git history scans keep one copy of each commit's metadata for all of its
+  fragments, hand Git output to the parser in larger pieces, and allocate
+  each hunk once. These numbers compare with 0.2.0 on an Apple M5 Ultra
+  with 12 detection threads. A folder scan of the gitlab tree peaked at
+  211 MB instead of 317 MB and used 10 percent less CPU time. A folder scan
+  of the Linux tree used 22 percent less CPU time. Git history scans of
+  rails and django used 15 and 19 percent less CPU time and up to 7 percent
+  more memory. Findings, reports and exit codes do not change.
 - In `rustleaks-core`, `ScanScratch` and `Engine::scan_fragment_with_scratch`
   let a thread that scans many fragments reuse search caches and buffers,
   with a limit on the caches. The outcome is the same as with
@@ -27,6 +29,8 @@
   `rustleaks` command's scan threads use it too. A scan cancelled through
   such a signal can stop at a later checkpoint and report more work units
   than before.
+- In `rustleaks-core`, `ByteText::from_shared` is public. It wraps shared
+  bytes without copying them. Cloning a `ByteText` still copies its bytes.
 
 ## [0.2.0] - 2026-11-24
 
