@@ -412,7 +412,8 @@ pub(super) fn visit(
     let processes = source.history_processes.get();
     let ended = AtomicBool::new(false);
     let (jobs, queue) = mpsc::channel::<Job>();
-    // The list waits when the parser is this many batches behind it.
+    // The parser takes listed batches as they arrive; `MAX_LISTED_BYTES`
+    // bounds what they can add up to.
     let (list_sender, listed) = mpsc::sync_channel::<Listed>(processes.saturating_mul(4));
     let [attribute_flag, attribute_value] = super::attribute_override(empty_tree);
     let shared = Shared {
@@ -448,7 +449,10 @@ pub(super) fn visit(
         let lister = match thread::Builder::new()
             .name("rustleaks-git-list".to_owned())
             .spawn_scoped(scope, || {
-                list_batches(source, size, &shared.abort, &list_sender)
+                // The thread owns the sender, so the parser sees the list end
+                // even if the thread panics.
+                let sender = list_sender;
+                list_batches(source, size, &shared.abort, &sender);
             }) {
             Ok(lister) => lister,
             // One process reads the history without a list.
@@ -513,8 +517,10 @@ pub(super) fn visit(
         }
         // As with one process, a Git child that could not be stopped and
         // reaped fails a scan that stopped or was cancelled.
+        // A batch Git that could not be stopped before one process takes
+        // over fails the scan too.
         match (result, cleanup) {
-            (Ok(Some(SourceControl::Stop)) | Err(SourceError::Cancelled), Some(error)) => {
+            (Ok(Some(SourceControl::Stop) | None) | Err(SourceError::Cancelled), Some(error)) => {
                 Err(error)
             }
             (result, _) => result,
@@ -690,10 +696,11 @@ impl Held {
     }
 
     /// Publishes the held events in order, after the list succeeded, with
-    /// the parser's polls between them.
+    /// the parser's polls between them and after the last one.
     fn confirm(
         &mut self,
         cancellation: &dyn Cancellation,
+        polled: &AtomicBool,
         emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
     ) -> Result<SourceControl, SourceError> {
         self.confirmed = true;
@@ -711,6 +718,9 @@ impl Held {
                     }
                 }
             }
+        }
+        if polled.swap(false, Ordering::Relaxed) && cancellation.is_cancelled() {
+            return Err(SourceError::Cancelled);
         }
         Ok(SourceControl::Continue)
     }
@@ -739,20 +749,28 @@ fn parse_batches(
     while list.count < 2 && list.end.is_none() {
         list.poll(true, cancellation)?;
     }
+    // Archive members of one file can add up to far more than the events
+    // that may wait, so a history that reads archives waits for the list.
+    #[cfg(feature = "archives")]
+    if source.archives.is_some() {
+        list.wait_for_end(cancellation)?;
+    }
     if list.end == Some(false) || list.count < 2 {
-        return Ok(None);
+        return one_process(cancellation);
     }
     let mut held = Held {
         items: Vec::new(),
         bytes: 0,
-        confirmed: false,
+        confirmed: list.end == Some(true),
     };
+    let polled = AtomicBool::new(false);
     let result = parse_listed(
         source,
         shared,
         &jobs,
         &mut list,
         &mut held,
+        &polled,
         processes,
         cancellation,
         emit,
@@ -760,20 +778,29 @@ fn parse_batches(
     drop(jobs);
     match result {
         Ok(Some(control)) => Ok(Some(control)),
-        Ok(None) => Ok(None),
+        Ok(None) => one_process(cancellation),
         Err(SourceError::Cancelled) => Err(SourceError::Cancelled),
         // A failure before the list succeeded publishes the held events
         // first, as one process would have published them before failing.
         // A list that fails uses one process, which then fails itself.
         Err(error) if !held.confirmed => match list.wait_for_end(cancellation)? {
-            true => match held.confirm(cancellation, emit)? {
+            true => match held.confirm(cancellation, &polled, emit)? {
                 SourceControl::Stop => Ok(Some(SourceControl::Stop)),
                 SourceControl::Continue => Err(error),
             },
-            false => Ok(None),
+            false => one_process(cancellation),
         },
         Err(error) => Err(error),
     }
+}
+
+/// Leaves the history to one process, unless the scan was cancelled while
+/// the list ran.
+fn one_process(cancellation: &dyn Cancellation) -> Result<Option<SourceControl>, SourceError> {
+    if cancellation.is_cancelled() {
+        return Err(SourceError::Cancelled);
+    }
+    Ok(None)
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // One ordered parse loop.
@@ -783,6 +810,7 @@ fn parse_listed(
     jobs: &Sender<Job>,
     list: &mut ListState<'_>,
     held: &mut Held,
+    polled: &AtomicBool,
     processes: usize,
     cancellation: &dyn Cancellation,
     emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
@@ -793,10 +821,9 @@ fn parse_listed(
     let mut stream = PatchStream::new(source.limits);
     let mut shown = false;
     let mut warned = false;
-    let polled = AtomicBool::new(false);
     let recording = Recording {
         scan: cancellation,
-        polled: &polled,
+        polled,
     };
     // Takes listed batches, gives them to Git processes, and publishes the
     // held events once the list succeeded. `None` means one process.
@@ -812,7 +839,7 @@ fn parse_listed(
         if !held.confirmed {
             match list.end {
                 Some(true) => {
-                    let control = held.confirm(cancellation, emit)?;
+                    let control = held.confirm(cancellation, polled, emit)?;
                     if control == SourceControl::Stop {
                         return Ok(Some(control));
                     }
@@ -879,7 +906,7 @@ fn parse_listed(
                     shared.buffer.release(batch, chunk);
                     pushed.map_err(|error| patch_error_to_source(error, &source.repository))?;
                     if source.emit_ready_files(&mut stream, &recording, &mut |event| {
-                        held.emit(event, &polled, emit)
+                        held.emit(event, polled, emit)
                     })? == SourceControl::Stop
                     {
                         return Ok(Some(SourceControl::Stop));
@@ -902,7 +929,7 @@ fn parse_listed(
         batch += 1;
     }
     // Every batch was read, so the list ended and succeeded.
-    if !held.confirmed && held.confirm(cancellation, emit)? == SourceControl::Stop {
+    if !held.confirmed && held.confirm(cancellation, polled, emit)? == SourceControl::Stop {
         return Ok(Some(SourceControl::Stop));
     }
     source
@@ -1044,10 +1071,58 @@ mod tests {
             Ok(SourceControl::Continue)
         };
         assert_eq!(
-            held.confirm(&scan, &mut cancel_first),
+            held.confirm(&scan, &polled, &mut cancel_first),
             Err(crate::SourceError::Cancelled)
         );
         assert_eq!(published.len(), 2);
         assert!(held.confirmed);
+    }
+
+    #[test]
+    fn a_poll_after_the_last_held_event_is_repeated() {
+        let scan = CancellationToken::new();
+        let polled = AtomicBool::new(false);
+        let recording = Recording {
+            scan: &scan,
+            polled: &polled,
+        };
+        let mut held = Held {
+            items: Vec::new(),
+            bytes: 0,
+            confirmed: false,
+        };
+        let mut nothing = |_: SourceEvent| -> Result<SourceControl, crate::CallbackError> {
+            unreachable!("held events are not published before confirmation")
+        };
+        held.emit(issue("last"), &polled, &mut nothing)
+            .expect("held");
+        // The parser polls once more before it reaches a failure or the end.
+        assert!(!recording.is_cancelled());
+        let mut cancel = |_: SourceEvent| {
+            scan.cancel();
+            Ok(SourceControl::Continue)
+        };
+        assert_eq!(
+            held.confirm(&scan, &polled, &mut cancel),
+            Err(crate::SourceError::Cancelled)
+        );
+        // Without that poll the callback's cancellation waits for the next.
+        let quiet = CancellationToken::new();
+        let polled = AtomicBool::new(false);
+        let mut held = Held {
+            items: Vec::new(),
+            bytes: 0,
+            confirmed: false,
+        };
+        held.emit(issue("last"), &polled, &mut nothing)
+            .expect("held");
+        let mut cancel = |_: SourceEvent| {
+            quiet.cancel();
+            Ok(SourceControl::Continue)
+        };
+        assert_eq!(
+            held.confirm(&quiet, &polled, &mut cancel),
+            Ok(SourceControl::Continue)
+        );
     }
 }

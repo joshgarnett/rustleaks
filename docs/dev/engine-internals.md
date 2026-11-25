@@ -630,7 +630,8 @@ fragment bytes, and then waits for the list. When the list succeeds, the
 kept events are published in order and the polls repeated, so a callback
 that stops or cancels the scan ends it at the same record as one process.
 When the list fails, the kept events are dropped, the batch processes are
-stopped, and one process reads the history. A batch failure before the list
+stopped, and one process reads the history, unless the scan was cancelled or
+a batch process could not be stopped. A batch failure before the list
 has ended waits for the list: if the list succeeds, the kept events are
 published and the failure is reported, as one process would. On the rails
 history with 12 detection threads, starting batches early cut wall time by
@@ -669,8 +670,11 @@ Bounds:
 - Listed batches that no process has taken yet keep one line of 41 or 65
   bytes for each commit, up to 10,000,000 commits. A longer list uses one
   process.
-- Events kept until the list succeeds hold at most about 32 MiB of fragment
-  bytes (`HELD_EVENT_BYTES`).
+- Events kept until the list succeeds hold about 32 MiB of fragment bytes
+  (`HELD_EVENT_BYTES`), plus the fragments of the one file record whose
+  parse passes that size. A history that reads archives waits for the list
+  before it starts batches, because the members of one archive can add up
+  to far more.
 - `git_stderr_bytes` is one `OutputBudget` that all batch processes share.
   A warning that each process repeats counts once for each process.
 - Cancellation, a stop from the consumer and an error end the visit: every
