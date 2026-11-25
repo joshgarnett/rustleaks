@@ -7,15 +7,10 @@ use rustleaks_core::model::{ByteText, CommitMetadata, FragmentBuilder};
 /// The commit SHA and metadata of one Git commit.
 ///
 /// Each field is kept once. Every fragment of the commit, from each file,
-/// hunk and archive member, refers to the same bytes instead of a copy.
-#[derive(Default, Eq, PartialEq)]
-pub(crate) struct FragmentCommit {
-    sha: Arc<Vec<u8>>,
-    metadata: Option<SharedMetadata>,
-}
-
+/// hunk and archive member, refers to the same bytes instead of a copy. The
+/// SHA is both the fragment commit and the metadata SHA.
 #[derive(Eq, PartialEq)]
-struct SharedMetadata {
+pub(crate) struct FragmentCommit {
     sha: Arc<Vec<u8>>,
     author_name: Arc<Vec<u8>>,
     author_email: Arc<Vec<u8>>,
@@ -24,15 +19,24 @@ struct SharedMetadata {
 }
 
 impl FragmentCommit {
-    /// Keeps the fields without copying them. A metadata SHA equal to `sha`
-    /// shares its bytes.
-    pub(crate) fn new(sha: Vec<u8>, metadata: Option<CommitMetadata>) -> Self {
-        let sha = Arc::new(sha);
-        let metadata = metadata.map(|metadata| SharedMetadata::new(metadata, &sha));
-        Self { sha, metadata }
+    /// Keeps the fields without copying them.
+    pub(crate) fn new(
+        sha: Vec<u8>,
+        author_name: Vec<u8>,
+        author_email: Vec<u8>,
+        date: Vec<u8>,
+        message: Vec<u8>,
+    ) -> Self {
+        Self {
+            sha: Arc::new(sha),
+            author_name: Arc::new(author_name),
+            author_email: Arc::new(author_email),
+            date: Arc::new(date),
+            message: Arc::new(message),
+        }
     }
 
-    /// Returns the fragment commit SHA.
+    /// Returns the commit SHA.
     #[cfg(any(test, feature = "archives"))]
     pub(crate) fn sha(&self) -> &[u8] {
         &self.sha
@@ -40,53 +44,19 @@ impl FragmentCommit {
 
     /// Returns the byte length of the metadata fields together.
     pub(crate) fn metadata_len(&self) -> usize {
-        self.metadata.as_ref().map_or(0, |metadata| {
-            [
-                &metadata.sha,
-                &metadata.author_name,
-                &metadata.author_email,
-                &metadata.date,
-                &metadata.message,
-            ]
-            .iter()
-            .fold(0_usize, |total, field| total.saturating_add(field.len()))
-        })
+        [
+            &self.sha,
+            &self.author_name,
+            &self.author_email,
+            &self.date,
+            &self.message,
+        ]
+        .iter()
+        .fold(0_usize, |total, field| total.saturating_add(field.len()))
     }
 
     /// Returns the commit metadata, sharing its bytes.
-    pub(crate) fn metadata(&self) -> Option<CommitMetadata> {
-        self.metadata.as_ref().map(SharedMetadata::metadata)
-    }
-
-    /// Sets the commit SHA and metadata of a fragment.
-    pub(crate) fn apply(&self, builder: FragmentBuilder) -> FragmentBuilder {
-        let builder = builder.commit(ByteText::from_shared(Arc::clone(&self.sha)));
-        match self.metadata() {
-            Some(metadata) => builder.commit_metadata(metadata),
-            None => builder,
-        }
-    }
-}
-
-impl SharedMetadata {
-    fn new(metadata: CommitMetadata, commit_sha: &Arc<Vec<u8>>) -> Self {
-        let share = |value: &ByteText| Arc::new(value.as_bytes().to_vec());
-        let sha = if metadata.sha().as_bytes() == commit_sha.as_slice() {
-            Arc::clone(commit_sha)
-        } else {
-            share(metadata.sha())
-        };
-        Self {
-            sha,
-            author_name: share(metadata.author_name()),
-            author_email: share(metadata.author_email()),
-            date: share(metadata.date()),
-            message: share(metadata.message()),
-        }
-    }
-
-    fn metadata(&self) -> CommitMetadata {
-        let shared = |value: &Arc<Vec<u8>>| ByteText::from_shared(Arc::clone(value));
+    pub(crate) fn metadata(&self) -> CommitMetadata {
         CommitMetadata::builder()
             .sha(shared(&self.sha))
             .author_name(shared(&self.author_name))
@@ -95,12 +65,33 @@ impl SharedMetadata {
             .message(shared(&self.message))
             .build()
     }
+
+    /// Sets the commit SHA and metadata of a fragment.
+    pub(crate) fn apply(&self, builder: FragmentBuilder) -> FragmentBuilder {
+        builder
+            .commit(shared(&self.sha))
+            .commit_metadata(self.metadata())
+    }
+}
+
+fn shared(bytes: &Arc<Vec<u8>>) -> ByteText {
+    ByteText::from_shared(Arc::clone(bytes))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rustleaks_core::model::Fragment;
+
+    fn commit(sha: &[u8]) -> FragmentCommit {
+        FragmentCommit::new(
+            sha.to_vec(),
+            b"Synthetic Author".to_vec(),
+            b"author@example.invalid".to_vec(),
+            b"2021-11-02T23:37:53Z".to_vec(),
+            b"subject\n\nbody".to_vec(),
+        )
+    }
 
     fn metadata(sha: &[u8]) -> CommitMetadata {
         CommitMetadata::builder()
@@ -114,7 +105,9 @@ mod tests {
 
     #[test]
     fn fragments_of_one_commit_share_its_fields_and_keep_their_values() {
-        let commit = FragmentCommit::new(b"abc123".to_vec(), Some(metadata(b"abc123")));
+        let commit = commit(b"abc123");
+        assert_eq!(commit.metadata(), metadata(b"abc123"));
+        assert_eq!(commit.metadata_len(), 6 + 16 + 22 + 20 + 13);
         let first = commit.apply(Fragment::builder("one")).build();
         let second = commit.apply(Fragment::builder("two")).build();
         for fragment in [&first, &second] {
@@ -145,18 +138,5 @@ mod tests {
         // Dropping the source fields leaves every fragment's bytes in place.
         drop(commit);
         assert_eq!(second.commit_metadata(), Some(&metadata(b"abc123")));
-    }
-
-    #[test]
-    fn a_different_metadata_sha_and_missing_metadata_are_kept() {
-        let commit = FragmentCommit::new(b"abc".to_vec(), Some(metadata(b"def")));
-        let fragment = commit.apply(Fragment::builder("x")).build();
-        assert_eq!(fragment.commit().as_bytes(), b"abc");
-        assert_eq!(fragment.commit_metadata(), Some(&metadata(b"def")));
-
-        let commit = FragmentCommit::new(Vec::new(), None);
-        let fragment = commit.apply(Fragment::builder("x")).build();
-        assert_eq!(fragment, Fragment::builder("x").commit("").build());
-        assert_eq!(fragment.commit_metadata(), None);
     }
 }

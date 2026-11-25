@@ -1,8 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
 
-use rustleaks_core::model::CommitMetadata;
-
 use super::GitLimits;
 use super::process::STDOUT_CHUNK_BYTES;
 use super::text::{
@@ -79,7 +77,10 @@ fn push_limited(
             "{context} exceeds the configured {limit}-byte ceiling"
         )));
     }
-    reserve_input(output, value.len(), context)?;
+    // Values are appended many times, so the capacity grows geometrically.
+    output
+        .try_reserve(value.len())
+        .map_err(|error| patch_allocation(context, error))?;
     output.extend_from_slice(value);
     Ok(())
 }
@@ -94,11 +95,9 @@ pub(super) fn reserve_input(
         .map_err(|error| patch_allocation(context, error))
 }
 
-fn zero_commit_metadata() -> CommitMetadata {
-    CommitMetadata::builder()
-        .date(b"0001-01-01T00:00:00Z".as_slice())
-        .build()
-}
+/// The date of a commit whose header has none, and of output without a
+/// commit, such as a `git diff`.
+const ZERO_DATE: &[u8] = b"0001-01-01T00:00:00Z";
 
 /// How a line of Git output relates to parser units.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -310,7 +309,10 @@ impl UnitParser {
             limits,
             commit: Arc::new(FragmentCommit::new(
                 Vec::new(),
-                Some(zero_commit_metadata()),
+                Vec::new(),
+                Vec::new(),
+                ZERO_DATE.to_vec(),
+                Vec::new(),
             )),
             files: 0,
             hunks: 0,
@@ -343,9 +345,9 @@ impl UnitParser {
                 self.limits.metadata_bytes(),
                 "Git commit SHA",
             )?;
-            let (metadata, next) =
-                parse_commit_header(&lines, 0, &sha, self.limits.metadata_bytes(), cancellation)?;
-            self.commit = Arc::new(FragmentCommit::new(sha, Some(metadata)));
+            let (commit, next) =
+                parse_commit_header(&lines, 0, sha, self.limits.metadata_bytes(), cancellation)?;
+            self.commit = Arc::new(commit);
             check_blank_lines(&lines[next..], cancellation)?;
             return Ok(None);
         }
@@ -654,13 +656,13 @@ pub fn fuzz_parse_patch(
 fn parse_commit_header(
     lines: &[&[u8]],
     start: usize,
-    sha: &[u8],
+    sha: Vec<u8>,
     metadata_limit: usize,
     cancellation: &dyn Cancellation,
-) -> PatchResult<(CommitMetadata, usize)> {
+) -> PatchResult<(FragmentCommit, usize)> {
     let mut author_name = Vec::new();
     let mut author_email = Vec::new();
-    let mut date = copy_limited(b"0001-01-01T00:00:00Z", metadata_limit, "Git commit date")?;
+    let mut date = copy_limited(ZERO_DATE, metadata_limit, "Git commit date")?;
     let mut index = start + 1;
     while index < lines.len()
         && !lines[index].starts_with(b"diff --git ")
@@ -730,15 +732,8 @@ fn parse_commit_header(
             "Git commit metadata exceeds the configured {metadata_limit}-byte ceiling"
         )));
     }
-    let sha = copy_limited(sha, metadata_limit, "Git metadata SHA")?;
     Ok((
-        CommitMetadata::builder()
-            .sha(sha)
-            .author_name(author_name)
-            .author_email(author_email)
-            .date(date)
-            .message(message)
-            .build(),
+        FragmentCommit::new(sha, author_name, author_email, date, message),
         index,
     ))
 }
@@ -857,6 +852,13 @@ fn parse_hunk(
         None => 1,
     };
     let mut added = Vec::new();
+    added
+        .try_reserve_exact(added_bytes(
+            &lines[start + 1..],
+            old_remaining,
+            new_remaining,
+        ))
+        .map_err(|error| patch_allocation("Git hunk bytes", error))?;
     let mut previous_added = false;
     let mut index = start + 1;
     while old_remaining > 0 || new_remaining > 0 {
@@ -920,6 +922,32 @@ fn parse_hunk(
         },
         index,
     ))
+}
+
+/// Counts the added bytes of the hunk lines that start at `lines` the way
+/// [`parse_hunk`] reads them, so that the bytes need one allocation. The
+/// count stops early where [`parse_hunk`] fails.
+fn added_bytes(lines: &[&[u8]], mut old_remaining: usize, mut new_remaining: usize) -> usize {
+    let mut total = 0_usize;
+    for line in lines {
+        if old_remaining == 0 && new_remaining == 0 {
+            break;
+        }
+        match line.first() {
+            Some(b'+') if new_remaining > 0 => {
+                new_remaining -= 1;
+                total = total.saturating_add(line.len() - 1);
+            }
+            Some(b'-') if old_remaining > 0 => old_remaining -= 1,
+            Some(b' ' | b'\n') if old_remaining > 0 && new_remaining > 0 => {
+                old_remaining -= 1;
+                new_remaining -= 1;
+            }
+            Some(b'\\') => {}
+            _ => break,
+        }
+    }
+    total
 }
 
 /// A hunk that ends at a commit or record line has an invalid line there;
