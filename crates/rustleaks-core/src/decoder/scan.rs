@@ -30,23 +30,24 @@ use crate::regex::ByteSpan;
 const HEX_MINIMUM: usize = 32;
 const BASE64_MINIMUM: usize = 16;
 
-/// Returns every match in order. `admit` runs before each match is kept and
-/// stops the scan with its error.
-pub(super) fn find_encodings<E>(
+/// Returns `keep(span)` for every match, in order. `admit` runs before each
+/// match is kept and stops the scan with its error.
+pub(super) fn find_encodings<T, E>(
     data: &[u8],
     mut admit: impl FnMut() -> Result<(), E>,
-) -> Result<Vec<ByteSpan>, E> {
-    let mut spans = Vec::new();
+    mut keep: impl FnMut(ByteSpan) -> T,
+) -> Result<Vec<T>, E> {
+    let mut kept = Vec::new();
     let mut position = 0;
     while position < data.len() {
         let Some((start, end)) = next_match(data, position) else {
             break;
         };
         admit()?;
-        spans.push(ByteSpan { start, end });
+        kept.push(keep(ByteSpan { start, end }));
         position = end;
     }
-    Ok(spans)
+    Ok(kept)
 }
 
 /// A base64 class byte, which includes `U` and every hex digit.
@@ -242,14 +243,14 @@ mod tests {
 
     fn regex_spans(regex: &GoRegex, data: &[u8]) -> Vec<(usize, usize)> {
         regex
-            .find_all_normalized(&NormalizedHaystack::new(data))
+            .find_all_normalized(&NormalizedHaystack::new(data), None)
             .into_iter()
             .map(|span| (span.start, span.end))
             .collect()
     }
 
     fn scanner_spans(data: &[u8]) -> Vec<(usize, usize)> {
-        find_encodings(data, || Ok::<(), ()>(()))
+        find_encodings(data, || Ok::<(), ()>(()), |span| span)
             .unwrap()
             .into_iter()
             .map(|span| (span.start, span.end))
@@ -351,13 +352,17 @@ mod tests {
     #[test]
     fn admit_runs_before_each_match_and_can_stop_the_scan() {
         let mut admitted = 0;
-        let result = find_encodings(b"%41 %42\nabcdefghijklmnopq", || {
-            if admitted == 1 {
-                return Err(());
-            }
-            admitted += 1;
-            Ok(())
-        });
+        let result = find_encodings(
+            b"%41 %42\nabcdefghijklmnopq",
+            || {
+                if admitted == 1 {
+                    return Err(());
+                }
+                admitted += 1;
+                Ok(())
+            },
+            |span| span,
+        );
         assert!(result.is_err());
         assert_eq!(admitted, 1);
     }

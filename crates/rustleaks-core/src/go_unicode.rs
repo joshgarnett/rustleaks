@@ -32,25 +32,46 @@ pub(crate) struct Lowered {
 
 /// Lowercases like [`lowercase_bytes`] and reports what the output keeps.
 pub(crate) fn lowercase_bytes_keeping_ascii(bytes: &[u8]) -> Lowered {
+    let mut output = Vec::new();
+    let flags = lowercase_into(bytes, &mut output);
+    Lowered {
+        bytes: output,
+        kept_ascii: flags.kept_ascii,
+        same_offsets: flags.same_offsets,
+    }
+}
+
+/// What a lowercased pass keeps of the input's ASCII text; see [`Lowered`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LoweredFlags {
+    pub(crate) kept_ascii: bool,
+    pub(crate) same_offsets: bool,
+}
+
+/// Lowercases like [`lowercase_bytes_keeping_ascii`] into `output`, which
+/// is cleared first, so that a caller can reuse its storage.
+pub(crate) fn lowercase_into(bytes: &[u8], output: &mut Vec<u8>) -> LoweredFlags {
+    output.clear();
     if bytes.is_ascii() {
-        return Lowered {
-            bytes: bytes.to_ascii_lowercase(),
+        output.extend_from_slice(bytes);
+        output.make_ascii_lowercase();
+        return LoweredFlags {
             kept_ascii: true,
             same_offsets: true,
         };
     }
-    let mut output = String::with_capacity(bytes.len());
+    output.reserve(bytes.len());
     let mut kept_ascii = true;
     let mut same_offsets = std::str::from_utf8(bytes).is_ok();
+    let mut encoded = [0; 4];
     for character in chars(bytes) {
         let lowered = simple_lowercase(character);
         kept_ascii &= character.is_ascii() || !lowered.is_ascii();
         same_offsets &= lowered.len_utf8() == character.len_utf8()
             && !matches!(character, '\u{17f}' | '\u{212a}');
-        output.push(lowered);
+        output.extend_from_slice(lowered.encode_utf8(&mut encoded).as_bytes());
     }
-    Lowered {
-        bytes: output.into_bytes(),
+    LoweredFlags {
         kept_ascii,
         same_offsets: same_offsets && kept_ascii,
     }

@@ -825,6 +825,7 @@ pub fn rustleaks_core::Engine::builder(rustleaks_core::config::CompiledConfig) -
 pub const fn rustleaks_core::Engine::config(&self) -> &rustleaks_core::config::CompiledConfig
 pub fn rustleaks_core::Engine::scan_fragment(&self, &rustleaks_core::model::Fragment, &rustleaks_core::model::ScanOptions) -> rustleaks_core::ScanOutcome
 pub fn rustleaks_core::Engine::scan_fragment_controlled(&self, &rustleaks_core::model::Fragment, &rustleaks_core::model::ScanOptions, &rustleaks_core::ScanControl<'_>) -> rustleaks_core::ScanOutcome
+pub fn rustleaks_core::Engine::scan_fragment_with_scratch(&self, &rustleaks_core::model::Fragment, &rustleaks_core::model::ScanOptions, &rustleaks_core::ScanControl<'_>, &mut rustleaks_core::ScanScratch) -> rustleaks_core::ScanOutcome
 pub struct rustleaks_core::EngineBuilder
 impl rustleaks_core::EngineBuilder
 pub fn rustleaks_core::EngineBuilder::build(self) -> core::result::Result<rustleaks_core::Engine, rustleaks_core::ScanError>
@@ -861,6 +862,15 @@ pub const fn rustleaks_core::ScanOutcome::termination(&self) -> core::option::Op
 pub const fn rustleaks_core::ScanOutcome::usage(&self) -> rustleaks_core::ScanUsage
 impl core::fmt::Debug for rustleaks_core::ScanOutcome
 pub fn rustleaks_core::ScanOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct rustleaks_core::ScanScratch
+impl rustleaks_core::ScanScratch
+pub const rustleaks_core::ScanScratch::DEFAULT_CACHE_LIMIT: usize
+pub fn rustleaks_core::ScanScratch::new() -> Self
+pub fn rustleaks_core::ScanScratch::with_cache_limit(usize) -> Self
+impl core::default::Default for rustleaks_core::ScanScratch
+pub fn rustleaks_core::ScanScratch::default() -> Self
+impl core::fmt::Debug for rustleaks_core::ScanScratch
+pub fn rustleaks_core::ScanScratch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct rustleaks_core::ScanUsage
 impl rustleaks_core::ScanUsage
 pub const fn rustleaks_core::ScanUsage::collected_spans(self) -> usize
@@ -871,7 +881,10 @@ pub const fn rustleaks_core::ScanUsage::normalization_bytes(self) -> usize
 pub const fn rustleaks_core::ScanUsage::work_units(self) -> usize
 pub trait rustleaks_core::ScanCancellation: core::marker::Send + core::marker::Sync
 pub fn rustleaks_core::ScanCancellation::is_cancelled(&self) -> bool
+pub fn rustleaks_core::ScanCancellation::reads_state_only(&self) -> bool
 impl rustleaks_core::ScanCancellation for core::sync::atomic::AtomicBool
 pub fn core::sync::atomic::AtomicBool::is_cancelled(&self) -> bool
+pub fn core::sync::atomic::AtomicBool::reads_state_only(&self) -> bool
 impl<F> rustleaks_core::ScanCancellation for F where F: core::ops::function::Fn() -> bool + core::marker::Send + core::marker::Sync
 pub fn F::is_cancelled(&self) -> bool
+pub fn F::reads_state_only(&self) -> bool

@@ -163,8 +163,11 @@ It is not a budget, and the outcome is still reported as complete.
 `Engine::scan_fragment_controlled` with a `ScanControl`:
 
 - `ScanControl::unlimited()` has no cancellation.
-- `ScanControl::cancellable(&flag)` takes an `AtomicBool` or any
-  `Fn() -> bool + Send + Sync`. The engine checks it between steps.
+- `ScanControl::cancellable(&flag)` takes an `AtomicBool`, any
+  `Fn() -> bool + Send + Sync`, or your own `ScanCancellation` type. The
+  engine checks it between steps. If your type only reads a flag, return
+  `true` from `ScanCancellation::reads_state_only`, as `AtomicBool` does,
+  and the engine checks it less often.
 - `.with_budget(ScanBudget::unlimited().max_...(n))` adds limits. The
   budgets are `max_decoded_bytes`, `max_work_units`, `max_finding_records`,
   `max_finding_payload_bytes`, `max_collected_spans` and
@@ -222,6 +225,49 @@ What your program must do:
 
 See [Resource limits](resource-limits.md) for the limits of the `rustleaks`
 command.
+
+## Scanning many fragments on threads
+
+Each pattern needs search caches. Without help, every pattern keeps a shared
+pool of caches that grows with the number of threads that search it and is
+never freed. When one thread scans many fragments, give it a `ScanScratch`
+and call `Engine::scan_fragment_with_scratch`:
+
+```rust
+use rustleaks_core::config::ConfigLoader;
+use rustleaks_core::model::{Fragment, ScanOptions};
+use rustleaks_core::{Engine, ScanControl, ScanScratch};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = Engine::builder(ConfigLoader::new().load_default()?).build()?;
+    let inputs: [&[u8]; 4] = [b"first", b"second", b"third", b"fourth"];
+    std::thread::scope(|scope| {
+        for pair in inputs.chunks(2) {
+            let engine = &engine;
+            scope.spawn(move || {
+                // One scratch value for each thread.
+                let mut scratch = ScanScratch::new();
+                for input in pair {
+                    let outcome = engine.scan_fragment_with_scratch(
+                        &Fragment::new(*input),
+                        &ScanOptions::default(),
+                        &ScanControl::unlimited(),
+                        &mut scratch,
+                    );
+                    assert!(outcome.is_complete());
+                }
+            });
+        }
+    });
+    Ok(())
+}
+```
+
+The scratch value keeps the caches of its thread and frees the least recently
+used ones when their estimated size passes its limit: 16 MiB with
+`ScanScratch::new`, or the value you give `ScanScratch::with_cache_limit`. A
+smaller limit uses less memory and more CPU time. The result of each scan is
+the same as without it. Use each scratch value on one thread at a time.
 
 ## Reading findings
 

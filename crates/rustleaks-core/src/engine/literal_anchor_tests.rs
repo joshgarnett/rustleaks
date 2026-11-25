@@ -98,7 +98,7 @@ fn assert_paths_agree(
         return 0;
     }
     let normalized = NormalizedHaystack::new(input);
-    let expected = rule.regex.find_all_normalized(&normalized);
+    let expected = rule.regex.find_all_normalized(&normalized, None);
     let starts = automaton_occurrences(
         engine,
         &rule.anchor.keyword_indexes,

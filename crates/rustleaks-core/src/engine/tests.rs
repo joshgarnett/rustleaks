@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use super::*;
 use crate::config::ConfigLoader;
+use crate::go_unicode::lowercase_bytes_keeping_ascii;
 
 fn engine(config: &str) -> Engine {
     Engine::builder(ConfigLoader::new().load_toml(config).unwrap())

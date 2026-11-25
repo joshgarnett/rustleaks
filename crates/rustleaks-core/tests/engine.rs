@@ -3,7 +3,7 @@
 
 use rustleaks_core::config::{ConfigLoader, ConfigOrigin, VirtualResolver};
 use rustleaks_core::model::{ByteRange, ByteText, FindingRange, Fragment, ScanOptions};
-use rustleaks_core::{Engine, ScanBudget, ScanControl};
+use rustleaks_core::{Engine, ScanBudget, ScanControl, ScanScratch};
 
 fn assert_send_sync<T: Send + Sync>() {}
 
@@ -673,4 +673,179 @@ secretGroup = 1
     assert!(different_lines.findings().iter().any(|finding| {
         finding.rule_id().as_bytes() == b"GeNeRiC-token" && finding.secret().as_bytes() == b"a..."
     }));
+}
+
+/// Standard padded base64, so that the test needs no encoder crate.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::new();
+    for chunk in bytes.chunks(3) {
+        let value = chunk
+            .iter()
+            .enumerate()
+            .fold(0_u32, |value, (index, byte)| {
+                value | (u32::from(*byte) << (16 - 8 * index))
+            });
+        for index in 0..4 {
+            if index <= chunk.len() {
+                let sextet = (value >> (18 - 6 * index)) & 0x3f;
+                encoded.push(char::from(ALPHABET[sextet as usize]));
+            } else {
+                encoded.push('=');
+            }
+        }
+    }
+    encoded
+}
+
+/// Synthetic fragments that reach many built-in rules, the decoder, captures
+/// and the non-ASCII paths. Values are built at run time so that no literal
+/// in this file looks like a credential.
+fn varied_fragments() -> Vec<Vec<u8>> {
+    let body = |seed: u8, length: usize| -> String {
+        (0..length)
+            .map(|index| {
+                let value = u8::try_from(index % 256)
+                    .unwrap()
+                    .wrapping_mul(31)
+                    .wrapping_add(seed)
+                    % 62;
+                char::from(match value {
+                    0..=9 => b'0' + value,
+                    10..=35 => b'a' + value - 10,
+                    _ => b'A' + value - 36,
+                })
+            })
+            .collect()
+    };
+    let mut fragments = vec![
+        format!("api_{} = \"{}\"\n", "key", body(1, 32)).into_bytes(),
+        format!("export AWS_SECRET_ACCESS_{}={}\n", "KEY", body(2, 40)).into_bytes(),
+        format!(
+            "password: {}\nauth_token = '{}'\n",
+            body(3, 20),
+            body(4, 36)
+        )
+        .into_bytes(),
+        format!(
+            "curl -H 'Authorization: Bearer {}' https://example.test\n",
+            body(5, 48)
+        )
+        .into_bytes(),
+        format!("postgres://user:{}@db.example.test:5432/app\n", body(6, 16)).into_bytes(),
+        format!("ПАРОЛЬ token = \"{}\" ключ\n", body(7, 30)).into_bytes(),
+        b"plain text without any secret, just words and numbers 12345\n".to_vec(),
+    ];
+    let mut invalid = format!("secret = \"{}\"", body(8, 24)).into_bytes();
+    invalid.extend_from_slice(b"\xff\xfe\x80 trailing");
+    fragments.push(invalid);
+    // A base64 layer that the decoder opens.
+    let inner = format!("client_{} = \"{}\"", "secret", body(9, 32));
+    fragments.push(format!("data: {}\n", base64(inner.as_bytes())).into_bytes());
+    // A large fragment, so that the kept buffers are trimmed.
+    let mut large = Vec::new();
+    while large.len() < 600 << 10 {
+        large.extend_from_slice(
+            format!("value_{} = \"{}\"\n", large.len(), body(10, 24)).as_bytes(),
+        );
+    }
+    fragments.push(large);
+    fragments
+}
+
+#[test]
+fn scans_with_scratch_match_scans_without() {
+    let engine = Engine::builder(ConfigLoader::new().load_default().unwrap())
+        .build()
+        .unwrap();
+    let fragments = varied_fragments();
+    let options = ScanOptions::default();
+    let control = ScanControl::unlimited();
+    let expected: Vec<_> = fragments
+        .iter()
+        .map(|raw| {
+            engine.scan_fragment_controlled(&Fragment::new(raw.as_slice()), &options, &control)
+        })
+        .collect();
+    assert!(
+        expected
+            .iter()
+            .any(|outcome| !outcome.findings().is_empty()),
+        "the fragments must reach some rules"
+    );
+    // A limit of one byte drops every cache at each size update.
+    for mut scratch in [ScanScratch::new(), ScanScratch::with_cache_limit(1)] {
+        for round in 0..40 {
+            for (index, raw) in fragments.iter().enumerate() {
+                let outcome = engine.scan_fragment_with_scratch(
+                    &Fragment::new(raw.as_slice()),
+                    &options,
+                    &control,
+                    &mut scratch,
+                );
+                assert_eq!(outcome.usage(), expected[index].usage());
+                assert!(
+                    outcome == expected[index],
+                    "fragment {index} differs in round {round}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn one_scratch_serves_engines_with_different_keywords() {
+    let first = build_engine(
+        r#"
+[[rules]]
+id = "alpha"
+regex = '''alpha=([a-z]{4})'''
+keywords = ["alpha"]
+"#,
+    );
+    let second = build_engine(
+        r#"
+[[rules]]
+id = "beta"
+regex = '''beta=([a-z]{4})'''
+keywords = ["beta"]
+
+[[rules]]
+id = "gamma"
+regex = '''gamma=([a-z]{4})'''
+keywords = ["gamma"]
+
+[[rules]]
+id = "delta"
+regex = '''delta=([a-z]{4})'''
+keywords = ["delta"]
+"#,
+    );
+    let options = ScanOptions::default();
+    let control = ScanControl::unlimited();
+    let mut scratch = ScanScratch::new();
+    let raw: &[u8] = b"alpha=abcd beta=efgh gamma=ijkl delta=mnop";
+    for _ in 0..3 {
+        for engine in [&first, &second] {
+            let expected = engine.scan_fragment_controlled(&Fragment::new(raw), &options, &control);
+            let outcome = engine.scan_fragment_with_scratch(
+                &Fragment::new(raw),
+                &options,
+                &control,
+                &mut scratch,
+            );
+            assert!(outcome == expected);
+        }
+    }
+    let findings = second
+        .scan_fragment_with_scratch(&Fragment::new(raw), &options, &control, &mut scratch)
+        .findings()
+        .len();
+    assert_eq!(findings, 3);
+}
+
+#[test]
+fn scratch_is_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<ScanScratch>();
 }

@@ -202,6 +202,87 @@ fn cancelled_git_child_is_not_left_waitable_or_zombie() {
 }
 
 #[test]
+fn patch_lines_keep_their_bytes_and_are_sized_from_the_input() {
+    let cancellation = crate::CancellationToken::new();
+    let cases: [(&[u8], &[&[u8]]); 5] = [
+        (b"", &[]),
+        (b"\n", &[b"\n"]),
+        (b"a", &[b"a"]),
+        (b"a\r\n\nb", &[b"a\r\n", b"\n", b"b"]),
+        (b"a\nb\n", &[b"a\n", b"b\n"]),
+    ];
+    for (input, expected) in cases {
+        let lines = split_inclusive_lines(input, 10, &cancellation).unwrap();
+        assert_eq!(lines, expected);
+        assert_eq!(lines.capacity(), expected.len());
+    }
+
+    // The line ceiling still bounds both the list and the reservation.
+    let lines = split_inclusive_lines(b"a\nb\n", 2, &cancellation).unwrap();
+    assert_eq!(lines, [b"a\n".as_slice(), b"b\n"]);
+    assert_eq!(
+        split_inclusive_lines(b"a\nb\nc", 2, &cancellation),
+        Err(PatchError::Limit(
+            "Git patch exceeds the configured 2-line ceiling".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn patch_lines_match_a_byte_at_a_time_split_at_every_offset() {
+    // Line feeds next to bytes that differ from 0x0a in one bit, and bytes
+    // with the high bit set, at every position of a word and across the
+    // 4,096-byte cancellation blocks.
+    let alphabet = [b'\n', 0x0b, 0x08, 0x8a, 0x0e, 0xff, 0x00, b'a', b'\r'];
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let cancellation = crate::CancellationToken::new();
+    for length in (0..40).chain([4095, 4096, 4097, 8191, 8200, 12_289]) {
+        for _ in 0..8 {
+            let input = (0..length)
+                .map(|_| alphabet[usize::try_from(next() % 9).unwrap()])
+                .collect::<Vec<u8>>();
+            let expected = input
+                .split_inclusive(|byte| *byte == b'\n')
+                .collect::<Vec<_>>();
+            assert_eq!(
+                split_inclusive_lines(&input, usize::MAX, &cancellation).unwrap(),
+                expected
+            );
+            if !expected.is_empty() {
+                let ceiling = expected.len() - 1;
+                assert_eq!(
+                    split_inclusive_lines(&input, ceiling, &cancellation),
+                    Err(PatchError::Limit(format!(
+                        "Git patch exceeds the configured {ceiling}-line ceiling"
+                    )))
+                );
+            }
+        }
+    }
+
+    // Cancellation is polled before each 4,096-byte block, as before.
+    let input = vec![b'\n'; 3 * 4096];
+    let polls = CancelAfterPolls(std::sync::atomic::AtomicUsize::new(3));
+    assert_eq!(
+        split_inclusive_lines(&input, usize::MAX, &polls)
+            .unwrap()
+            .len(),
+        3 * 4096
+    );
+    let polls = CancelAfterPolls(std::sync::atomic::AtomicUsize::new(2));
+    assert_eq!(
+        split_inclusive_lines(&input, usize::MAX, &polls),
+        Err(PatchError::Cancelled)
+    );
+}
+
+#[test]
 fn text_patch_hunks_preserve_added_bytes_and_no_newline() {
     let patch = b"commit 0123456789abcdef\nAuthor: Test User <user@example.com>\nDate:   Tue Nov 2 18:37:53 2021 -0500\n\n    title\n\ndiff --git a/a.txt b/a.txt\nindex 1111111..2222222 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n-old\n+new\n+tail\n\\ No newline at end of file\n";
     let files = parse_patch(

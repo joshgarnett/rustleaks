@@ -46,6 +46,10 @@ impl rustleaks_core::ScanCancellation for CancellationToken {
     fn is_cancelled(&self) -> bool {
         self.is_cancelled()
     }
+
+    fn reads_state_only(&self) -> bool {
+        true
+    }
 }
 
 impl Cancellation for AtomicBool {

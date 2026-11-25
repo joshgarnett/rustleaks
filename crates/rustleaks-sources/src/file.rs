@@ -1,3 +1,4 @@
+use std::collections::TryReserveError;
 use std::io::{self, Read};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -583,28 +584,15 @@ fn visit_chunked<I: RawSource>(
             return Ok(SourceControl::Continue);
         }
 
-        let fragment_capacity = outcome
-            .count
-            .checked_add(target.options.max_boundary_read_ahead)
-            .ok_or_else(|| {
-                SourceError::terminal(
-                    SourceStage::Limit,
-                    Some(target.physical_path.clone()),
-                    "fragment buffer capacity overflow",
-                )
-            })?;
+        // Most fragments are a whole small file and need no read-ahead, so
+        // the buffer holds the read bytes only. The read-ahead reserves its
+        // own space when it first appends.
         let mut bytes = Vec::new();
         bytes
-            .try_reserve_exact(fragment_capacity)
-            .map_err(|error| {
-                SourceError::terminal(
-                    SourceStage::Limit,
-                    Some(target.physical_path.clone()),
-                    format!("could not allocate fragment buffer: {error}"),
-                )
-            })?;
+            .try_reserve_exact(outcome.count)
+            .map_err(|error| fragment_allocation_error(&target.physical_path, &error))?;
         bytes.extend_from_slice(original);
-        if let Err(issue) = read_until_safe_boundary(
+        if let Err(failure) = read_until_safe_boundary(
             reader,
             outcome.count,
             &mut bytes,
@@ -612,6 +600,12 @@ fn visit_chunked<I: RawSource>(
             target.options.max_boundary_read_ahead,
             cancellation,
         ) {
+            let issue = match failure {
+                BoundaryFailure::Issue(issue) => issue,
+                BoundaryFailure::Allocation(error) => {
+                    return Err(fragment_allocation_error(&target.physical_path, &error));
+                }
+            };
             if cancellation.is_cancelled() {
                 return Err(SourceError::Cancelled);
             }
@@ -734,6 +728,44 @@ fn allocate_nominal(size: usize, path: &Path) -> Result<Vec<u8>, SourceError> {
     Ok(buffer)
 }
 
+/// Why a boundary read did not finish.
+enum BoundaryFailure {
+    /// The read failed or was cancelled; the file gets an error fragment.
+    Issue(SourceIssue),
+    /// The fragment buffer could not grow; the source stops.
+    Allocation(TryReserveError),
+}
+
+impl From<SourceIssue> for BoundaryFailure {
+    fn from(issue: SourceIssue) -> Self {
+        Self::Issue(issue)
+    }
+}
+
+fn fragment_allocation_error(path: &Path, error: &TryReserveError) -> SourceError {
+    SourceError::terminal(
+        SourceStage::Limit,
+        Some(path.to_path_buf()),
+        format!("could not allocate fragment buffer: {error}"),
+    )
+}
+
+/// Makes room for `additional` read-ahead bytes. The first append reserves
+/// the whole `remaining` read-ahead allowance, so a fragment grows at most
+/// once.
+fn reserve_read_ahead(
+    bytes: &mut Vec<u8>,
+    additional: usize,
+    remaining: usize,
+) -> Result<(), BoundaryFailure> {
+    if bytes.capacity() - bytes.len() < additional {
+        bytes
+            .try_reserve_exact(remaining)
+            .map_err(BoundaryFailure::Allocation)?;
+    }
+    Ok(())
+}
+
 fn read_until_safe_boundary<I: RawSource>(
     reader: &mut BufferedSourceReader<I>,
     nominal_count: usize,
@@ -741,7 +773,7 @@ fn read_until_safe_boundary<I: RawSource>(
     path: &Path,
     maximum: usize,
     cancellation: &dyn Cancellation,
-) -> Result<(), SourceIssue> {
+) -> Result<(), BoundaryFailure> {
     if bytes.is_empty() || suffix_is_safe(bytes) {
         return Ok(());
     }
@@ -763,12 +795,12 @@ fn read_until_safe_boundary<I: RawSource>(
             break;
         }
         if cancellation.is_cancelled() {
-            return Err(SourceIssue::new(
+            return Err(BoundaryFailure::Issue(SourceIssue::new(
                 SourceStage::BoundaryRead,
                 SourceIssueKind::Read,
                 Some(path.to_path_buf()),
                 "source cancelled during boundary read",
-            ));
+            )));
         }
 
         // Copying bytes already pulled from the reader makes no reader call,
@@ -779,6 +811,7 @@ fn read_until_safe_boundary<I: RawSource>(
         if !window.is_empty() {
             let window = &window[..window.len().min(maximum - appended)];
             let (count, found) = scan_boundary(window, &mut newline_count);
+            reserve_read_ahead(bytes, count, maximum - appended)?;
             bytes.extend_from_slice(&window[..count]);
             reader.consume(count);
             if found {
@@ -789,6 +822,7 @@ fn read_until_safe_boundary<I: RawSource>(
 
         match reader.read_byte() {
             ByteOutcome::Byte(byte) => {
+                reserve_read_ahead(bytes, 1, maximum - appended)?;
                 bytes.push(byte);
                 if boundary_reached(&mut newline_count, byte) {
                     break;
@@ -796,28 +830,28 @@ fn read_until_safe_boundary<I: RawSource>(
             }
             ByteOutcome::Status(ReadStatus::Eof) => break,
             ByteOutcome::Status(ReadStatus::Error { message, .. }) => {
-                return Err(SourceIssue::new(
+                return Err(BoundaryFailure::Issue(SourceIssue::new(
                     SourceStage::BoundaryRead,
                     SourceIssueKind::BoundaryRead,
                     Some(path.to_path_buf()),
                     message,
-                ));
+                )));
             }
             ByteOutcome::Status(ReadStatus::Continue) => {
-                return Err(SourceIssue::new(
+                return Err(BoundaryFailure::Issue(SourceIssue::new(
                     SourceStage::BoundaryRead,
                     SourceIssueKind::BoundaryRead,
                     Some(path.to_path_buf()),
                     "reader made no progress during boundary read",
-                ));
+                )));
             }
             ByteOutcome::Overreported => {
-                return Err(SourceIssue::new(
+                return Err(BoundaryFailure::Issue(SourceIssue::new(
                     SourceStage::Limit,
                     SourceIssueKind::Limit,
                     Some(path.to_path_buf()),
                     "reader returned more bytes than the supplied buffer",
-                ));
+                )));
             }
         }
     }
@@ -953,6 +987,50 @@ mod tests {
             let actual = fragments(FileSource::with_options(input, "input", options));
             assert_eq!(actual[0].content().as_bytes(), expected);
         }
+    }
+
+    fn boundary_buffer(input: &[u8], nominal: usize, maximum: usize) -> Vec<u8> {
+        let reader: Box<dyn SourceReader> = Box::new(StandardReader(std::io::Cursor::new(
+            input[nominal..].to_vec(),
+        )));
+        let mut reader = BufferedSourceReader::new(reader);
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(nominal).expect("small buffer");
+        bytes.extend_from_slice(&input[..nominal]);
+        assert!(
+            read_until_safe_boundary(
+                &mut reader,
+                nominal,
+                &mut bytes,
+                Path::new("input"),
+                maximum,
+                &CancellationToken::new(),
+            )
+            .is_ok()
+        );
+        bytes
+    }
+
+    #[test]
+    fn boundary_read_reserves_only_when_it_appends() {
+        // A whole file that ends without a safe boundary appends nothing,
+        // so the fragment keeps the capacity of its read bytes.
+        let whole = boundary_buffer(b"abc\ndef", 7, MAX_BOUNDARY_READ_AHEAD);
+        assert_eq!(whole, b"abc\ndef");
+        assert_eq!(whole.capacity(), 7);
+
+        // Read-ahead across several reader refills grows the buffer once, to
+        // the read bytes plus the whole read-ahead allowance.
+        let mut input = vec![b'a'; 5 + 3 * BUFFERED_READER_CAPACITY];
+        input.extend_from_slice(b"\n\nrest");
+        let split = boundary_buffer(&input, 5, MAX_BOUNDARY_READ_AHEAD);
+        assert_eq!(split, &input[..input.len() - 4]);
+        assert_eq!(split.capacity(), 5 + MAX_BOUNDARY_READ_AHEAD);
+
+        // The allowance still bounds the appended bytes.
+        let capped = boundary_buffer(&input, 5, 10);
+        assert_eq!(capped, &input[..15]);
+        assert_eq!(capped.capacity(), 15);
     }
 
     #[test]

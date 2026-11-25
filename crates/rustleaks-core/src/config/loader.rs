@@ -967,8 +967,10 @@ fn compile_allowlist(
         if let Some(matcher) = cache.stop_words.get(&key) {
             Some(matcher.clone())
         } else {
+            // `contains_stop_word` relies on ASCII case being ignored.
             let matcher = AhoCorasickBuilder::new()
                 .match_kind(MatchKind::Standard)
+                .ascii_case_insensitive(true)
                 .build(nonempty_stop_words)
                 .map_err(|error| {
                     invalid_pattern(scope, "stopword", "<normalized stopwords>", error)
