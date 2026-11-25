@@ -5,7 +5,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
-use std::ops::Range;
+use std::ops::{Bound, Range};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -21,16 +21,14 @@ use crate::decoder::{
 use crate::explanation::{
     ExplanationCollector, ExplanationLog, ExplanationOptions, ExplanationReason,
 };
-use crate::go_unicode::{
-    chars as go_chars, lowercase_bytes as go_lowercase_bytes, lowercase_bytes_keeping_ascii,
-};
+use crate::go_unicode::{chars as go_chars, lowercase_bytes as go_lowercase_bytes, lowercase_into};
 use crate::model::{
     ByteRange, ByteText, Finding, FindingRange, Fragment, Location, RequiredFinding, ScanOptions,
 };
 use crate::native::{NativeKeyword, NativeRelation, NativeRequired};
 use crate::regex::{
-    ATTEMPT_COST_FLOOR, ByteSpan, CaptureScratch, GoRegex, LiteralSet, NativeByteRegex,
-    NormalizedHaystack,
+    ATTEMPT_COST_FLOOR, ByteSpan, Caches, CaptureScratch, GoRegex, LiteralSet, NativeByteRegex,
+    NormalizedHaystack, RegexCaches,
 };
 
 /// Largest total keyword length that receives a full DFA prefilter.
@@ -63,11 +61,27 @@ const RUSTLEAKS_ALLOW_SIGNATURE: &[u8] = b"rustleaks:allow";
 pub trait ScanCancellation: Send + Sync {
     /// Returns whether the current scan should stop.
     fn is_cancelled(&self) -> bool;
+
+    /// Returns whether a poll only reads the signal's current state, such as
+    /// a flag, so that polls with no work between them give the same answer.
+    ///
+    /// When this is true, the engine polls once for a run of work units that
+    /// it charges together, such as one unit per byte of an input, instead of
+    /// once per unit. Cancellation that arrives during such a run is then
+    /// seen at a later checkpoint, so a cancelled scan can report more work
+    /// units than with one poll per unit, never fewer. The default is false.
+    fn reads_state_only(&self) -> bool {
+        false
+    }
 }
 
 impl ScanCancellation for AtomicBool {
     fn is_cancelled(&self) -> bool {
         self.load(Ordering::Acquire)
+    }
+
+    fn reads_state_only(&self) -> bool {
+        true
     }
 }
 
@@ -411,8 +425,184 @@ pub struct Engine {
     /// alone, aligned with `config.rules`: its keywords' pattern IDs in order.
     /// See [`ScanContext::native_patterns_absent`].
     native_fast_gates: Vec<Option<Box<[u32]>>>,
+    /// Which rules a pass visits. See [`RuleIndex`].
+    rule_index: RuleIndex,
+    /// ID of each rule, aligned with `config.rules`, to seek past a long run
+    /// of skipped rules.
+    rule_ids: Box<[Box<str>]>,
     /// Rules whose findings a reviewed rule overlap can replace.
     replaced_by: ReplacedBy,
+}
+
+/// The rules a pass must visit, by rule ordinal in `config.rules` order.
+///
+/// Without explanations, a rule that a pass skips would only record
+/// explanation events, except a native fast-gate rule whose keywords are all
+/// absent. That rule charges what [`ScanContext::charge_native_keyword_miss`]
+/// charges, and a pass charges the same units in the same order without
+/// visiting it. Rules always run in ordinal order, so findings, usage and the
+/// point where a budget or cancellation stops a scan stay the same.
+#[derive(Clone, Debug, Default)]
+struct RuleIndex {
+    /// Rules that every pass visits: rules without keywords and native rules
+    /// without a fast gate.
+    always: Box<[u64]>,
+    /// Native rules with a fast gate (`Engine::native_fast_gates`).
+    native_gated: Box<[u64]>,
+    /// For each prefilter keyword, the rules that are not native and have it.
+    by_keyword: Box<[Box<[u32]>]>,
+    /// For each native pattern ID, the native fast-gate rules with a keyword
+    /// of that pattern.
+    by_native_pattern: Box<[Box<[u32]>]>,
+}
+
+/// Skipped rules after which a pass searches the rule map for the next rule
+/// instead of stepping over them.
+const RULE_SEEK_GAP: usize = 32;
+
+/// The rule ordinals a pass walks, in order, each with whether the pass
+/// visits it. With a [`RuleIndex`] selection these are the selected rules and
+/// every native fast-gate rule, which a pass that skips it must still charge.
+/// Without one, every rule is visited.
+struct RuleCandidates<'a> {
+    visit: Option<&'a [u64]>,
+    native_gated: &'a [u64],
+    rule_count: usize,
+    /// Next ordinal without a selection, or the index of `word` with one.
+    position: usize,
+    /// Candidates not yet returned in word `position`.
+    word: u64,
+}
+
+impl<'a> RuleCandidates<'a> {
+    fn new(visit: Option<&'a [u64]>, native_gated: &'a [u64], rule_count: usize) -> Self {
+        let word = visit
+            .and_then(|visit| Some(visit.first()? | native_gated.first()?))
+            .unwrap_or(0);
+        Self {
+            visit,
+            native_gated,
+            rule_count,
+            position: 0,
+            word,
+        }
+    }
+}
+
+impl Iterator for RuleCandidates<'_> {
+    type Item = (usize, bool);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Some(visit) = self.visit else {
+            let ordinal = self.position;
+            if ordinal >= self.rule_count {
+                return None;
+            }
+            self.position += 1;
+            return Some((ordinal, true));
+        };
+        loop {
+            if self.word != 0 {
+                let bit = self.word.trailing_zeros();
+                self.word &= self.word - 1;
+                let ordinal = self.position * 64 + bit as usize;
+                return Some((ordinal, visit[self.position] & (1 << bit) != 0));
+            }
+            self.position += 1;
+            self.word = visit.get(self.position)? | self.native_gated[self.position];
+        }
+    }
+}
+
+impl RuleIndex {
+    fn new(
+        config: &CompiledConfig,
+        rule_keyword_indexes: &[Box<[usize]>],
+        keyword_count: usize,
+        native_fast_gates: &[Option<Box<[u32]>>],
+        native_pattern_count: usize,
+    ) -> Self {
+        let words = config.rules.len().div_ceil(64);
+        let mut always = vec![0_u64; words];
+        let mut native_gated = vec![0_u64; words];
+        let mut by_keyword = vec![Vec::new(); keyword_count];
+        let mut by_native_pattern = vec![Vec::new(); native_pattern_count];
+        for (ordinal, ((rule, keyword_indexes), fast_gate)) in config
+            .rules
+            .values()
+            .zip(rule_keyword_indexes)
+            .zip(native_fast_gates)
+            .enumerate()
+        {
+            let bit = 1_u64 << (ordinal % 64);
+            let ordinal32 = u32::try_from(ordinal).expect("rule count fits in u32");
+            if rule.native_required.is_some() || rule.native_byte_matcher.is_some() {
+                if let Some(patterns) = fast_gate {
+                    native_gated[ordinal / 64] |= bit;
+                    for &pattern in patterns {
+                        by_native_pattern[pattern as usize].push(ordinal32);
+                    }
+                } else {
+                    always[ordinal / 64] |= bit;
+                }
+            } else if rule.keywords.is_empty() {
+                always[ordinal / 64] |= bit;
+            } else {
+                for &keyword in keyword_indexes {
+                    by_keyword[keyword].push(ordinal32);
+                }
+            }
+        }
+        Self {
+            always: always.into_boxed_slice(),
+            native_gated: native_gated.into_boxed_slice(),
+            by_keyword: by_keyword.into_iter().map(Vec::into_boxed_slice).collect(),
+            by_native_pattern: by_native_pattern
+                .into_iter()
+                .map(Vec::into_boxed_slice)
+                .collect(),
+        }
+    }
+
+    /// Fills `visit` with the rules a pass visits, given the keywords it
+    /// found and, when the fast gate applies, the native patterns it found.
+    fn select(
+        &self,
+        visit: &mut Vec<u64>,
+        matched_keywords: &[usize],
+        native_words: Option<&[u64]>,
+    ) {
+        visit.clear();
+        visit.extend_from_slice(&self.always);
+        let mut set = |ordinals: &[u32]| {
+            for &ordinal in ordinals {
+                let ordinal = ordinal as usize;
+                visit[ordinal / 64] |= 1 << (ordinal % 64);
+            }
+        };
+        for &keyword in matched_keywords {
+            set(&self.by_keyword[keyword]);
+        }
+        match native_words {
+            Some(words) => {
+                for (index, &word) in words.iter().enumerate() {
+                    let mut word = word;
+                    while word != 0 {
+                        let pattern = index * 64 + word.trailing_zeros() as usize;
+                        word &= word - 1;
+                        if let Some(ordinals) = self.by_native_pattern.get(pattern) {
+                            set(ordinals);
+                        }
+                    }
+                }
+            }
+            None => {
+                for (visit, gated) in visit.iter_mut().zip(&self.native_gated) {
+                    *visit |= gated;
+                }
+            }
+        }
+    }
 }
 
 /// For each rule with reviewed `[[overlaps]]` entries, the IDs of the rules
@@ -540,19 +730,42 @@ struct RuleLiteralAnchor {
 struct KeywordOccurrences {
     active: bool,
     keyword_count: usize,
-    starts: Vec<Vec<usize>>,
-    saturated: Vec<bool>,
+    /// For each keyword, one more than the index of its entry in `entries`,
+    /// or 0 when this pass recorded nothing for it. Allocated on the first
+    /// record of a fragment.
+    slots: Vec<u32>,
+    /// Entries of the keywords this pass recorded, in first-record order.
+    /// Entries past `used` keep their allocations for later passes.
+    entries: Vec<KeywordStarts>,
+    used: usize,
     per_keyword_limit: usize,
     remaining: usize,
 }
 
+/// One keyword's recorded starts in one pass.
+#[derive(Default)]
+struct KeywordStarts {
+    keyword: usize,
+    starts: Vec<usize>,
+    saturated: bool,
+}
+
 impl KeywordOccurrences {
+    /// Recorded offsets whose storage is kept for the next fragment.
+    const KEPT_STARTS: usize = 1 << 13;
+
     /// Starts a pass; `ascii_len` is `None` unless occurrences are usable.
     fn begin_pass(&mut self, ascii_len: Option<usize>, keyword_count: usize) {
-        for starts in &mut self.starts {
-            starts.clear();
+        for entry in &mut self.entries[..self.used] {
+            self.slots[entry.keyword] = 0;
+            entry.starts.clear();
+            entry.saturated = false;
         }
-        self.saturated.fill(false);
+        self.used = 0;
+        if self.slots.len() != keyword_count {
+            // Slots from a scan with another engine; `record` sizes them.
+            self.slots.clear();
+        }
         self.active = ascii_len.is_some();
         self.keyword_count = keyword_count;
         let length = ascii_len.unwrap_or(0);
@@ -560,17 +773,46 @@ impl KeywordOccurrences {
         self.remaining = length / 16 + 1;
     }
 
-    fn record(&mut self, keyword: usize, start: usize) {
-        if self.starts.is_empty() {
-            self.starts.resize_with(self.keyword_count, Vec::new);
-            self.saturated.resize(self.keyword_count, false);
+    /// Frees offset storage that one large fragment needed.
+    fn trim(&mut self) {
+        let kept: usize = self
+            .entries
+            .iter()
+            .map(|entry| entry.starts.capacity())
+            .sum();
+        if kept > Self::KEPT_STARTS {
+            *self = Self::default();
         }
-        let starts = &mut self.starts[keyword];
-        if starts.len() >= self.per_keyword_limit || self.remaining == 0 {
-            self.saturated[keyword] = true;
+    }
+
+    fn entry(&self, keyword: usize) -> Option<&KeywordStarts> {
+        let slot = *self.slots.get(keyword)? as usize;
+        slot.checked_sub(1).map(|index| &self.entries[index])
+    }
+
+    fn record(&mut self, keyword: usize, start: usize) {
+        if self.slots.is_empty() {
+            self.slots.resize(self.keyword_count, 0);
+        }
+        let index = match self.slots[keyword] {
+            0 => {
+                let index = self.used;
+                if index == self.entries.len() {
+                    self.entries.push(KeywordStarts::default());
+                }
+                self.entries[index].keyword = keyword;
+                self.used += 1;
+                self.slots[keyword] = u32::try_from(self.used).expect("keyword count fits in u32");
+                index
+            }
+            slot => slot as usize - 1,
+        };
+        let entry = &mut self.entries[index];
+        if entry.starts.len() >= self.per_keyword_limit || self.remaining == 0 {
+            entry.saturated = true;
             return;
         }
-        starts.push(start);
+        entry.starts.push(start);
         self.remaining -= 1;
     }
 
@@ -581,19 +823,20 @@ impl KeywordOccurrences {
         }
         if indexes
             .iter()
-            .any(|&index| self.saturated.get(index).copied().unwrap_or(false))
+            .any(|&index| self.entry(index).is_some_and(|entry| entry.saturated))
         {
             return None;
         }
         if let [index] = indexes {
             return Some(Cow::Borrowed(
-                self.starts.get(*index).map_or(&[], Vec::as_slice),
+                self.entry(*index)
+                    .map_or(&[], |entry| entry.starts.as_slice()),
             ));
         }
         let mut merged = indexes
             .iter()
-            .filter_map(|&index| self.starts.get(index))
-            .flatten()
+            .filter_map(|&index| self.entry(index))
+            .flat_map(|entry| entry.starts.iter())
             .copied()
             .collect::<Vec<_>>();
         merged.sort_unstable();
@@ -753,6 +996,101 @@ struct NativeInput<'a> {
     pass_offset: usize,
 }
 
+/// Search caches and buffers that one thread reuses from fragment to fragment.
+///
+/// Without a scratch value, each pattern keeps a shared pool of search caches
+/// that grows with the number of threads and is never freed. A scratch value
+/// holds the caches for the patterns its thread has searched and frees the
+/// least recently used ones when their estimated size passes
+/// [`ScanScratch::DEFAULT_CACHE_LIMIT`]. Scan results do not depend on it.
+///
+/// A scratch value can be used with any engine. It keeps the patterns it
+/// holds caches for alive until it drops their caches.
+///
+/// ```
+/// use rustleaks_core::config::ConfigLoader;
+/// use rustleaks_core::model::{Fragment, ScanOptions};
+/// use rustleaks_core::{Engine, ScanControl, ScanScratch};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let engine = Engine::builder(ConfigLoader::new().load_default()?).build()?;
+/// let mut scratch = ScanScratch::new();
+/// for input in [&b"first"[..], &b"second"[..]] {
+///     let outcome = engine.scan_fragment_with_scratch(
+///         &Fragment::new(input),
+///         &ScanOptions::default(),
+///         &ScanControl::unlimited(),
+///         &mut scratch,
+///     );
+///     assert!(outcome.is_complete());
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub struct ScanScratch {
+    regex_caches: RegexCaches,
+    buffers: ScanBuffers,
+}
+
+/// Buffers that one fragment scan fills and the next one can reuse.
+#[derive(Default)]
+struct ScanBuffers {
+    /// The lowercased pass for the keyword automaton.
+    lowered: Vec<u8>,
+    /// Whether each keyword occurs in the current pass.
+    matched_keywords: Vec<bool>,
+    keyword_occurrences: KeywordOccurrences,
+}
+
+impl ScanBuffers {
+    /// Largest lowercased pass whose storage is kept for the next fragment.
+    const KEPT_LOWERED_BYTES: usize = 256 << 10;
+
+    /// Frees storage that one large fragment needed, so that a thread does
+    /// not hold it while it scans small ones.
+    fn trim(&mut self) {
+        if self.lowered.capacity() > Self::KEPT_LOWERED_BYTES {
+            self.lowered = Vec::new();
+        }
+        self.keyword_occurrences.trim();
+    }
+}
+
+impl ScanScratch {
+    /// Estimated search cache bytes kept by [`ScanScratch::new`].
+    pub const DEFAULT_CACHE_LIMIT: usize = 16 << 20;
+
+    /// Creates an empty scratch value with the default cache limit.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_cache_limit(Self::DEFAULT_CACHE_LIMIT)
+    }
+
+    /// Creates an empty scratch value that keeps about `bytes` of search
+    /// caches. A smaller limit uses less memory and more CPU time.
+    #[must_use]
+    pub fn with_cache_limit(bytes: usize) -> Self {
+        Self {
+            regex_caches: RegexCaches::with_limit(bytes),
+            buffers: ScanBuffers::default(),
+        }
+    }
+}
+
+impl Default for ScanScratch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Debug for ScanScratch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ScanScratch")
+            .finish_non_exhaustive()
+    }
+}
+
 struct ScanContext<'a> {
     control: ScanControl<'a>,
     usage: ScanUsage,
@@ -763,6 +1101,12 @@ struct ScanContext<'a> {
     native_keyword_hits: Vec<Option<NativeKeywordHits>>,
     /// Decode pass that `native_keyword_hits` belongs to.
     native_keyword_pass: usize,
+    /// The caller's search caches, or `None` for each expression's pool.
+    regex_caches: Caches<'a>,
+    /// Makes every pass visit every rule, as an explained scan does, so tests
+    /// can compare the [`RuleIndex`] path with it.
+    #[cfg(test)]
+    visit_every_rule: bool,
 }
 
 /// Native patterns found in one native input.
@@ -809,7 +1153,29 @@ impl<'a> ScanContext<'a> {
             explanations: ExplanationCollector::new(ExplanationOptions::disabled(), false),
             native_keyword_hits: Vec::new(),
             native_keyword_pass: 0,
+            regex_caches: None,
+            #[cfg(test)]
+            visit_every_rule: false,
         }
+    }
+
+    /// Runs `search` with the caller's caches lent out, so that a search
+    /// can also charge this context.
+    fn with_caches<R>(&mut self, search: impl FnOnce(&mut Self, Caches<'_>) -> R) -> R {
+        let mut caches = self.regex_caches.take();
+        let result = search(self, caches.as_deref_mut());
+        self.regex_caches = caches;
+        result
+    }
+
+    /// Whether a pass may visit only the rules that [`RuleIndex`] selects.
+    /// Explained scans visit every rule to record its events.
+    fn uses_rule_index(&self) -> bool {
+        #[cfg(test)]
+        if self.visit_every_rule {
+            return false;
+        }
+        !self.explanations.is_enabled()
     }
 
     /// Returns whether native pattern `pattern` occurs in this input.
@@ -910,6 +1276,34 @@ impl<'a> ScanContext<'a> {
         Ok(())
     }
 
+    /// Charges what [`Self::charge_native_keyword_miss`] charges for a run of
+    /// consecutive native fast-gate rules whose keywords are all absent from
+    /// the whole pass, in the same order. `units` is the sum of one more than
+    /// each rule's keyword count. Each rule's charges are unit checkpoints, so
+    /// the run is `units` checkpoints plus the input length when no keyword
+    /// check has charged it yet. Call it only after the prefilter seeded the
+    /// pass's native patterns.
+    fn charge_native_keyword_misses(
+        &mut self,
+        units: usize,
+        input_len: usize,
+    ) -> Result<(), ScanTermination> {
+        let charged = self
+            .native_keyword_hits
+            .first()
+            .and_then(Option::as_ref)
+            .is_some_and(|hits| hits.input_charged);
+        self.work_many(if charged {
+            units
+        } else {
+            units.saturating_add(input_len)
+        })?;
+        if let Some(Some(hits)) = self.native_keyword_hits.first_mut() {
+            hits.input_charged = true;
+        }
+        Ok(())
+    }
+
     /// Stores the native patterns that the prefilter found in the whole pass,
     /// so the first native lookup for it does not search again.
     fn seed_native_keyword_hits(&mut self, key: NativeHitKey, words: Box<[u64]>) {
@@ -948,29 +1342,35 @@ impl<'a> ScanContext<'a> {
     /// Charges `units` consecutive work checkpoints with the observable
     /// effect of `units` calls to [`Self::work`].
     ///
-    /// Without a cancellation signal each call polls nothing and adds one to
-    /// the counter, so the run reduces to one bounded addition that stops at
-    /// the same checkpoint. A signal observes each poll, so that path keeps
-    /// one call per unit.
+    /// Each call polls the signal, if any, and then adds one to the counter.
+    /// The units that fit in the budget are polled in turn and added at once,
+    /// or up to the poll that sees cancellation. A signal that only reads its
+    /// state (see [`ScanCancellation::reads_state_only`]) is polled once for
+    /// all of them, as if it changed just before or just after them. The
+    /// first unit that does not fit is one call to [`Self::work`], which
+    /// polls and then stops the scan at the same checkpoint.
     fn work_many(&mut self, units: usize) -> Result<(), ScanTermination> {
-        if self.control.cancellation.is_some() {
-            for _ in 0..units {
-                self.work()?;
-            }
-            return Ok(());
-        }
         let capacity = self.control.budget.work_units.unwrap_or(usize::MAX);
-        if units <= capacity - self.usage.work_units {
-            self.usage.work_units += units;
-            return Ok(());
+        let fit = units.min(capacity.saturating_sub(self.usage.work_units));
+        if let Some(cancellation) = self.control.cancellation {
+            if cancellation.reads_state_only() {
+                if fit > 0 && cancellation.is_cancelled() {
+                    return Err(ScanTermination::Cancelled);
+                }
+            } else {
+                for polled in 0..fit {
+                    if cancellation.is_cancelled() {
+                        self.usage.work_units += polled;
+                        return Err(ScanTermination::Cancelled);
+                    }
+                }
+            }
         }
-        self.usage.work_units = capacity;
-        charge_counter(
-            &mut self.usage.work_units,
-            1,
-            self.control.budget.work_units,
-            ScanBudgetKind::WorkUnits,
-        )
+        self.usage.work_units += fit;
+        if fit < units {
+            return self.work();
+        }
+        Ok(())
     }
 
     fn decoded_bytes(&mut self, amount: usize) -> Result<(), ScanTermination> {
@@ -1032,7 +1432,8 @@ impl<'a> ScanContext<'a> {
     }
 
     fn is_match(&mut self, regex: &GoRegex, bytes: &[u8]) -> Result<bool, ScanTermination> {
-        Ok(regex.is_match_normalized(&self.normalize(bytes)?))
+        let normalized = self.normalize(bytes)?;
+        Ok(regex.is_match_normalized(&normalized, self.regex_caches.as_deref_mut()))
     }
 
     fn admit_finding(
@@ -1147,7 +1548,35 @@ impl Engine {
         options: &ScanOptions,
         control: &ScanControl<'_>,
     ) -> ScanOutcome {
-        self.scan_fragment_with_context(fragment, options, &mut ScanContext::new(*control))
+        self.scan_fragment_with_context(
+            fragment,
+            options,
+            &mut ScanContext::new(*control),
+            &mut ScanBuffers::default(),
+        )
+    }
+
+    /// Scans one fragment like [`Engine::scan_fragment_controlled`], reusing
+    /// the search caches and buffers in `scratch`.
+    ///
+    /// The outcome, including its usage, is the same as without `scratch`.
+    /// Keep one [`ScanScratch`] for each thread that scans many fragments.
+    #[must_use]
+    pub fn scan_fragment_with_scratch(
+        &self,
+        fragment: &Fragment,
+        options: &ScanOptions,
+        control: &ScanControl<'_>,
+        scratch: &mut ScanScratch,
+    ) -> ScanOutcome {
+        let mut context = ScanContext::new(*control);
+        context.regex_caches = Some(&mut scratch.regex_caches);
+        let outcome =
+            self.scan_fragment_with_context(fragment, options, &mut context, &mut scratch.buffers);
+        drop(context);
+        scratch.regex_caches.end_unit();
+        scratch.buffers.trim();
+        outcome
     }
 
     pub(crate) fn scan_fragment_explained(
@@ -1160,7 +1589,12 @@ impl Engine {
     ) -> (ScanOutcome, ExplanationLog) {
         let mut context = ScanContext::new(*control);
         context.explanations = ExplanationCollector::new(explanations, github_classic);
-        let outcome = self.scan_fragment_with_context(fragment, options, &mut context);
+        let outcome = self.scan_fragment_with_context(
+            fragment,
+            options,
+            &mut context,
+            &mut ScanBuffers::default(),
+        );
         if let Some(termination) = outcome.termination() {
             let reason = match termination {
                 ScanTermination::Cancelled => ExplanationReason::ScanCancelled,
@@ -1190,6 +1624,7 @@ impl Engine {
         fragment: &Fragment,
         options: &ScanOptions,
         context: &mut ScanContext<'_>,
+        buffers: &mut ScanBuffers,
     ) -> ScanOutcome {
         if let Err(termination) = context.check_cancelled() {
             return ScanOutcome::partial(Vec::new(), context.usage, termination);
@@ -1216,8 +1651,15 @@ impl Engine {
         let mut encoded_segments = Vec::new();
         let mut decoder = None;
         let mut decode_depth = 0;
-        let mut matched_keywords = vec![false; self.keyword_count];
-        let mut keyword_occurrences = KeywordOccurrences::default();
+        let ScanBuffers {
+            lowered: lowered_buffer,
+            matched_keywords,
+            keyword_occurrences,
+        } = buffers;
+        matched_keywords.clear();
+        matched_keywords.resize(self.keyword_count, false);
+        let mut matched_keyword_list = Vec::new();
+        let mut visit = Vec::new();
         loop {
             if let Err(termination) = context.work() {
                 return finish_partial(
@@ -1229,6 +1671,7 @@ impl Engine {
                 );
             }
             matched_keywords.fill(false);
+            matched_keyword_list.clear();
             let mut native_words = self.empty_native_words();
             // A case-insensitive automaton over the raw pass would avoid this
             // copy, but its larger DFA made scans slower.
@@ -1236,7 +1679,7 @@ impl Engine {
                 .prefilter
                 .as_ref()
                 .filter(|_| self.keyword_count > 0 || native_words.is_some())
-                .map(|prefilter| (prefilter, lowercase_bytes_keeping_ascii(&current_raw)));
+                .map(|prefilter| (prefilter, lowercase_into(&current_raw, lowered_buffer)));
             // Literal-anchored search needs keyword offsets that are raw
             // offsets, where only ASCII bytes can match an ASCII letter.
             let record_occurrences = context.control.budget.collected_spans.is_none()
@@ -1252,7 +1695,7 @@ impl Engine {
                 if !lowered.kept_ascii {
                     native_words = None;
                 }
-                for found in prefilter.find_overlapping_iter(&lowered.bytes) {
+                for found in prefilter.find_overlapping_iter(lowered_buffer.as_slice()) {
                     let pattern = found.pattern().as_usize();
                     if let Some(words) = native_words.as_mut() {
                         self.record_prefilter_native(words, pattern);
@@ -1269,11 +1712,23 @@ impl Engine {
                             termination,
                         );
                     }
-                    matched_keywords[pattern] = true;
+                    if !matched_keywords[pattern] {
+                        matched_keywords[pattern] = true;
+                        matched_keyword_list.push(pattern);
+                    }
                     if record_occurrences && self.recorded_keywords[pattern] {
                         keyword_occurrences.record(pattern, found.start());
                     }
                 }
+            }
+            let use_rule_index = context.uses_rule_index();
+            if use_rule_index {
+                // The fast gate needs the native patterns of the whole pass.
+                let fast_gate_words = native_words
+                    .as_deref()
+                    .filter(|_| encoded_segments.is_empty());
+                self.rule_index
+                    .select(&mut visit, &matched_keyword_list, fast_gate_words);
             }
             if let Some(words) = native_words {
                 context.seed_native_keyword_hits(
@@ -1291,14 +1746,53 @@ impl Engine {
 
             {
                 let regex_haystack = OnceCell::new();
-                for (((rule_ordinal, rule), keyword_indexes), literal_anchor) in self
-                    .config
-                    .rules
-                    .values()
-                    .enumerate()
-                    .zip(&self.rule_keyword_indexes)
-                    .zip(&self.rule_literal_anchors)
-                {
+                let mut rules = self.config.rules.range::<str, _>(..);
+                // Ordinal of the rule that `rules` yields next.
+                let mut next_ordinal = 0;
+                // Units owed by skipped native fast-gate rules since the
+                // last visited rule.
+                let mut skipped_native_units = 0_usize;
+                for (rule_ordinal, visited) in RuleCandidates::new(
+                    use_rule_index.then_some(visit.as_slice()),
+                    &self.rule_index.native_gated,
+                    self.config.rules.len(),
+                ) {
+                    if !visited {
+                        // A native fast-gate rule whose keywords are all
+                        // absent from the whole pass.
+                        skipped_native_units += self.native_fast_gates[rule_ordinal]
+                            .as_ref()
+                            .map_or(0, |patterns| patterns.len() + 1);
+                        continue;
+                    }
+                    if skipped_native_units > 0 {
+                        let units = std::mem::take(&mut skipped_native_units);
+                        if let Err(termination) =
+                            context.charge_native_keyword_misses(units, current_raw.len())
+                        {
+                            return finish_partial(
+                                findings,
+                                &self.replaced_by,
+                                options,
+                                context.usage,
+                                termination,
+                            );
+                        }
+                    }
+                    let gap = rule_ordinal - next_ordinal;
+                    if gap > RULE_SEEK_GAP {
+                        // One search costs less than stepping over many rules.
+                        rules = self.config.rules.range::<str, _>((
+                            Bound::Included(&*self.rule_ids[rule_ordinal]),
+                            Bound::Unbounded,
+                        ));
+                    } else if gap > 0 {
+                        rules.nth(gap - 1);
+                    }
+                    let (_, rule) = rules.next().expect("rule ordinals are in range");
+                    next_ordinal = rule_ordinal + 1;
+                    let keyword_indexes = &self.rule_keyword_indexes[rule_ordinal];
+                    let literal_anchor = &self.rule_literal_anchors[rule_ordinal];
                     context.explanations.record(
                         Some(rule_ordinal),
                         decode_depth,
@@ -1351,7 +1845,7 @@ impl Engine {
                                 rule_ordinal,
                                 decoded_pass: decode_depth,
                                 literal_anchor: None,
-                                keyword_occurrences: &keyword_occurrences,
+                                keyword_occurrences,
                             },
                             context,
                         );
@@ -1369,7 +1863,7 @@ impl Engine {
                         }
                         continue;
                     }
-                    if !keyword_gate_open(rule, keyword_indexes, &matched_keywords) {
+                    if !keyword_gate_open(rule, keyword_indexes, matched_keywords) {
                         context.explanations.record(
                             Some(rule_ordinal),
                             decode_depth,
@@ -1401,7 +1895,7 @@ impl Engine {
                             rule_ordinal,
                             decoded_pass: decode_depth,
                             literal_anchor: literal_anchor.as_ref(),
-                            keyword_occurrences: &keyword_occurrences,
+                            keyword_occurrences,
                         },
                         context,
                     );
@@ -1417,6 +1911,18 @@ impl Engine {
                             );
                         }
                     }
+                }
+                if skipped_native_units > 0
+                    && let Err(termination) = context
+                        .charge_native_keyword_misses(skipped_native_units, current_raw.len())
+                {
+                    return finish_partial(
+                        findings,
+                        &self.replaced_by,
+                        options,
+                        context.usage,
+                        termination,
+                    );
                 }
             } // Drop the normalized pass before replacing decoded content.
             decode_depth += 1;
@@ -2068,6 +2574,7 @@ impl Engine {
                 input.bytes,
                 whole,
                 rule.secret_group,
+                context.regex_caches.as_deref_mut(),
                 &mut capture_scratch,
             ) else {
                 context.explanations.record(
@@ -2167,21 +2674,29 @@ impl Engine {
         if context.control.budget.collected_spans.is_some() {
             // Avoid speculative anchored collection and its abandoned spans.
             // This exact collector has no unlimited fallback on exhaustion.
-            return regex.find_all_normalized_controlled(normalized, || context.collected_spans(1));
+            return context.with_caches(|context, caches| {
+                regex.find_all_normalized_controlled(normalized, caches, || {
+                    context.collected_spans(1)
+                })
+            });
         }
         if let Some(anchor) = rule_pass.literal_anchor
             && let Some(starts) = rule_pass
                 .keyword_occurrences
                 .rule_starts(&anchor.keyword_indexes)
         {
-            let (spans, collected) =
-                regex.find_all_literal_anchored_counted(normalized, anchor.candidate, &starts);
+            let (spans, collected) = regex.find_all_literal_anchored_counted(
+                normalized,
+                anchor.candidate,
+                &starts,
+                context.regex_caches.as_deref_mut(),
+            );
             context.collected_spans(collected)?;
             if let Some(spans) = spans {
                 return Ok(spans);
             }
         }
-        let spans = regex.find_all_normalized(normalized);
+        let spans = regex.find_all_normalized(normalized, context.regex_caches.as_deref_mut());
         context.collected_spans(spans.len())?;
         Ok(spans)
     }
@@ -3193,7 +3708,7 @@ impl EngineBuilder {
                     .filter_map(|keyword| keyword_ids.get(keyword.as_str()).copied())
                     .collect()
             })
-            .collect();
+            .collect::<Vec<Box<[usize]>>>();
         let rule_literal_anchors = self
             .config
             .rules
@@ -3229,6 +3744,7 @@ impl EngineBuilder {
             .map(|keyword| keyword.as_bytes().to_vec())
             .collect::<Vec<_>>();
         let mut prefilter_native = vec![None; keyword_count];
+        let native_pattern_count = native_patterns.len();
         let native_from_prefilter = native_keyword_matcher.is_some()
             && native_patterns.iter().all(|pattern| pattern.is_ascii());
         if native_from_prefilter {
@@ -3262,6 +3778,19 @@ impl EngineBuilder {
             )
         };
         let native_fast_gates = native_fast_gates(&self.config, &native_keyword_patterns);
+        let rule_index = RuleIndex::new(
+            &self.config,
+            &rule_keyword_indexes,
+            keyword_count,
+            &native_fast_gates,
+            native_pattern_count,
+        );
+        let rule_ids = self
+            .config
+            .rules
+            .keys()
+            .map(|id| id.as_str().into())
+            .collect();
         let replaced_by = ReplacedBy::new(&self.config);
         Ok(Engine {
             config: self.config,
@@ -3276,6 +3805,8 @@ impl EngineBuilder {
             native_keyword_patterns,
             native_required_patterns,
             native_fast_gates,
+            rule_index,
+            rule_ids,
             replaced_by,
         })
     }
@@ -3760,12 +4291,19 @@ impl NativeContentMatcher<'_, '_> {
         context: &mut ScanContext<'_>,
     ) -> Result<Vec<ByteSpan>, ScanTermination> {
         match self {
-            Self::Bytes(regex) => regex.find_all_controlled(bytes, || context.collected_spans(1)),
+            Self::Bytes(regex) => context.with_caches(|context, caches| {
+                regex.find_all_controlled(bytes, caches, || context.collected_spans(1))
+            }),
             Self::Go(regex, normalized) => {
                 if context.control.budget.collected_spans.is_some() {
-                    regex.find_all_normalized_controlled(normalized, || context.collected_spans(1))
+                    context.with_caches(|context, caches| {
+                        regex.find_all_normalized_controlled(normalized, caches, || {
+                            context.collected_spans(1)
+                        })
+                    })
                 } else {
-                    let spans = regex.find_all_normalized(normalized);
+                    let spans =
+                        regex.find_all_normalized(normalized, context.regex_caches.as_deref_mut());
                     context.collected_spans(spans.len())?;
                     Ok(spans)
                 }
@@ -3777,11 +4315,14 @@ impl NativeContentMatcher<'_, '_> {
         self,
         bytes: &[u8],
         whole: ByteSpan,
+        caches: Caches<'_>,
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         match self {
-            Self::Go(regex, normalized) => regex.captures_at_normalized(normalized, whole, scratch),
-            Self::Bytes(regex) => regex.captures_at(bytes, whole, scratch),
+            Self::Go(regex, normalized) => {
+                regex.captures_at_normalized(normalized, whole, caches, scratch)
+            }
+            Self::Bytes(regex) => regex.captures_at(bytes, whole, caches, scratch),
         }
     }
 }
@@ -3863,10 +4404,11 @@ fn extract_native_secret<'a>(
     bytes: &'a [u8],
     whole: ByteSpan,
     secret_group: i64,
+    caches: Caches<'_>,
     scratch: &mut Option<CaptureScratch>,
 ) -> Option<ExtractedSecret<'a>> {
     let scratch = scratch.get_or_insert_with(|| regex.capture_scratch());
-    let spans = regex.captures_at(bytes, whole, scratch)?;
+    let spans = regex.captures_at(bytes, whole, caches, scratch)?;
     let span = if secret_group > 0 {
         spans
             .get(usize::try_from(secret_group).ok()?)
@@ -3909,7 +4451,9 @@ fn extract_secret_controlled<'a>(
     }
     let scratch = scratch.get_or_insert_with(|| regex.capture_scratch());
     let normalized = context.normalize(matched)?;
-    let Some(spans) = regex.captures_into_normalized(&normalized, scratch) else {
+    let Some(spans) =
+        regex.captures_into_normalized(&normalized, context.regex_caches.as_deref_mut(), scratch)
+    else {
         // Trimming leading/trailing newlines can make an anchored full-match
         // expression stop matching. Go leaves the already-trimmed secret
         // unchanged when FindStringSubmatch consequently returns nil.
@@ -4042,6 +4586,9 @@ fn path_finding(fragment: &Fragment, rule: &CompiledRule) -> Option<Finding> {
 
 #[cfg(test)]
 mod literal_anchor_tests;
+
+#[cfg(test)]
+mod rule_index_tests;
 
 #[cfg(test)]
 mod tests;

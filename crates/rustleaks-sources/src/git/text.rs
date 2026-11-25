@@ -141,45 +141,77 @@ fn civil_from_timestamp(timestamp: i64) -> Option<(i64, i64, i64, i64, i64, i64)
     ))
 }
 
+/// Bytes between two cancellation polls while splitting lines.
+const LINE_POLL_BYTES: usize = 4096;
+
 pub(super) fn split_inclusive_lines<'a>(
     input: &'a [u8],
     max_lines: usize,
     cancellation: &dyn Cancellation,
 ) -> PatchResult<Vec<&'a [u8]>> {
+    // Units are often a few lines long, so the list is sized from the input
+    // rather than from the line ceiling.
     let mut lines = Vec::new();
     lines
-        .try_reserve_exact(max_lines.min(4096))
+        .try_reserve_exact(inclusive_line_count(input).min(max_lines))
         .map_err(|error| patch_allocation("Git patch lines", error))?;
     let mut start = 0;
-    for (index, byte) in input.iter().enumerate() {
-        if index % 4096 == 0 {
-            poll_patch_cancellation(cancellation)?;
-        }
-        if *byte == b'\n' {
-            if lines.len() >= max_lines {
-                return Err(PatchError::Limit(format!(
-                    "Git patch exceeds the configured {max_lines}-line ceiling"
-                )));
+    for (block_index, block) in input.chunks(LINE_POLL_BYTES).enumerate() {
+        poll_patch_cancellation(cancellation)?;
+        let mut offset = block_index * LINE_POLL_BYTES;
+        let mut words = block.chunks_exact(8);
+        for word in &mut words {
+            let word = u64::from_le_bytes(word.try_into().expect("eight-byte chunk"));
+            let mut newlines = newline_bytes(word);
+            while newlines != 0 {
+                let index = offset + newlines.trailing_zeros() as usize / 8;
+                push_line(&mut lines, &input[start..=index], max_lines)?;
+                start = index + 1;
+                newlines &= newlines - 1;
             }
-            lines
-                .try_reserve(1)
-                .map_err(|error| patch_allocation("Git patch lines", error))?;
-            lines.push(&input[start..=index]);
-            start = index + 1;
+            offset += 8;
+        }
+        for (index, byte) in words.remainder().iter().enumerate() {
+            if *byte == b'\n' {
+                let index = offset + index;
+                push_line(&mut lines, &input[start..=index], max_lines)?;
+                start = index + 1;
+            }
         }
     }
     if start < input.len() {
-        if lines.len() >= max_lines {
-            return Err(PatchError::Limit(format!(
-                "Git patch exceeds the configured {max_lines}-line ceiling"
-            )));
-        }
-        lines
-            .try_reserve(1)
-            .map_err(|error| patch_allocation("Git patch lines", error))?;
-        lines.push(&input[start..]);
+        push_line(&mut lines, &input[start..], max_lines)?;
     }
     Ok(lines)
+}
+
+/// Returns a word with the high bit set in each byte of `word` that is a
+/// line feed, and no other bit set.
+const fn newline_bytes(word: u64) -> u64 {
+    const LOW: u64 = 0x7f7f_7f7f_7f7f_7f7f;
+    let zeroed = word ^ 0x0a0a_0a0a_0a0a_0a0a;
+    // Each byte of the sum has its high bit set unless that byte of `zeroed`
+    // is zero. No sum carries into the next byte.
+    !(((zeroed & LOW) + LOW) | zeroed | LOW)
+}
+
+fn push_line<'a>(lines: &mut Vec<&'a [u8]>, line: &'a [u8], max_lines: usize) -> PatchResult<()> {
+    if lines.len() >= max_lines {
+        return Err(PatchError::Limit(format!(
+            "Git patch exceeds the configured {max_lines}-line ceiling"
+        )));
+    }
+    lines
+        .try_reserve(1)
+        .map_err(|error| patch_allocation("Git patch lines", error))?;
+    lines.push(line);
+    Ok(())
+}
+
+/// Counts the lines that [`split_inclusive_lines`] returns for `input`.
+fn inclusive_line_count(input: &[u8]) -> usize {
+    let newlines = input.iter().filter(|byte| **byte == b'\n').count();
+    newlines + usize::from(input.last().is_some_and(|byte| *byte != b'\n'))
 }
 
 pub(super) fn trim_line(value: &[u8]) -> &[u8] {

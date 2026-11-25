@@ -101,7 +101,7 @@
 use regex_automata::{Anchored, Input};
 use regex_syntax::hir::{Class, Hir, HirKind};
 
-use super::{ATTEMPT_COST_FLOOR, ByteSpan, GoRegex, NormalizedHaystack};
+use super::{ATTEMPT_COST_FLOOR, ByteSpan, Caches, GoRegex, NormalizedHaystack};
 
 /// Maximum distinct literals considered for one expression.
 const MAX_LITERALS: usize = 64;
@@ -814,7 +814,7 @@ impl GoRegex {
         candidate: usize,
         occurrences: &[usize],
     ) -> Option<Vec<ByteSpan>> {
-        self.find_all_literal_anchored_counted(normalized, candidate, occurrences)
+        self.find_all_literal_anchored_counted(normalized, candidate, occurrences, None)
             .0
     }
 
@@ -824,6 +824,7 @@ impl GoRegex {
         normalized: &NormalizedHaystack<'_>,
         candidate: usize,
         occurrences: &[usize],
+        caches: Caches<'_>,
     ) -> (Option<Vec<ByteSpan>>, usize) {
         let mut collected = 0;
         let result = (|| {
@@ -836,7 +837,9 @@ impl GoRegex {
             let candidate = shape.candidates.get(candidate)?;
             let placed = placeable(candidate, bytes, ascii, occurrences);
             let budget = AttemptBudget::new(shape, candidate, bytes, ascii, placed.len())?;
-            self.enumerate_anchored(bytes, shape, &placed, Some(budget), || collected += 1)
+            self.enumerate_anchored(bytes, shape, &placed, Some(budget), caches, || {
+                collected += 1;
+            })
         })();
         (result, collected)
     }
@@ -859,7 +862,7 @@ impl GoRegex {
             bytes.is_ascii(),
             occurrences,
         );
-        self.enumerate_anchored(normalized.bytes(), shape, &placed, None, || {})
+        self.enumerate_anchored(normalized.bytes(), shape, &placed, None, None, || {})
     }
 
     /// Enumerates each candidate with naive occurrence discovery and no budget.
@@ -889,7 +892,7 @@ impl GoRegex {
             .map(|candidate| {
                 let occurrences = naive_occurrences(&lowered, candidate.literals());
                 let placed = placeable(candidate, haystack, haystack.is_ascii(), &occurrences);
-                self.enumerate_anchored(haystack, shape, &placed, None, || {})
+                self.enumerate_anchored(haystack, shape, &placed, None, None, || {})
                     .expect("enumeration without a budget cannot abandon")
             })
             .collect()
@@ -901,6 +904,7 @@ impl GoRegex {
         shape: &LiteralAnchorShape,
         occurrences: &[usize],
         mut budget: Option<AttemptBudget<'_>>,
+        mut caches: Caches<'_>,
         mut collect_span: impl FnMut(),
     ) -> Option<Vec<ByteSpan>> {
         debug_assert!(bytes.is_ascii() || shape.non_ascii_haystacks);
@@ -928,7 +932,7 @@ impl GoRegex {
                 return None;
             }
             let input = Input::new(bytes).span(start..end).anchored(Anchored::Yes);
-            if let Some(found) = self.backend.get().search(&input) {
+            if let Some(found) = self.backend.search(caches.as_deref_mut(), &input) {
                 debug_assert_eq!(found.start(), start);
                 debug_assert!(found.end() > found.start());
                 collect_span();

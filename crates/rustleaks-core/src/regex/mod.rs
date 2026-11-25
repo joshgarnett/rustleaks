@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod caches;
 #[cfg(test)]
 mod differential;
 mod literal_anchor;
@@ -19,12 +20,17 @@ use std::fmt::{self, Write as _};
 use std::sync::{Arc, OnceLock};
 
 use regex_automata::{
-    Input, MatchKind,
+    Anchored, Input, Match, MatchKind,
     meta::Regex,
     nfa::thompson::{self, WhichCaptures},
-    util::{captures::Captures, syntax},
+    util::{captures::Captures, iter::Searcher, syntax},
 };
 
+/// Where a search takes its caches: `None` for the expression's shared pool,
+/// or a caller's [`RegexCaches`].
+pub(crate) type Caches<'c> = Option<&'c mut RegexCaches>;
+
+pub(crate) use caches::RegexCaches;
 pub(crate) use literal_anchor::LiteralAnchorShape;
 pub(crate) use required_literals::LiteralSet;
 
@@ -290,7 +296,7 @@ impl Error for GoRegexError {}
 #[derive(Clone)]
 struct LazyBackend(Arc<LazyBackendState>);
 
-struct LazyBackendState {
+pub(super) struct LazyBackendState {
     pending: Option<PendingBackend>,
     built: OnceLock<Regex>,
 }
@@ -322,6 +328,32 @@ impl LazyBackend {
             }),
             built: OnceLock::new(),
         }))
+    }
+
+    fn search(&self, caches: Caches<'_>, input: &Input<'_>) -> Option<Match> {
+        let regex = self.get();
+        match caches {
+            Some(caches) => regex.search_with(caches.cache(&self.0, regex), input),
+            None => regex.search(input),
+        }
+    }
+
+    fn is_match(&self, caches: Caches<'_>, input: &Input<'_>) -> bool {
+        let regex = self.get();
+        match caches {
+            Some(caches) => regex.is_match_with(caches.cache(&self.0, regex), input),
+            None => regex.is_match(input.clone()),
+        }
+    }
+
+    fn search_captures(&self, caches: Caches<'_>, input: &Input<'_>, captures: &mut Captures) {
+        let regex = self.get();
+        match caches {
+            Some(caches) => {
+                regex.search_captures_with(caches.cache(&self.0, regex), input, captures);
+            }
+            None => regex.search_captures(input, captures),
+        }
     }
 
     fn get(&self) -> &Regex {
@@ -495,12 +527,17 @@ impl NativeByteRegex {
     pub(crate) fn find_all_controlled<E>(
         &self,
         bytes: &[u8],
+        mut caches: Caches<'_>,
         mut admit_span: impl FnMut() -> Result<(), E>,
     ) -> Result<Vec<ByteSpan>, E> {
         let mut spans = Vec::new();
         // The backend Searcher advances empty matches by bytes under this
         // dialect, including positions inside UTF-8 and malformed sequences.
-        for whole in self.backend.get().find_iter(bytes) {
+        // This is the loop of the meta regex's `find_iter`.
+        let mut searcher = Searcher::new(Input::new(bytes));
+        while let Some(whole) =
+            searcher.advance(|input| Ok(self.backend.search(caches.as_deref_mut(), input)))
+        {
             admit_span()?;
             spans.push(ByteSpan {
                 start: whole.start(),
@@ -517,17 +554,24 @@ impl NativeByteRegex {
         }
     }
 
+    /// Recovers captures for an already admitted whole match. The search is
+    /// anchored at its start, as in [`GoRegex::captures_at_normalized`]. A
+    /// different endpoint fails closed.
     pub(crate) fn captures_at<'s>(
         &self,
         bytes: &[u8],
         whole: ByteSpan,
+        caches: Caches<'_>,
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         if whole.start > whole.end || whole.end > bytes.len() {
             return None;
         }
-        self.backend.get().search_captures(
-            &Input::new(bytes).span(whole.start..bytes.len()),
+        self.backend.search_captures(
+            caches,
+            &Input::new(bytes)
+                .span(whole.start..bytes.len())
+                .anchored(Anchored::Yes),
             &mut scratch.captures,
         );
         if ByteSpan::from_span(scratch.captures.get_group(0)?) != whole {
@@ -830,11 +874,16 @@ impl GoRegex {
 
     pub(crate) fn is_match(&self, haystack: &[u8]) -> bool {
         let normalized = NormalizedHaystack::new(haystack);
-        self.is_match_normalized(&normalized)
+        self.is_match_normalized(&normalized, None)
     }
 
-    pub(crate) fn is_match_normalized(&self, normalized: &NormalizedHaystack<'_>) -> bool {
-        self.backend.get().is_match(normalized.bytes())
+    pub(crate) fn is_match_normalized(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        caches: Caches<'_>,
+    ) -> bool {
+        self.backend
+            .is_match(caches, &Input::new(normalized.bytes()))
     }
 
     /// Eagerly returns whole-match spans without computing capture groups.
@@ -843,13 +892,17 @@ impl GoRegex {
         allow(dead_code, reason = "used by tests and the go_regex fuzz target")
     )]
     pub(crate) fn find_all(&self, haystack: &[u8]) -> Vec<ByteSpan> {
-        self.find_all_normalized(&NormalizedHaystack::new(haystack))
+        self.find_all_normalized(&NormalizedHaystack::new(haystack), None)
     }
 
-    pub(crate) fn find_all_normalized(&self, normalized: &NormalizedHaystack<'_>) -> Vec<ByteSpan> {
-        match self
-            .find_all_normalized_controlled(normalized, || Ok::<(), std::convert::Infallible>(()))
-        {
+    pub(crate) fn find_all_normalized(
+        &self,
+        normalized: &NormalizedHaystack<'_>,
+        caches: Caches<'_>,
+    ) -> Vec<ByteSpan> {
+        match self.find_all_normalized_controlled(normalized, caches, || {
+            Ok::<(), std::convert::Infallible>(())
+        }) {
             Ok(spans) => spans,
             Err(never) => match never {},
         }
@@ -860,6 +913,7 @@ impl GoRegex {
     pub(crate) fn find_all_normalized_controlled<E>(
         &self,
         normalized: &NormalizedHaystack<'_>,
+        mut caches: Caches<'_>,
         mut admit_span: impl FnMut() -> Result<(), E>,
     ) -> Result<Vec<ByteSpan>, E> {
         let bytes = normalized.bytes();
@@ -869,11 +923,10 @@ impl GoRegex {
         let mut results = Vec::new();
         let mut original_cursor = 0;
         while position <= end {
-            let Some(whole) = self
-                .backend
-                .get()
-                .search(&Input::new(bytes).span(position..end))
-            else {
+            let Some(whole) = self.backend.search(
+                caches.as_deref_mut(),
+                &Input::new(bytes).span(position..end),
+            ) else {
                 break;
             };
             let mut accept = true;
@@ -943,17 +996,20 @@ impl GoRegex {
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         let normalized = NormalizedHaystack::new(haystack);
-        self.captures_into_normalized(&normalized, scratch)
+        self.captures_into_normalized(&normalized, None, scratch)
     }
 
     pub(crate) fn captures_into_normalized<'s>(
         &self,
         normalized: &NormalizedHaystack<'_>,
+        caches: Caches<'_>,
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
-        self.backend
-            .get()
-            .search_captures(&Input::new(normalized.bytes()), &mut scratch.captures);
+        self.backend.search_captures(
+            caches,
+            &Input::new(normalized.bytes()),
+            &mut scratch.captures,
+        );
         scratch.captures.get_group(0)?;
         scratch.spans.clear();
         scratch
@@ -969,15 +1025,28 @@ impl GoRegex {
 
     /// Recovers captures for an already admitted whole match without slicing
     /// away anchor or word-boundary context. A different endpoint fails closed.
+    ///
+    /// The search is anchored at the match start. A leftmost-first search
+    /// that starts there returns the match that an anchored search finds
+    /// there when there is one, and otherwise a match with a later start,
+    /// which the endpoint check rejects. A later normalized start cannot map
+    /// back to the same original start: this dialect matches valid UTF-8 and
+    /// reports no empty match inside a rune, so no match starts inside the
+    /// three bytes that replace an invalid byte. So anchoring changes no
+    /// result, and the search does not look for a match past the start.
     pub(crate) fn captures_at_normalized<'s>(
         &self,
         normalized: &NormalizedHaystack<'_>,
         whole: ByteSpan,
+        caches: Caches<'_>,
         scratch: &'s mut CaptureScratch,
     ) -> Option<&'s [Option<ByteSpan>]> {
         let start = normalized.normalized_offset(whole.start)?;
-        self.backend.get().search_captures(
-            &Input::new(normalized.bytes()).span(start..normalized.bytes().len()),
+        self.backend.search_captures(
+            caches,
+            &Input::new(normalized.bytes())
+                .span(start..normalized.bytes().len())
+                .anchored(Anchored::Yes),
             &mut scratch.captures,
         );
         let found = normalized.original_span(ByteSpan::from_span(scratch.captures.get_group(0)?));
@@ -3431,7 +3500,12 @@ mod tests {
         let normalized = NormalizedHaystack::new(b"xAB \xffAB");
         let mut scratch = regex.capture_scratch();
         assert_eq!(
-            regex.captures_at_normalized(&normalized, ByteSpan { start: 1, end: 3 }, &mut scratch),
+            regex.captures_at_normalized(
+                &normalized,
+                ByteSpan { start: 1, end: 3 },
+                None,
+                &mut scratch
+            ),
             Some(
                 [
                     Some(ByteSpan { start: 1, end: 3 }),
@@ -3442,7 +3516,12 @@ mod tests {
             )
         );
         assert_eq!(
-            regex.captures_at_normalized(&normalized, ByteSpan { start: 5, end: 7 }, &mut scratch),
+            regex.captures_at_normalized(
+                &normalized,
+                ByteSpan { start: 5, end: 7 },
+                None,
+                &mut scratch
+            ),
             Some(
                 [
                     Some(ByteSpan { start: 5, end: 7 }),
@@ -3462,7 +3541,7 @@ mod tests {
         ] {
             assert!(
                 regex
-                    .captures_at_normalized(&normalized, whole, &mut scratch)
+                    .captures_at_normalized(&normalized, whole, None, &mut scratch)
                     .is_none()
             );
         }
@@ -3472,6 +3551,7 @@ mod tests {
             regex.captures_at_normalized(
                 &NormalizedHaystack::new("éAB".as_bytes()),
                 ByteSpan { start: 2, end: 4 },
+                None,
                 &mut scratch
             ),
             Some(
@@ -3505,7 +3585,7 @@ mod native_byte_tests {
     fn spans(pattern: &str, bytes: &[u8]) -> Vec<ByteSpan> {
         NativeByteRegex::compile(pattern)
             .unwrap()
-            .find_all_controlled(bytes, || Ok::<(), ()>(()))
+            .find_all_controlled(bytes, None, || Ok::<(), ()>(()))
             .unwrap()
     }
 
@@ -3519,17 +3599,17 @@ mod native_byte_tests {
         let whole = expected[0].unwrap();
         assert_eq!(
             regex
-                .find_all_controlled(bytes, || Ok::<(), ()>(()))
+                .find_all_controlled(bytes, None, || Ok::<(), ()>(()))
                 .unwrap()[0],
             whole
         );
         assert_eq!(
-            regex.captures_at(bytes, whole, &mut scratch),
+            regex.captures_at(bytes, whole, None, &mut scratch),
             Some(expected)
         );
         assert!(
             regex
-                .captures_at(bytes, span(whole.start, whole.end + 1), &mut scratch)
+                .captures_at(bytes, span(whole.start, whole.end + 1), None, &mut scratch)
                 .is_none()
         );
     }
@@ -3695,7 +3775,7 @@ mod native_byte_tests {
     fn byte_span_admission_happens_before_each_append() {
         let regex = NativeByteRegex::compile(r".").unwrap();
         let mut admitted = 0;
-        let result = regex.find_all_controlled(b"\xffAB", || {
+        let result = regex.find_all_controlled(b"\xffAB", None, || {
             if admitted == 2 {
                 return Err(());
             }
@@ -3731,5 +3811,233 @@ mod lazy_backend_tests {
         let whole = GoRegex::compile_whole("a+").unwrap();
         assert!(whole.is_match(b"aaa"));
         assert!(!whole.is_match(b"aab"));
+    }
+}
+
+#[cfg(test)]
+mod anchored_capture_tests {
+    use super::*;
+
+    /// Expressions where anchoring could matter: assertions at either edge,
+    /// multi-line mode, empty and unset groups, alternations whose first
+    /// branch is shorter, lazy repetitions and matches that can be empty.
+    const PATTERNS: &[&str] = &[
+        r"\b(a+)\b",
+        r"\B(a)(b?)",
+        r"^(ab)|(ab)$",
+        r"(?m)^(a+)$",
+        r"(?m)(^|x)(a*)($|y)",
+        r"()(a*)()",
+        r"(a|ab)(c|bcd)(d*)",
+        r"(ab|a)(b*)",
+        r"(a+?)(a*?)b?",
+        r"(?:(a)|(b))+",
+        r"(a*)",
+        r"(\w+)=(\w*)",
+        r"(é|e)(\x{301})?(\w*)",
+        r"(.)(.)?",
+        r"(?s)(.+?)(b|$)",
+        r"(?i)(K)(x?)",
+    ];
+
+    const HAYSTACKS: &[&[u8]] = &[
+        b"",
+        b"a",
+        b"aab ab",
+        b"ab\nab",
+        b"xa\naay",
+        b"abcd abcdd",
+        b"aaab",
+        b"ba ab b",
+        b"k=v x=",
+        "é\u{301}e x".as_bytes(),
+        b"\xffab\x80a",
+        b"a\xff\nab",
+        "\u{212a}x Kx".as_bytes(),
+    ];
+
+    /// The unanchored search that capture recovery used before anchoring.
+    fn unanchored_go(
+        regex: &GoRegex,
+        normalized: &NormalizedHaystack<'_>,
+        whole: ByteSpan,
+    ) -> Option<Vec<Option<ByteSpan>>> {
+        let start = normalized.normalized_offset(whole.start)?;
+        let backend = regex.backend.get();
+        let mut captures = backend.create_captures();
+        backend.search_captures(
+            &Input::new(normalized.bytes()).span(start..normalized.bytes().len()),
+            &mut captures,
+        );
+        let found = normalized.original_span(ByteSpan::from_span(captures.get_group(0)?));
+        (found == whole).then(|| {
+            (0..regex.capture_names.len())
+                .map(|index| {
+                    captures
+                        .get_group(index)
+                        .map(|span| normalized.original_span(ByteSpan::from_span(span)))
+                })
+                .collect()
+        })
+    }
+
+    fn unanchored_bytes(
+        regex: &NativeByteRegex,
+        bytes: &[u8],
+        whole: ByteSpan,
+    ) -> Option<Vec<Option<ByteSpan>>> {
+        if whole.start > whole.end || whole.end > bytes.len() {
+            return None;
+        }
+        let backend = regex.backend.get();
+        let mut captures = backend.create_captures();
+        backend.search_captures(
+            &Input::new(bytes).span(whole.start..bytes.len()),
+            &mut captures,
+        );
+        (ByteSpan::from_span(captures.get_group(0)?) == whole).then(|| {
+            (0..=regex.capture_count())
+                .map(|index| captures.get_group(index).map(ByteSpan::from_span))
+                .collect()
+        })
+    }
+
+    /// Every span of `haystack`, plus one that ends past it.
+    fn all_spans(haystack: &[u8]) -> impl Iterator<Item = ByteSpan> {
+        let len = haystack.len();
+        (0..=len)
+            .flat_map(move |start| (start..=len).map(move |end| ByteSpan { start, end }))
+            .chain([ByteSpan {
+                start: len,
+                end: len + 1,
+            }])
+    }
+
+    #[test]
+    fn anchored_go_captures_equal_the_unanchored_search_for_every_span() {
+        let mut recovered = 0;
+        for pattern in PATTERNS {
+            let regex = GoRegex::compile(pattern).unwrap();
+            let mut scratch = regex.capture_scratch();
+            for haystack in HAYSTACKS {
+                let normalized = NormalizedHaystack::new(haystack);
+                for whole in all_spans(haystack) {
+                    let expected = unanchored_go(&regex, &normalized, whole);
+                    recovered += usize::from(expected.is_some());
+                    assert_eq!(
+                        regex
+                            .captures_at_normalized(&normalized, whole, None, &mut scratch)
+                            .map(<[_]>::to_vec),
+                        expected,
+                        "pattern {pattern}, haystack {haystack:?}, span {whole:?}",
+                    );
+                }
+                for whole in regex.find_all_normalized(&normalized, None) {
+                    assert!(
+                        regex
+                            .captures_at_normalized(&normalized, whole, None, &mut scratch)
+                            .is_some(),
+                        "pattern {pattern}, haystack {haystack:?}, match {whole:?}",
+                    );
+                }
+            }
+        }
+        // The comparison covers many recovered matches, not only rejections.
+        assert!(recovered > 300, "{recovered}");
+    }
+
+    #[test]
+    fn anchored_byte_captures_equal_the_unanchored_search_for_every_span() {
+        let mut recovered = 0;
+        for pattern in PATTERNS
+            .iter()
+            .copied()
+            .chain([r"(?-u:\xff)(a?)", r"(?-u)(.)(b)"])
+        {
+            let regex = NativeByteRegex::compile(pattern).unwrap();
+            let mut scratch = regex.capture_scratch();
+            for haystack in HAYSTACKS {
+                for whole in all_spans(haystack) {
+                    let expected = unanchored_bytes(&regex, haystack, whole);
+                    recovered += usize::from(expected.is_some());
+                    assert_eq!(
+                        regex
+                            .captures_at(haystack, whole, None, &mut scratch)
+                            .map(<[_]>::to_vec),
+                        expected,
+                        "pattern {pattern}, haystack {haystack:?}, span {whole:?}",
+                    );
+                }
+                for whole in regex
+                    .find_all_controlled(haystack, None, || Ok::<(), ()>(()))
+                    .unwrap()
+                {
+                    assert!(
+                        regex
+                            .captures_at(haystack, whole, None, &mut scratch)
+                            .is_some(),
+                        "pattern {pattern}, haystack {haystack:?}, match {whole:?}",
+                    );
+                }
+            }
+        }
+        assert!(recovered > 300, "{recovered}");
+    }
+
+    #[test]
+    fn anchored_recovery_keeps_edge_context_and_the_endpoint_check() {
+        // `\b` and `$` at the span edges see the bytes outside the span.
+        let regex = GoRegex::compile(r"\b(ab)\b|(ab)$").unwrap();
+        let normalized = NormalizedHaystack::new(b"xab ab");
+        let mut scratch = regex.capture_scratch();
+        assert_eq!(
+            regex.captures_at_normalized(
+                &normalized,
+                ByteSpan { start: 1, end: 3 },
+                None,
+                &mut scratch
+            ),
+            None
+        );
+        assert_eq!(
+            regex.captures_at_normalized(
+                &normalized,
+                ByteSpan { start: 4, end: 6 },
+                None,
+                &mut scratch
+            ),
+            Some(
+                [
+                    Some(ByteSpan { start: 4, end: 6 }),
+                    Some(ByteSpan { start: 4, end: 6 }),
+                    None
+                ]
+                .as_slice()
+            )
+        );
+        // The leftmost-first match at a start is the only one recovered
+        // there, even when a longer or shorter match also starts there.
+        let regex = NativeByteRegex::compile(r"(a|ab)(c|bcd)(d*)").unwrap();
+        let mut scratch = regex.capture_scratch();
+        let bytes = b"abcd";
+        assert_eq!(
+            regex.captures_at(bytes, ByteSpan { start: 0, end: 4 }, None, &mut scratch),
+            Some(
+                [
+                    Some(ByteSpan { start: 0, end: 4 }),
+                    Some(ByteSpan { start: 0, end: 1 }),
+                    Some(ByteSpan { start: 1, end: 4 }),
+                    Some(ByteSpan { start: 4, end: 4 })
+                ]
+                .as_slice()
+            )
+        );
+        for end in [2, 3] {
+            assert!(
+                regex
+                    .captures_at(bytes, ByteSpan { start: 0, end }, None, &mut scratch)
+                    .is_none()
+            );
+        }
     }
 }

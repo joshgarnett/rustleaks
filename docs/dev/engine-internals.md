@@ -98,15 +98,55 @@ These limits apply to each expression or component, not to the whole engine.
   set limits still bound its expansion.
 - If the one-pass DFA fails to build, another capture engine is used. Full
   DFA construction is turned off, also under downstream feature unification.
-- Forward, reverse and fallback caches stay in the compiled regex pool across
-  scans of one `Engine`. Concurrent searches can hold more caches. Cloning an
-  `Engine` creates new pools and shares the compiled automata. Pool
-  bookkeeping and allocator overhead are not counted.
+- Without a `ScanScratch`, forward, reverse and fallback caches stay in each
+  compiled expression's pool across scans. Each concurrent search can add a
+  cache, and the pool never frees one. Clones of an `Engine` share the
+  compiled expressions and their pools. With a `ScanScratch`, searches use the
+  caches that it owns; see [Search caches per
+  thread](#search-caches-per-thread). Pool bookkeeping and allocator overhead
+  are not counted.
 - Hostile input or large Unicode classes can make the lazy DFA cache thrash
   or give up. The search then falls back to bounded engines and finally to
   PikeVM. One search stays linear in input length for a fixed pattern, but the
   speedup is lost. There is no linear bound for an eager enumeration of every
   match.
+
+## Search caches per thread
+
+A `ScanScratch` holds search caches and buffers for one thread that scans many
+fragments with `Engine::scan_fragment_with_scratch`. The outcome, including
+usage, is the same as without it. The test `scans_with_scratch_match_scans_without`
+in `crates/rustleaks-core/tests/engine.rs` checks this, also with a limit that
+drops every cache.
+
+- It creates a cache for an expression the first time its thread searches
+  that expression, and keeps one cache for each expression.
+- Every 16 fragments, it updates a size estimate for each cache searched
+  since the last update. The estimate is the highest `Cache::memory_usage`
+  reading so far, times 1.5. The reading counts the lazy DFA states in use,
+  not the storage they were given, and a lazy DFA that clears its states
+  keeps that storage. In tests the reading was 60 to 80 percent of the heap.
+- When the estimates add up to more than the limit, it drops the least
+  recently used caches until the total is at most three quarters of the
+  limit. Dropping a cache frees it. The next search of that expression
+  builds a new cache, which costs CPU time.
+- `ScanScratch::new` uses a limit of 16 MiB and
+  `ScanScratch::with_cache_limit` takes another one. The source runner gives
+  each worker 128 MiB divided by the number of workers, and at least 8 MiB
+  (`SEARCH_CACHE_BYTES` and `WORKER_SEARCH_CACHE_FLOOR` in
+  `crates/rustleaks-sources/src/runner.rs`).
+- It keeps the storage of the keyword pass's lowercased copy for the next
+  fragment up to 256 KiB, and the recorded keyword offsets up to 8,192
+  entries. Larger storage is freed when the fragment finishes.
+- A scratch value can move between engines. It keeps the expressions it holds
+  caches for alive until it drops them.
+
+Caches that each thread owns cost no lock or shared counter on each search.
+Without a limit, they can use more memory than the shared pool, because each
+thread builds a cache for every expression it searches, while the pool holds
+only as many caches as there are searches at the same time. A Git history
+scan, whose workers often wait for Git, uses a few megabytes more for each
+thread than with the pool.
 
 Literal-anchor analysis runs once for every compiled expression, including
 allowlist and path expressions, and the result is kept with the regex. It keeps
@@ -146,6 +186,19 @@ checks this. Otherwise each rune lowercases to one rune, and an ASCII input
 byte is always a rune of its own, so an ASCII pattern occurs in the lowered
 pass exactly where it occurs in the raw pass ignoring ASCII case.
 
+After the search, a pass that records no explanations visits only the rules
+whose keyword gate can open: rules without keywords, rules with a keyword
+found in the pass, and native rules. A native rule that the keyword miss
+check in [Native rule costs](#native-rule-costs) would skip is not visited
+either, and the pass charges its units in rule order before the next visited
+rule. Rules run in the same order as in a
+scan that visits every rule, so findings, usage and the point where a budget
+stops the scan do not change. Cancellation stops at the same point when the
+signal is polled once per work unit. A signal that only reads its state is
+polled once for the charged units, so cancellation that arrives during them
+can stop the scan at a later checkpoint. The test module
+`engine::rule_index_tests` compares the two.
+
 ## Required literals
 
 When the engine is built, each rule's expression is analyzed for up to four
@@ -166,8 +219,10 @@ higher.
 
 ## Scan-local buffers
 
-These buffers live only for one scan. They are not kept in the engine's
-search caches.
+These buffers live only for one scan, except that a `ScanScratch` keeps the
+storage of the lowercased copy and the keyword offsets for the next scan, up
+to the sizes in [Search caches per thread](#search-caches-per-thread). None of
+them is kept in the engine.
 
 - The newline index of the original fragment is built only when a finding
   needs a location. It is reused across decoded passes and required rules.
@@ -180,7 +235,7 @@ search caches.
   the raw input without normalization.
 - Path, allowlist and trimmed-secret searches keep their own haystacks.
 - Keyword folding for the prefilter runs when the prefilter exists. Its
-  temporary bytes are dropped before rule matching. ASCII folding matches Go;
+  bytes are not read after the keyword pass. ASCII folding matches Go;
   other characters and malformed bytes keep the pinned Go Unicode behavior.
   This allocation is not counted as normalization bytes. The prefilter also
   includes keywords of selected native rules, so a selection of only byte
@@ -206,8 +261,8 @@ are raw offsets and the start of every match is ASCII.
   `len / 64 + 1` offsets per keyword and `len / 16 + 1` across all keywords.
   A rule with a keyword past either limit uses the unanchored search.
 - Recorded offsets stay until the next pass starts. Vector capacity is reused
-  across passes and released when the fragment finishes. These are length
-  limits, not heap limits.
+  across passes and released when the fragment finishes, unless a
+  `ScanScratch` keeps it. These are length limits, not heap limits.
 - On an ASCII pass, a keyword hit is skipped when the bytes a match must have
   soon after it are missing, such as one of `= > : | ? ,` within 23 bytes
   after the keyword for `generic-api-key`. No match can use such a hit.
@@ -484,13 +539,19 @@ grows with these numbers:
 - Each worker keeps its own regex search caches: a forward and a reverse
   lazy DFA cache of up to 2 MiB each for every expression it searches, plus
   smaller fallback caches. These are most of the memory that grows with the
-  scan. Pull request #194 measured this on an Apple M5 Ultra with macOS
-  27.2.1, an optimized build and the median of three runs. A `dir` scan of
-  the gitlab tree (691 MB) with every built-in rule reached a peak RSS of
-  about 102 MB with one detection thread and about 352 MB with 12. That is
-  about 23 MB for each added thread. A
+  scan. The workers share an estimated 128 MiB, and each keeps at least
+  8 MiB; see [Search caches per thread](#search-caches-per-thread). At the
+  end of a one-worker scan of the gitlab tree with every built-in rule, the
+  caches read about 34 MB. With 12 workers, each one's limit is about
+  10.7 MiB, so it drops and rebuilds caches that it has not used recently. A
   [required literal](#required-literals) or keyword that rules out a buffer
   means that expression is not searched and its caches stay small.
+- These numbers are from an Apple M5 Ultra with macOS 27.2.1, an optimized
+  build and the median of three runs, for a `dir` scan of the gitlab tree
+  (691 MB) with every built-in rule. Peak RSS was about 95 MB with one
+  detection thread, 177 MB with 4, 211 MB with 12 and 285 MB with 24. At 12
+  threads, the limit costs about 5 percent more instructions than keeping
+  every cache, which peaked at about 340 MB.
 
 The figures in this paragraph were measured for pull request #163 on macOS
 with 36 CPUs. With 12 detection threads, history scans of six public

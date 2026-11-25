@@ -127,7 +127,12 @@ this number. So memory grows with the thread count:
   hunk, which can be as large as one changed file.
 - In a `dir` scan, the threads that read files hold a few more pieces. See
   [Reading files](#reading-files).
-- Each detection thread keeps its own pattern search caches.
+- Each detection thread keeps its own pattern search caches. All threads
+  together keep about 128 MiB of them, and each thread keeps at least
+  8 MiB, so the total grows past 128 MiB above 16 threads. A thread frees the
+  caches it has not used recently when it reaches its share. These sizes are
+  estimates, and they do not count the compiled patterns, which all threads
+  share.
 
 With `--complete-profile`, a piece of a file is the whole file, up to
 `target_bytes`.

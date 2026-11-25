@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{MutexGuard, PoisonError};
 
-use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanTermination, ScanUsage};
+use rustleaks_core::{ScanBudget, ScanBudgetKind, ScanScratch, ScanTermination, ScanUsage};
 
 use super::{
     CancellationToken, Engine, Fragment, Mutex, QueueWait, RunControl, ScanControl, ScanOptions,
@@ -405,6 +405,18 @@ impl Cancellation for Operation<'_> {
     }
 }
 
+/// Polling reads two flags and changes nothing, so the engine may merge
+/// polls that have no work between them.
+impl rustleaks_core::ScanCancellation for Operation<'_> {
+    fn is_cancelled(&self) -> bool {
+        Cancellation::is_cancelled(self)
+    }
+
+    fn reads_state_only(&self) -> bool {
+        true
+    }
+}
+
 impl Operation<'_> {
     fn lock(&self) -> MutexGuard<'_, Accounting> {
         self.accounting
@@ -688,16 +700,21 @@ pub(super) fn run(
     cancellation: &CancellationToken,
     budget: SourceBudget,
 ) -> SourceOutcome {
-    run_with_scan(
+    run_with_scan_setup(
         runner,
         source,
         policy,
         cancellation,
         budget,
-        |fragment, control| engine.scan_fragment_controlled(fragment, &scan_options, control),
+        |fragment, control, scratch| {
+            engine.scan_fragment_with_scratch(fragment, &scan_options, control, scratch)
+        },
+        &QueueWait::default(),
+        |_| Ok(()),
     )
 }
 
+#[cfg(test)]
 fn run_with_scan(
     runner: &SourceRunner,
     source: &mut dyn Source,
@@ -712,7 +729,7 @@ fn run_with_scan(
         policy,
         cancellation,
         budget,
-        scan,
+        |fragment, control, _| scan(fragment, control),
         &QueueWait::default(),
         |_| Ok(()),
     )
@@ -725,7 +742,7 @@ fn run_with_scan_setup(
     policy: &SessionPolicy,
     cancellation: &CancellationToken,
     budget: SourceBudget,
-    scan: impl Fn(&Fragment, &ScanControl<'_>) -> ScanOutcome + Sync,
+    scan: impl Fn(&Fragment, &ScanControl<'_>, &mut ScanScratch) -> ScanOutcome + Sync,
     queue_wait: &QueueWait,
     before_spawn: impl Fn(usize) -> std::io::Result<()>,
 ) -> SourceOutcome {
@@ -746,6 +763,7 @@ fn run_with_scan_setup(
             // receiver owner drops and notifies.
             let _guard = WorkerGuard(&operation);
             let mut batches = Vec::new();
+            let mut scratch = runner.worker_scratch();
             loop {
                 if operation.is_cancelled() {
                     break;
@@ -755,9 +773,8 @@ fn run_with_scan_setup(
                 let Some(reservation) = operation.reserve() else {
                     break;
                 };
-                let signal = || operation.is_cancelled();
-                let control = ScanControl::cancellable(&signal).with_budget(reservation.budget);
-                let detected = scan(&job.fragment, &control);
+                let control = ScanControl::cancellable(&operation).with_budget(reservation.budget);
+                let detected = scan(&job.fragment, &control, &mut scratch);
                 reservation.settle(&detected);
                 if !merge_complete_scan(&mut batches, policy, job.sequence, detected) {
                     break;
@@ -848,7 +865,7 @@ mod tests {
                             &SessionPolicy::default(),
                             cancellation,
                             policy(3 * workers, workers),
-                            |fragment, control| {
+                            |fragment, control, _| {
                                 held.hold();
                                 detector.scan_fragment_controlled(
                                     fragment,
@@ -1094,7 +1111,7 @@ mod tests {
             &SessionPolicy::default(),
             &cancellation,
             SourceBudget::unlimited(),
-            |_, _| panic!("setup failure must not scan fragments"),
+            |_, _, _| panic!("setup failure must not scan fragments"),
             &wait,
             |index| {
                 if index == 1 {

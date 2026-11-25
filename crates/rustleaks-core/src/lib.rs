@@ -26,7 +26,7 @@ pub mod validation;
 
 pub use engine::{
     Engine, EngineBuilder, ScanBudget, ScanBudgetKind, ScanCancellation, ScanControl, ScanError,
-    ScanOutcome, ScanTermination, ScanUsage,
+    ScanOutcome, ScanScratch, ScanTermination, ScanUsage,
 };
 
 pub use model::Base64Mode;

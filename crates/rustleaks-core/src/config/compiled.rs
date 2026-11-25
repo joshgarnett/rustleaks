@@ -69,9 +69,21 @@ impl CompiledAllowlist {
         self.stop_words.iter().map(String::as_str)
     }
 
+    /// Whether a stored commit equals `commit` lowercased like Go.
     pub(crate) fn commit_allowed(&self, commit: &[u8]) -> bool {
-        if commit.is_empty() {
+        if commit.is_empty() || self.commits.is_empty() {
             return false;
+        }
+        if commit.is_ascii() {
+            // Go lowercases ASCII byte by byte, so this compares with the
+            // lowercased commit without building it.
+            return self.commits.iter().any(|stored| {
+                stored.len() == commit.len()
+                    && stored
+                        .bytes()
+                        .zip(commit)
+                        .all(|(stored, byte)| stored == byte.to_ascii_lowercase())
+            });
         }
         let normalized = go_lowercase_bytes(commit);
         self.commits
@@ -104,6 +116,13 @@ impl CompiledAllowlist {
         let Some(matcher) = self.stopword_matcher.as_ref() else {
             return false;
         };
+        // The stop words are lowercased, so they hold no ASCII capital, and
+        // the matcher ignores ASCII case. Go lowercases ASCII byte by byte,
+        // so an ASCII secret matches as it is. A lowercased secret holds no
+        // ASCII capital either, so ignoring ASCII case changes nothing there.
+        if secret.is_ascii() {
+            return matcher.is_match(secret);
+        }
         let normalized = go_lowercase_bytes(secret);
         matcher.is_match(&normalized)
     }
@@ -713,6 +732,37 @@ fn add_allowlist_size(
 mod tests {
     use super::CompiledAllowlist;
     use crate::config::ConfigLoader;
+    use crate::go_unicode::lowercase_bytes;
+
+    /// Inputs for comparing the allowlist checks with their definitions:
+    /// mixed ASCII case, runes that lowercase to ASCII or change length, and
+    /// invalid bytes.
+    const MIXED_INPUTS: &[&[u8]] = &[
+        b"",
+        b"a",
+        b"A",
+        b"ABCdef0123",
+        b"abcdef0123",
+        b"ABCDEF0123",
+        b"abcdef012",
+        b"abcdef01234",
+        b"prefix FAKE suffix",
+        b"FaKe",
+        b"fak",
+        b"KX",
+        b"kx",
+        "\u{212a}X".as_bytes(),
+        "\u{212a}x".as_bytes(),
+        "İX".as_bytes(),
+        "ÉCOLE".as_bytes(),
+        "école".as_bytes(),
+        "E\u{301}COLE".as_bytes(),
+        "Ⱥ".as_bytes(),
+        "ⱥ".as_bytes(),
+        b"\xff\x80",
+        b"x\xffX",
+        b"\xe2\x82",
+    ];
 
     fn allowlist(specification: &str) -> CompiledAllowlist {
         let config = ConfigLoader::new()
@@ -789,5 +839,65 @@ mod tests {
         ] {
             assert_eq!(compiled.contains_stop_word(input), expected, "{input:?}");
         }
+    }
+
+    #[test]
+    fn commit_checks_equal_the_lowercased_commit() {
+        let compiled = allowlist(r#"commits = ["ABCdef0123", " KX ", "É", "Ⱥ", "x\uFFFDX"]"#);
+        for commit in MIXED_INPUTS {
+            let lowered = lowercase_bytes(commit);
+            let expected = !commit.is_empty()
+                && compiled
+                    .commits
+                    .iter()
+                    .any(|stored| stored.as_bytes() == lowered);
+            assert_eq!(compiled.commit_allowed(commit), expected, "{commit:?}");
+        }
+        for (commit, expected) in [
+            (b"ABCDEF0123".as_slice(), true),
+            (b"abcdef012".as_slice(), false),
+            ("\u{212a}X".as_bytes(), true),
+            ("é".as_bytes(), true),
+            ("ⱥ".as_bytes(), true),
+            (b"e".as_slice(), false),
+            (b"".as_slice(), false),
+        ] {
+            assert_eq!(compiled.commit_allowed(commit), expected, "{commit:?}");
+        }
+
+        let without_commits = allowlist(r"paths = ['never']");
+        for commit in MIXED_INPUTS {
+            assert!(!without_commits.commit_allowed(commit), "{commit:?}");
+        }
+    }
+
+    #[test]
+    fn stopword_checks_equal_a_search_of_the_lowercased_secret() {
+        let compiled = allowlist(
+            r#"stopwords = ["FaKe", "kx", "ÉCOLE", "ⱥ", "\uFFFD\uFFFD", "x\uFFFDx", "b_C"]"#,
+        );
+        let words = compiled
+            .stop_words
+            .iter()
+            .filter(|word| !word.is_empty())
+            .map(String::as_bytes)
+            .collect::<Vec<_>>();
+        let mut inputs = MIXED_INPUTS.to_vec();
+        inputs.extend([b"ab_cd".as_slice(), b"AB_CD", b"ab-cd"]);
+        for (index, input) in inputs.into_iter().enumerate() {
+            let lowered = lowercase_bytes(input);
+            let expected = !input.is_empty()
+                && words
+                    .iter()
+                    .any(|word| lowered.windows(word.len()).any(|window| window == *word));
+            assert_eq!(
+                compiled.contains_stop_word(input),
+                expected,
+                "input {index}"
+            );
+        }
+        assert!(compiled.contains_stop_word(b"AB_CD"));
+        assert!(compiled.contains_stop_word("\u{212a}X".as_bytes()));
+        assert!(!compiled.contains_stop_word(b"ab-cd"));
     }
 }

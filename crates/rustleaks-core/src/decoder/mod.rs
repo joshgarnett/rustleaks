@@ -12,6 +12,7 @@ use base64::alphabet;
 use base64::engine::{DecodePaddingMode, general_purpose};
 
 use crate::model::Base64Mode;
+use crate::regex::ByteSpan;
 #[cfg(test)]
 use crate::regex::GoRegex;
 
@@ -194,6 +195,10 @@ pub(crate) enum DecodeCheckpoint {
 pub(crate) struct Decoder {
     base64_mode: Base64Mode,
     decoded: BTreeMap<Vec<u8>, Arc<[u8]>>,
+    /// Decodes a cache miss before the first accepted segment of a pass, so
+    /// that a pass which decodes nothing never copies its input. Kept across
+    /// passes to reuse its allocation.
+    scratch: Vec<u8>,
     /// The regex that [`scan`] implements, for differential tests.
     #[cfg(test)]
     encodings: &'static GoRegex,
@@ -209,6 +214,7 @@ impl Decoder {
         Self {
             base64_mode,
             decoded: BTreeMap::new(),
+            scratch: Vec::new(),
             #[cfg(test)]
             encodings: ENCODINGS_REGEX.get_or_init(|| {
                 GoRegex::compile(ENCODINGS_PATTERN)
@@ -301,11 +307,12 @@ impl Decoder {
         debug_assert!(segments_are_ordered_and_disjoint(predecessors));
 
         let predecessor_depth = predecessors.first().map_or(0, |segment| segment.depth);
-        let predecessor_snapshot: Arc<[EncodedSegment]> = Arc::from(predecessors);
+        // Copied once, at the first accepted segment, so a pass that decodes
+        // nothing does not copy the predecessors.
+        let mut predecessor_snapshot: Option<Arc<[EncodedSegment]>> = None;
         let mut decoded_shift = 0isize;
         let mut segments = Vec::new();
         let mut output = Vec::new();
-        let mut scratch = Vec::new();
         // Bytes of `data` already represented in `output`.
         let mut copied_to = 0;
         for candidate in self.find_encoding_matches(data, bounded_spans, checkpoint)? {
@@ -320,35 +327,35 @@ impl Decoder {
                 (Arc::clone(cached), false)
             } else {
                 let in_output = !segments.is_empty();
-                let value: Arc<[u8]> = if in_output {
+                let value: &[u8] = if in_output {
                     output.extend_from_slice(&data[copied_to..encoded_range.start]);
                     copied_to = encoded_range.start;
                     let value_start = output.len();
                     candidate
                         .encoding
                         .append_decoded(encoded_value, &mut output, self.base64_mode);
-                    Arc::from(&output[value_start..])
+                    &output[value_start..]
                 } else {
-                    scratch.clear();
+                    self.scratch.clear();
                     candidate.encoding.append_decoded(
                         encoded_value,
-                        &mut scratch,
+                        &mut self.scratch,
                         self.base64_mode,
                     );
-                    Arc::from(scratch.as_slice())
+                    &self.scratch
                 };
-                // Only accepted values are kept. Most candidates, such as long
-                // identifiers, decode to nothing and appear once, so caching
-                // them would cost more than decoding them again.
-                if !value.is_empty() {
-                    self.decoded
-                        .insert(encoded_value.to_vec(), Arc::clone(&value));
+                // Only accepted values are kept, and only they are copied.
+                // Most candidates, such as long identifiers, decode to nothing
+                // and appear once, so caching them would cost more than
+                // decoding them again.
+                if value.is_empty() {
+                    continue;
                 }
+                let value: Arc<[u8]> = Arc::from(value);
+                self.decoded
+                    .insert(encoded_value.to_vec(), Arc::clone(&value));
                 (value, in_output)
             };
-            if decoded_value.is_empty() {
-                continue;
-            }
 
             let decoded_start = candidate.range.start + decoded_shift;
             let decoded_end = decoded_start + isize::try_from(decoded_value.len()).unwrap();
@@ -373,7 +380,9 @@ impl Decoder {
             }
             copied_to = encoded_range.end;
             segments.push(EncodedSegment {
-                predecessors: Arc::clone(&predecessor_snapshot),
+                predecessors: Arc::clone(
+                    predecessor_snapshot.get_or_insert_with(|| Arc::from(predecessors)),
+                ),
                 original: to_original(predecessors, candidate.range),
                 encoded: candidate.range,
                 decoded: StartEnd {
@@ -404,26 +413,32 @@ impl Decoder {
         bounded_spans: bool,
         checkpoint: &mut impl FnMut(DecodeCheckpoint) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        let spans = if bounded_spans {
-            scan::find_encodings(data, || checkpoint(DecodeCheckpoint::CollectedSpans(1)))?
+        // Classifying a span has no observable effect, so the scanner
+        // classifies each match as it keeps it. Every kept match is still
+        // charged one work unit after all of them are collected.
+        let classify = |span: ByteSpan| EncodingMatch {
+            encoding: classify_encoding_span(&data[span.start..span.end]),
+            range: StartEnd {
+                start: isize::try_from(span.start).unwrap(),
+                end: isize::try_from(span.end).unwrap(),
+            },
+        };
+        let all = if bounded_spans {
+            scan::find_encodings(
+                data,
+                || checkpoint(DecodeCheckpoint::CollectedSpans(1)),
+                classify,
+            )?
         } else {
-            let spans = match scan::find_encodings(data, || Ok::<(), Infallible>(())) {
-                Ok(spans) => spans,
+            let all = match scan::find_encodings(data, || Ok::<(), Infallible>(()), classify) {
+                Ok(all) => all,
                 Err(never) => match never {},
             };
-            checkpoint(DecodeCheckpoint::CollectedSpans(spans.len()))?;
-            spans
+            checkpoint(DecodeCheckpoint::CollectedSpans(all.len()))?;
+            all
         };
-        let mut all = Vec::with_capacity(spans.len());
-        for span in spans {
+        for _ in &all {
             checkpoint(DecodeCheckpoint::Work(1))?;
-            all.push(EncodingMatch {
-                encoding: classify_encoding_span(&data[span.start..span.end]),
-                range: StartEnd {
-                    start: isize::try_from(span.start).unwrap(),
-                    end: isize::try_from(span.end).unwrap(),
-                },
-            });
         }
         Ok(all)
     }
@@ -434,28 +449,33 @@ impl Decoder {
         bounded_spans: bool,
         checkpoint: &mut impl FnMut(DecodeCheckpoint) -> Result<(), E>,
     ) -> Result<Vec<EncodingMatch>, E> {
-        let all = self.encoding_candidates_controlled(data, bounded_spans, checkpoint)?;
+        let mut all = self.encoding_candidates_controlled(data, bounded_spans, checkpoint)?;
         if all.len() <= 1 {
             return Ok(all);
         }
 
-        let mut filtered = Vec::with_capacity(all.len());
-        for (index, candidate) in all.iter().copied().enumerate() {
+        // Filters in place. Only `all[..kept]` is written and `kept` never
+        // passes `index`, so `all[index + 1]` still holds its candidate, and
+        // `previous` holds the candidate before `index`, kept or not.
+        let mut kept = 0;
+        let mut previous: Option<EncodingMatch> = None;
+        for index in 0..all.len() {
+            let candidate = all[index];
             checkpoint(DecodeCheckpoint::Work(1))?;
-            let shadowed_by_previous = index.checked_sub(1).is_some_and(|previous| {
-                let neighbor = all[previous];
+            let shadowed_by = |neighbor: &EncodingMatch| {
                 candidate.range.overlaps(neighbor.range)
                     && neighbor.encoding.precedence() > candidate.encoding.precedence()
-            });
-            let shadowed_by_next = all.get(index + 1).is_some_and(|neighbor| {
-                candidate.range.overlaps(neighbor.range)
-                    && neighbor.encoding.precedence() > candidate.encoding.precedence()
-            });
-            if !shadowed_by_previous && !shadowed_by_next {
-                filtered.push(candidate);
+            };
+            let shadowed = previous.as_ref().is_some_and(shadowed_by)
+                || all.get(index + 1).is_some_and(shadowed_by);
+            if !shadowed {
+                all[kept] = candidate;
+                kept += 1;
             }
+            previous = Some(candidate);
         }
-        Ok(filtered)
+        all.truncate(kept);
+        Ok(all)
     }
     #[cfg(test)]
     fn encoding_candidates<E>(
@@ -1849,6 +1869,41 @@ mod tests {
         assert_eq!(charged, [1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]);
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].depth(), 2);
+    }
+
+    #[test]
+    fn collected_spans_are_charged_before_any_candidate_work() {
+        #[derive(Debug, PartialEq)]
+        enum Event {
+            Work(usize),
+            Spans(usize),
+        }
+        // A rejected value first, so the second candidate decodes before any
+        // segment is accepted, then an accepted value and a rejected one.
+        let data = b"AAAAAAAAAAAAAAAA dGhpcy1pcy0xMjM0 AAAAAAAAAAAAAAAA";
+        for bounded in [false, true] {
+            let mut events = Vec::new();
+            let (output, segments) = Decoder::new()
+                .decode_with_resources(data, &[], bounded, |event| {
+                    events.push(match event {
+                        DecodeCheckpoint::Work(units) => Event::Work(units),
+                        DecodeCheckpoint::CollectedSpans(spans) => Event::Spans(spans),
+                    });
+                    Ok::<(), Infallible>(())
+                })
+                .unwrap_or_else(|never| match never {});
+            assert_eq!(output, b"AAAAAAAAAAAAAAAA this-is-1234 AAAAAAAAAAAAAAAA");
+            assert_eq!(segments.len(), 1);
+            // Three spans, three classification units, three shadow-filter
+            // units, three candidate units and one assembly unit.
+            let mut expected = if bounded {
+                vec![Event::Spans(1), Event::Spans(1), Event::Spans(1)]
+            } else {
+                vec![Event::Spans(3)]
+            };
+            expected.extend((0..10).map(|_| Event::Work(1)));
+            assert_eq!(events, expected, "bounded {bounded}");
+        }
     }
 
     #[test]

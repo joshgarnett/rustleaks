@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use rustleaks_core::model::{ByteText, Finding, Fragment, ScanOptions};
 use rustleaks_core::session::{ScanSession, SessionBatch, SessionPolicy};
-use rustleaks_core::{Engine, ScanControl, ScanOutcome};
+use rustleaks_core::{Engine, ScanControl, ScanOutcome, ScanScratch};
 
 use crate::{
     CallbackError, Cancellation, CancellationToken, Source, SourceConfigError, SourceControl,
@@ -250,6 +250,21 @@ impl SourceRunner {
         self.workers.get()
     }
 
+    /// Estimated pattern search cache bytes that the workers keep together.
+    const SEARCH_CACHE_BYTES: usize = 128 << 20;
+    /// Estimated search cache bytes that one worker can always keep.
+    const WORKER_SEARCH_CACHE_FLOOR: usize = 8 << 20;
+
+    /// Returns the reusable scan state for one worker. The workers share
+    /// [`Self::SEARCH_CACHE_BYTES`], but each keeps at least
+    /// [`Self::WORKER_SEARCH_CACHE_FLOOR`], because fewer caches cost much
+    /// more CPU time.
+    pub(crate) fn worker_scratch(self) -> ScanScratch {
+        ScanScratch::with_cache_limit(
+            (Self::SEARCH_CACHE_BYTES / self.workers()).max(Self::WORKER_SEARCH_CACHE_FLOOR),
+        )
+    }
+
     /// Returns the bounded queue capacity.
     #[must_use]
     pub const fn queue_capacity(self) -> usize {
@@ -327,7 +342,14 @@ impl SourceRunner {
             );
         }
         self.run_with_worker(source, policy, cancellation, |receiver| {
-            worker_loop(receiver, engine, scan_options, policy, cancellation)
+            worker_loop(
+                receiver,
+                engine,
+                scan_options,
+                policy,
+                cancellation,
+                self.worker_scratch(),
+            )
         })
     }
 
@@ -975,6 +997,7 @@ fn worker_loop(
     scan_options: ScanOptions,
     policy: &SessionPolicy,
     cancellation: &CancellationToken,
+    mut scratch: ScanScratch,
 ) -> Vec<FragmentBatch> {
     let mut batches = Vec::new();
     loop {
@@ -989,7 +1012,8 @@ fn worker_loop(
             break;
         }
         let control = ScanControl::cancellable(cancellation);
-        let detected = engine.scan_fragment_controlled(&job.fragment, &scan_options, &control);
+        let detected =
+            engine.scan_fragment_with_scratch(&job.fragment, &scan_options, &control, &mut scratch);
         if !merge_complete_scan(&mut batches, policy, job.sequence, detected) {
             break;
         }

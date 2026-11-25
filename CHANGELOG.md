@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+- Scans use less CPU time, and scans of large folder trees with many
+  detection threads use less memory. Each detection thread now keeps its own
+  pattern search caches. All threads together keep an estimated 128 MiB of
+  them, and each thread at least 8 MiB. A thread frees the caches it used
+  least recently when it reaches its share. Before, each pattern kept caches
+  for every thread that searched it and never freed them. Scans also skip
+  rules whose keywords do not occur without visiting them, allocate less in
+  the decoder and in commit and stop word checks, and check for cancellation
+  less often. These numbers compare with 0.2.0 on an Apple M5 Ultra with 12
+  detection threads. A folder scan of the gitlab tree peaked at 211 MB
+  instead of 316 MB and used 5 percent less CPU time. A folder scan of the
+  Linux tree used 14 percent less CPU time. Git history scans of rails and
+  django used 11 and 17 percent less CPU time and up to 9 percent more
+  memory.
+  Findings, reports and exit codes do not change.
+- In `rustleaks-core`, `ScanScratch` and `Engine::scan_fragment_with_scratch`
+  let a thread that scans many fragments reuse search caches and buffers,
+  with a limit on the caches. The outcome is the same as with
+  `Engine::scan_fragment_controlled`. The new
+  `ScanCancellation::reads_state_only` method lets the engine poll a signal
+  that only reads a flag once for a run of work units instead of once per
+  unit. It returns false by default and true for `AtomicBool`, and the
+  `rustleaks` command's scan threads use it too. A scan cancelled through
+  such a signal can stop at a later checkpoint and report more work units
+  than before.
+
 ## [0.2.0] - 2026-11-24
 
 0.2.0 is the first Rustleaks release that is not a pre-release. It can be
