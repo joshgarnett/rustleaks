@@ -10,13 +10,16 @@
 //!
 //! Git shows each commit on its own when no pathspec simplifies history, so
 //! only the default history options use batches. Everything else, and every
-//! case where the plan cannot be made, uses one process.
+//! case where the list cannot be used, uses one process.
+//!
+//! Batches start while `git rev-list` still runs. Their events wait until the
+//! list has succeeded, so a list that fails late still leaves one process to
+//! read the history with nothing published.
 
 use std::collections::{HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::io;
 use std::num::NonZeroUsize;
-use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
@@ -50,70 +53,54 @@ const DEFAULT_BATCH_COMMITS: usize = 250;
 const MAX_LISTED_COMMITS: usize = 10_000_000;
 const MAX_LISTED_BYTES: usize = MAX_LISTED_COMMITS * 65;
 
-/// Commits to show, split into batches.
-pub(super) struct HistoryPlan {
-    /// `git rev-list` output: one object name and a newline for each commit.
-    commits: Vec<u8>,
-    /// Byte ranges of `commits`, one for each batch, in list order.
-    batches: Vec<Range<usize>>,
-    /// Standard error that the `git log` processes may still keep together.
-    stderr: OutputBudget,
+/// Bytes of parsed events that can wait until `git rev-list` has finished.
+///
+/// Batches start while the list still runs, and their events wait until the
+/// list has passed every check, so that a list that fails late can still
+/// fall back to one process with nothing published. Past this size, the
+/// parser waits for the list instead.
+const HELD_EVENT_BYTES: usize = 32 * 1024 * 1024;
+
+/// What the list thread sends while `git rev-list` runs.
+enum Listed {
+    /// The next batch of commits: object names, each ended by a newline.
+    Batch(Vec<u8>),
+    /// The list ended. `true` when Git succeeded without standard error and
+    /// listed only object names of one length, within the size limit.
+    End(bool),
 }
 
-/// Lists the commits when several processes can read the history.
-///
-/// Returns `None` when one process must read it: one process is allowed,
-/// the history options are not the defaults, the history fits one batch,
-/// `git rev-list` fails or writes standard error, or a configured pretty
-/// format can change how commits are separated. One process then repeats
-/// the work and reports any failure or warning.
+/// Whether several processes may read the history: more than one is allowed,
+/// the history options are the defaults, and no configured pretty format can
+/// change how commits are separated.
 ///
 /// Git writes warnings about the repository, such as about its refs or a
 /// graft file, when it starts. Each `git log` process would repeat them, and
-/// they count toward the standard error limit, so a repository with them
+/// they count toward the standard error limit, so a list with standard error
 /// uses one process.
-pub(super) fn plan(
+fn batches_allowed(
     source: &GitSource,
     cancellation: &dyn Cancellation,
-) -> Result<Option<HistoryPlan>, SourceError> {
-    let processes = source.history_processes.get();
+) -> Result<bool, SourceError> {
     let default_options = match &source.mode {
         GitMode::Log { options } => options.as_ref().is_none_or(String::is_empty),
         GitMode::LogArguments(_) | GitMode::Diff { .. } => false,
     };
-    if processes < 2 || !default_options {
-        return Ok(None);
+    if source.history_processes.get() < 2 || !default_options {
+        return Ok(false);
     }
-    let Some((commits, line)) = list_commits(source, cancellation)? else {
-        return Ok(None);
-    };
-    let count = commits.len() / line;
-    let size = source
-        .history_batch_commits
-        .map_or(DEFAULT_BATCH_COMMITS, NonZeroUsize::get);
-    if count <= size || !pretty_format_is_unset(source, cancellation)? {
-        return Ok(None);
-    }
-    // Every line has the same length, so a batch is a fixed byte range.
-    let step = size.saturating_mul(line);
-    let batches = (0..commits.len())
-        .step_by(step)
-        .map(|start| start..commits.len().min(start.saturating_add(step)))
-        .collect();
-    Ok(Some(HistoryPlan {
-        commits,
-        batches,
-        stderr: OutputBudget::new(source.limits.stderr_bytes()),
-    }))
+    pretty_format_is_unset(source, cancellation)
 }
 
-/// Runs `git rev-list` with the revision options of the default history.
-/// Returns the list and the length of one line, or `None` unless Git
-/// succeeds without standard error and lists only object names.
-fn list_commits(
+/// Runs `git rev-list` with the revision options of the default history and
+/// sends its commits in batches of `size` while it runs. Ends with
+/// [`Listed::End`] unless the receiver went away.
+fn list_batches(
     source: &GitSource,
-    cancellation: &dyn Cancellation,
-) -> Result<Option<(Vec<u8>, usize)>, SourceError> {
+    size: usize,
+    abort: &Abort<'_>,
+    batches: &mpsc::SyncSender<Listed>,
+) {
     let arguments = [
         OsString::from("-C"),
         source.repository.as_os_str().to_owned(),
@@ -121,8 +108,11 @@ fn list_commits(
         OsString::from("--full-history"),
         OsString::from("--all"),
     ];
-    let mut commits = Vec::new();
+    let mut pending = Vec::new();
+    let mut line = None;
+    let mut listed = 0_usize;
     let mut failed = false;
+    let mut gone = false;
     let result = stream_command_with(
         &source.executable,
         &arguments,
@@ -133,31 +123,68 @@ fn list_commits(
             buffers: None,
         },
         &source.environment,
-        cancellation,
+        abort,
         SourceStage::GitCommand,
         &mut |chunk| {
-            if commits.len().saturating_add(chunk.len()) > MAX_LISTED_BYTES
-                || commits.try_reserve(chunk.len()).is_err()
-            {
+            listed = listed.saturating_add(chunk.len());
+            if listed > MAX_LISTED_BYTES || pending.try_reserve(chunk.len()).is_err() {
                 failed = true;
                 return Ok(SourceControl::Stop);
             }
-            commits.extend_from_slice(&chunk);
+            pending.extend_from_slice(&chunk);
+            if line.is_none() {
+                match pending.iter().position(|byte| *byte == b'\n') {
+                    Some(end @ (40 | 64)) => line = Some(end + 1),
+                    Some(_) => {
+                        failed = true;
+                        return Ok(SourceControl::Stop);
+                    }
+                    None if pending.len() > 64 => {
+                        failed = true;
+                        return Ok(SourceControl::Stop);
+                    }
+                    None => return Ok(SourceControl::Continue),
+                }
+            }
+            let Some(line) = line else {
+                return Ok(SourceControl::Continue);
+            };
+            let step = size.saturating_mul(line);
+            while pending.len() >= step {
+                let rest = pending.split_off(step);
+                let batch = std::mem::replace(&mut pending, rest);
+                if lists_object_names(&batch) != Some(line) {
+                    failed = true;
+                    return Ok(SourceControl::Stop);
+                }
+                if batches.send(Listed::Batch(batch)).is_err() {
+                    gone = true;
+                    return Ok(SourceControl::Stop);
+                }
+            }
             Ok(SourceControl::Continue)
         },
     );
-    let listed = match result {
-        Ok(listed) => listed,
-        Err(SourceError::Cancelled) => return Err(SourceError::Cancelled),
-        Err(_) => return Ok(None),
+    if gone {
+        return;
+    }
+    let succeeded = match result {
+        Ok(output) => {
+            !failed
+                && !output.stopped
+                && output.stderr.is_empty()
+                && !output.stderr_limited
+                && output.status.is_some_and(|status| status.success())
+        }
+        Err(_) => false,
     };
-    let succeeded = !failed
-        && !listed.stopped
-        && listed.stderr.is_empty()
-        && !listed.stderr_limited
-        && listed.status.is_some_and(|status| status.success());
-    let line = lists_object_names(&commits).filter(|_| succeeded);
-    Ok(line.map(|line| (commits, line)))
+    let rest_valid =
+        pending.is_empty() || line.is_some_and(|line| lists_object_names(&pending) == Some(line));
+    let succeeded = succeeded && line.is_some() && rest_valid;
+    if succeeded && !pending.is_empty() && batches.send(Listed::Batch(pending)).is_err() {
+        return;
+    }
+    let _ = batches.send(Listed::End(succeeded));
 }
 
 /// Checks that the output is lines of hexadecimal SHA-1 or SHA-256 object
@@ -221,6 +248,8 @@ fn pretty_format_is_unset(
 /// One batch for a Git process, with the queue for its output.
 struct Job {
     batch: usize,
+    /// The commits of the batch, as `git rev-list` listed them.
+    input: Vec<u8>,
     output: Sender<Message>,
 }
 
@@ -352,25 +381,39 @@ struct Shared<'a> {
     executable: &'a OsStr,
     environment: &'a [(OsString, OsString)],
     arguments: [OsString; 16],
-    plan: &'a HistoryPlan,
+    /// Standard error that the `git log` processes may still keep together.
+    stderr: OutputBudget,
     queue: Mutex<Receiver<Job>>,
     buffer: ReorderBuffer,
     abort: Abort<'a>,
 }
 
-/// Reads the planned batches with up to `history_processes` Git processes
+/// Reads the default history with up to `history_processes` Git processes
 /// and parses their output in list order. `empty_tree` names the empty tree
 /// that the processes read attributes from.
+///
+/// Returns `Ok(None)`, having published nothing, when one process must read
+/// the history: when [`batches_allowed`] says so, when the history fits one
+/// batch, or when `git rev-list` fails, writes standard error or lists
+/// something other than object names. One process then repeats the work and
+/// reports any failure or warning.
 pub(super) fn visit(
     source: &GitSource,
-    plan: &HistoryPlan,
     empty_tree: &str,
     cancellation: &dyn Cancellation,
     emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-) -> Result<SourceControl, SourceError> {
-    let processes = source.history_processes.get().min(plan.batches.len());
+) -> Result<Option<SourceControl>, SourceError> {
+    if !batches_allowed(source, cancellation)? {
+        return Ok(None);
+    }
+    let size = source
+        .history_batch_commits
+        .map_or(DEFAULT_BATCH_COMMITS, NonZeroUsize::get);
+    let processes = source.history_processes.get();
     let ended = AtomicBool::new(false);
     let (jobs, queue) = mpsc::channel::<Job>();
+    // The list waits when the parser is this many batches behind it.
+    let (list_sender, listed) = mpsc::sync_channel::<Listed>(processes.saturating_mul(4));
     let [attribute_flag, attribute_value] = super::attribute_override(empty_tree);
     let shared = Shared {
         executable: &source.executable,
@@ -393,7 +436,7 @@ pub(super) fn visit(
             OsString::from("--no-walk=unsorted"),
             OsString::from("--stdin"),
         ],
-        plan,
+        stderr: OutputBudget::new(source.limits.stderr_bytes()),
         queue: Mutex::new(queue),
         buffer: ReorderBuffer::new(),
         abort: Abort {
@@ -402,6 +445,15 @@ pub(super) fn visit(
         },
     };
     thread::scope(|scope| {
+        let lister = match thread::Builder::new()
+            .name("rustleaks-git-list".to_owned())
+            .spawn_scoped(scope, || {
+                list_batches(source, size, &shared.abort, &list_sender)
+            }) {
+            Ok(lister) => lister,
+            // One process reads the history without a list.
+            Err(_) => return Ok(None),
+        };
         let mut workers = Vec::new();
         let mut spawn_error = None;
         for _ in 0..processes {
@@ -426,13 +478,23 @@ pub(super) fn visit(
                     format!("could not start a Git history thread: {error}"),
                 ))
             }
-            _ => parse_batches(source, &shared, jobs, workers.len(), cancellation, emit),
+            _ => parse_batches(
+                source,
+                &shared,
+                jobs,
+                &listed,
+                workers.len(),
+                cancellation,
+                emit,
+            ),
         };
-        // Stop every Git process that still runs. `parse_batches` dropped the
-        // job sender and every output queue, so idle workers return.
+        // Stop the list and every Git process that still runs.
+        // `parse_batches` dropped the job sender and every output queue, so
+        // idle workers return, and dropping the list receiver ends the list.
         ended.store(true, Ordering::Release);
+        drop(listed);
         let mut cleanup = None;
-        let mut panicked = false;
+        let mut panicked = lister.join().is_err();
         for worker in workers {
             match worker.join() {
                 Ok(Some(error)) => {
@@ -452,7 +514,9 @@ pub(super) fn visit(
         // As with one process, a Git child that could not be stopped and
         // reaped fails a scan that stopped or was cancelled.
         match (result, cleanup) {
-            (Ok(SourceControl::Stop) | Err(SourceError::Cancelled), Some(error)) => Err(error),
+            (Ok(Some(SourceControl::Stop)) | Err(SourceError::Cancelled), Some(error)) => {
+                Err(error)
+            }
             (result, _) => result,
         }
     })
@@ -491,8 +555,8 @@ fn run_batches(shared: &Shared<'_>) -> Option<SourceError> {
             shared.executable,
             &shared.arguments,
             CommandIo {
-                input: Some(&shared.plan.commits[shared.plan.batches[job.batch].clone()]),
-                stderr: &shared.plan.stderr,
+                input: Some(&job.input),
+                stderr: &shared.stderr,
                 clear_attribute_source: true,
                 buffers: Some(&pieces),
             },
@@ -517,32 +581,273 @@ fn run_batches(shared: &Shared<'_>) -> Option<SourceError> {
     }
 }
 
-/// Queues batches in list order and parses their output in the same order.
+/// The batches that `git rev-list` has listed so far.
+struct ListState<'a> {
+    listed: &'a Receiver<Listed>,
+    /// Listed batches that no Git process has been given yet.
+    ready: VecDeque<Vec<u8>>,
+    /// Batches listed so far.
+    count: usize,
+    /// How the list ended, once it has.
+    end: Option<bool>,
+}
+
+impl ListState<'_> {
+    /// Takes what the list has sent. With `wait`, first waits until it
+    /// sends something or the scan is cancelled.
+    fn poll(&mut self, wait: bool, cancellation: &dyn Cancellation) -> Result<(), SourceError> {
+        let mut wait = wait && self.end.is_none();
+        while self.end.is_none() {
+            let message = if wait {
+                if cancellation.is_cancelled() {
+                    return Err(SourceError::Cancelled);
+                }
+                match self.listed.recv_timeout(CHILD_POLL) {
+                    Ok(message) => message,
+                    Err(RecvTimeoutError::Timeout) => continue,
+                    Err(RecvTimeoutError::Disconnected) => return Err(stopped_thread()),
+                }
+            } else {
+                match self.listed.try_recv() {
+                    Ok(message) => message,
+                    Err(mpsc::TryRecvError::Empty) => return Ok(()),
+                    Err(mpsc::TryRecvError::Disconnected) => return Err(stopped_thread()),
+                }
+            };
+            wait = false;
+            match message {
+                Listed::Batch(batch) => {
+                    self.ready.push_back(batch);
+                    self.count += 1;
+                }
+                Listed::End(succeeded) => self.end = Some(succeeded),
+            }
+        }
+        Ok(())
+    }
+
+    /// Waits until the list ends and returns whether it succeeded.
+    fn wait_for_end(&mut self, cancellation: &dyn Cancellation) -> Result<bool, SourceError> {
+        loop {
+            if let Some(succeeded) = self.end {
+                return Ok(succeeded);
+            }
+            self.poll(true, cancellation)?;
+        }
+    }
+}
+
+/// One held event, or a cancellation poll that the parser made before it.
+enum HeldItem {
+    Poll,
+    Event(SourceEvent),
+}
+
+/// Events that wait until the list has succeeded.
+///
+/// Publishing them later must stop where publishing them at once would
+/// have: a callback that cancels the scan ends it at the next poll. So the
+/// parser's polls between held events are kept and repeated in order.
+struct Held {
+    items: Vec<HeldItem>,
+    bytes: usize,
+    confirmed: bool,
+}
+
+/// The scan's cancellation, which also notes that the parser polled it.
+struct Recording<'a> {
+    scan: &'a dyn Cancellation,
+    polled: &'a AtomicBool,
+}
+
+impl Cancellation for Recording<'_> {
+    fn is_cancelled(&self) -> bool {
+        self.polled.store(true, Ordering::Relaxed);
+        self.scan.is_cancelled()
+    }
+}
+
+impl Held {
+    fn emit(
+        &mut self,
+        event: SourceEvent,
+        polled: &AtomicBool,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, CallbackError> {
+        if self.confirmed {
+            return emit(event);
+        }
+        if polled.swap(false, Ordering::Relaxed) {
+            self.items.push(HeldItem::Poll);
+        }
+        let bytes = match &event {
+            SourceEvent::Fragment { fragment, .. } => fragment.content().as_bytes().len(),
+            SourceEvent::Issue(_) => 0,
+        };
+        self.bytes = self.bytes.saturating_add(bytes.saturating_add(256));
+        self.items.push(HeldItem::Event(event));
+        Ok(SourceControl::Continue)
+    }
+
+    /// Publishes the held events in order, after the list succeeded, with
+    /// the parser's polls between them.
+    fn confirm(
+        &mut self,
+        cancellation: &dyn Cancellation,
+        emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+    ) -> Result<SourceControl, SourceError> {
+        self.confirmed = true;
+        self.bytes = 0;
+        for item in std::mem::take(&mut self.items) {
+            match item {
+                HeldItem::Poll => {
+                    if cancellation.is_cancelled() {
+                        return Err(SourceError::Cancelled);
+                    }
+                }
+                HeldItem::Event(event) => {
+                    if emit(event).map_err(SourceError::Callback)? == SourceControl::Stop {
+                        return Ok(SourceControl::Stop);
+                    }
+                }
+            }
+        }
+        Ok(SourceControl::Continue)
+    }
+}
+
+/// Queues batches in list order as the list grows, and parses their output
+/// in the same order. Returns `Ok(None)`, having published nothing, when
+/// one process must read the history; see [`visit`].
+#[allow(clippy::too_many_arguments)] // The visit state and the list are passed apart.
 fn parse_batches(
     source: &GitSource,
     shared: &Shared<'_>,
     jobs: Sender<Job>,
+    listed: &Receiver<Listed>,
     processes: usize,
     cancellation: &dyn Cancellation,
     emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
-) -> Result<SourceControl, SourceError> {
-    let plan = shared.plan;
+) -> Result<Option<SourceControl>, SourceError> {
+    let mut list = ListState {
+        listed,
+        ready: VecDeque::new(),
+        count: 0,
+        end: None,
+    };
+    // A history of one batch, or a list that fails first, uses one process.
+    while list.count < 2 && list.end.is_none() {
+        list.poll(true, cancellation)?;
+    }
+    if list.end == Some(false) || list.count < 2 {
+        return Ok(None);
+    }
+    let mut held = Held {
+        items: Vec::new(),
+        bytes: 0,
+        confirmed: false,
+    };
+    let result = parse_listed(
+        source,
+        shared,
+        &jobs,
+        &mut list,
+        &mut held,
+        processes,
+        cancellation,
+        emit,
+    );
+    drop(jobs);
+    match result {
+        Ok(Some(control)) => Ok(Some(control)),
+        Ok(None) => Ok(None),
+        Err(SourceError::Cancelled) => Err(SourceError::Cancelled),
+        // A failure before the list succeeded publishes the held events
+        // first, as one process would have published them before failing.
+        // A list that fails uses one process, which then fails itself.
+        Err(error) if !held.confirmed => match list.wait_for_end(cancellation)? {
+            true => match held.confirm(cancellation, emit)? {
+                SourceControl::Stop => Ok(Some(SourceControl::Stop)),
+                SourceControl::Continue => Err(error),
+            },
+            false => Ok(None),
+        },
+        Err(error) => Err(error),
+    }
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)] // One ordered parse loop.
+fn parse_listed(
+    source: &GitSource,
+    shared: &Shared<'_>,
+    jobs: &Sender<Job>,
+    list: &mut ListState<'_>,
+    held: &mut Held,
+    processes: usize,
+    cancellation: &dyn Cancellation,
+    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>,
+) -> Result<Option<SourceControl>, SourceError> {
     let queued = processes.saturating_mul(QUEUED_BATCHES_PER_PROCESS);
     let mut pending = VecDeque::new();
     let mut next = 0;
     let mut stream = PatchStream::new(source.limits);
     let mut shown = false;
     let mut warned = false;
-    for batch in 0..plan.batches.len() {
-        while next < plan.batches.len() && pending.len() < queued {
+    let polled = AtomicBool::new(false);
+    let recording = Recording {
+        scan: cancellation,
+        polled: &polled,
+    };
+    // Takes listed batches, gives them to Git processes, and publishes the
+    // held events once the list succeeded. `None` means one process.
+    let mut feed = |list: &mut ListState<'_>,
+                    pending: &mut VecDeque<Receiver<Message>>,
+                    held: &mut Held,
+                    emit: &mut dyn FnMut(SourceEvent) -> Result<SourceControl, CallbackError>|
+     -> Result<Option<SourceControl>, SourceError> {
+        list.poll(false, cancellation)?;
+        if !held.confirmed && held.bytes > HELD_EVENT_BYTES {
+            list.wait_for_end(cancellation)?;
+        }
+        if !held.confirmed {
+            match list.end {
+                Some(true) => {
+                    let control = held.confirm(cancellation, emit)?;
+                    if control == SourceControl::Stop {
+                        return Ok(Some(control));
+                    }
+                }
+                Some(false) => return Ok(None),
+                None => {}
+            }
+        }
+        while pending.len() < queued
+            && let Some(input) = list.ready.pop_front()
+        {
             let (output, receiver) = mpsc::channel();
             jobs.send(Job {
                 batch: next,
+                input,
                 output,
             })
             .map_err(|_| stopped_thread())?;
             pending.push_back(receiver);
             next += 1;
+        }
+        Ok(Some(SourceControl::Continue))
+    };
+    let mut batch = 0;
+    loop {
+        match feed(list, &mut pending, held, emit)? {
+            Some(SourceControl::Continue) => {}
+            other => return Ok(other),
+        }
+        if pending.is_empty() {
+            if list.end.is_some() && list.ready.is_empty() {
+                break;
+            }
+            list.poll(true, cancellation)?;
+            continue;
         }
         shared.buffer.advance(batch);
         let receiver = pending.pop_front().ok_or_else(stopped_thread)?;
@@ -551,8 +856,12 @@ fn parse_batches(
             if cancellation.is_cancelled() {
                 return Err(SourceError::Cancelled);
             }
-            if plan.stderr.is_exceeded() {
+            if shared.stderr.is_exceeded() {
                 return Err(source.stderr_exceeded());
+            }
+            match feed(list, &mut pending, held, emit)? {
+                Some(SourceControl::Continue) => {}
+                other => return Ok(other),
             }
             match receiver.recv_timeout(CHILD_POLL) {
                 Ok(Message::Output(chunk)) => {
@@ -569,10 +878,11 @@ fn parse_batches(
                     let pushed = stream.push(&chunk);
                     shared.buffer.release(batch, chunk);
                     pushed.map_err(|error| patch_error_to_source(error, &source.repository))?;
-                    if source.emit_ready_files(&mut stream, cancellation, emit)?
-                        == SourceControl::Stop
+                    if source.emit_ready_files(&mut stream, &recording, &mut |event| {
+                        held.emit(event, &polled, emit)
+                    })? == SourceControl::Stop
                     {
-                        return Ok(SourceControl::Stop);
+                        return Ok(Some(SourceControl::Stop));
                     }
                 }
                 Ok(Message::End(output)) => break output?,
@@ -582,16 +892,22 @@ fn parse_batches(
         };
         // The final record of a batch waits like the final record of one
         // process: a later failure ends the scan before it is published.
-        if output.stderr_limited || plan.stderr.is_exceeded() {
+        if output.stderr_limited || shared.stderr.is_exceeded() {
             return Err(source.stderr_exceeded());
         }
         if output.stopped || !output.status.is_some_and(|status| status.success()) {
             return Err(source.exit_error(&output));
         }
         warned |= first_non_ignored_stderr(&output.stderr).is_some();
+        batch += 1;
     }
-    drop(jobs);
-    source.finish_history(stream, warned, cancellation, emit)
+    // Every batch was read, so the list ended and succeeded.
+    if !held.confirmed && held.confirm(cancellation, emit)? == SourceControl::Stop {
+        return Ok(Some(SourceControl::Stop));
+    }
+    source
+        .finish_history(stream, warned, cancellation, emit)
+        .map(Some)
 }
 
 fn stopped_thread() -> SourceError {
@@ -609,10 +925,11 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        Abort, HEAD_BUFFER_BYTES, MESSAGE_BYTES, REORDER_BUFFER_BYTES, ReorderBuffer,
-        lists_object_names,
+        Abort, HEAD_BUFFER_BYTES, Held, MESSAGE_BYTES, REORDER_BUFFER_BYTES, Recording,
+        ReorderBuffer, lists_object_names,
     };
-    use crate::CancellationToken;
+    use crate::{Cancellation, CancellationToken, SourceControl, SourceEvent, SourceIssue};
+    use crate::{SourceIssueKind, SourceStage};
 
     /// Reserves one piece, or reports after 50 ms that it still waits.
     fn fits(buffer: &ReorderBuffer, batch: usize) -> bool {
@@ -683,5 +1000,54 @@ mod tests {
         ] {
             assert_eq!(lists_object_names(invalid.as_bytes()), None, "{invalid:?}");
         }
+    }
+
+    fn issue(text: &str) -> SourceEvent {
+        SourceEvent::Issue(SourceIssue::new(
+            SourceStage::GitCommand,
+            SourceIssueKind::GitStderr,
+            None,
+            text.to_owned(),
+        ))
+    }
+
+    #[test]
+    fn held_events_stop_at_the_poll_that_follows_a_cancelling_callback() {
+        let scan = CancellationToken::new();
+        let polled = AtomicBool::new(false);
+        let recording = Recording {
+            scan: &scan,
+            polled: &polled,
+        };
+        let mut held = Held {
+            items: Vec::new(),
+            bytes: 0,
+            confirmed: false,
+        };
+        let mut nothing = |_: SourceEvent| -> Result<SourceControl, crate::CallbackError> {
+            unreachable!("held events are not published before confirmation")
+        };
+        // Two events of one file, then a poll before the next file's event.
+        assert!(!recording.is_cancelled());
+        for text in ["first", "second"] {
+            held.emit(issue(text), &polled, &mut nothing).expect("held");
+        }
+        assert!(!recording.is_cancelled());
+        held.emit(issue("third"), &polled, &mut nothing)
+            .expect("held");
+        // A callback that cancels on the first event still receives the
+        // second, which came before the next poll, and never the third.
+        let mut published = Vec::new();
+        let mut cancel_first = |event: SourceEvent| {
+            published.push(event);
+            scan.cancel();
+            Ok(SourceControl::Continue)
+        };
+        assert_eq!(
+            held.confirm(&scan, &mut cancel_first),
+            Err(crate::SourceError::Cancelled)
+        );
+        assert_eq!(published.len(), 2);
+        assert!(held.confirmed);
     }
 }

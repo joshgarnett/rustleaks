@@ -489,7 +489,8 @@ fn processes(count: usize) -> NonZeroUsize {
 enum Plan {
     /// A commit list and one process for each batch.
     Batches,
-    /// A commit list, then one process for the whole history.
+    /// A commit list that fails, then one process for the whole history.
+    /// Batches can start before the list fails; their output is dropped.
     ListOnly,
     /// One process for the whole history.
     Single,
@@ -530,7 +531,7 @@ fn assert_splits_match(
             Plan::Batches => {
                 assert_eq!((listed, batches), (1, commits.div_ceil(batch)), "{context}");
             }
-            Plan::ListOnly => assert_eq!((listed, batches), (1, 0), "{context}"),
+            Plan::ListOnly => assert_eq!(listed, 1, "{context}"),
             Plan::Single => assert_eq!((listed, batches), (0, 0), "{context}"),
         }
     }
@@ -671,9 +672,9 @@ fn other_modes_options_and_pretty_formats_use_one_process() {
     }
 
     // A configured pretty format can end each commit instead of separating
-    // commits, so the commit list is made but no batch runs.
+    // commits, so it is checked first and one process reads the history.
     sandbox.git(&repository, &["config", "format.pretty", "fuller"], None);
-    assert_splits_match(&sandbox, &repository, Plan::ListOnly, |source| source);
+    assert_splits_match(&sandbox, &repository, Plan::Single, |source| source);
 }
 
 #[test]
@@ -910,7 +911,8 @@ fn a_git_failure_mid_history_publishes_the_same_records() {
                 .history_batch_commits(processes(batch)),
         );
         assert_eq!(actual, expected);
-        assert_eq!(sandbox.traced(), (1, 0));
+        // Batches can start before the list fails; their output is dropped.
+        assert_eq!(sandbox.traced().0, 1);
     }
 }
 

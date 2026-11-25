@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Git history scans with several detection threads finish sooner. The first
+  `git log` batches start while `git rev-list` still lists the commits, and
+  their results wait until the list is complete. On the rails history with 12
+  detection threads, a scan took about 9 percent less time and peaked about
+  30 MB higher. Findings, reports and exit codes do not change.
 - The Linux and macOS release binaries are 25 to 30 percent smaller, and
   start with about 10 percent fewer instructions. They are built with
   link-time optimization. Scan speed does not change.

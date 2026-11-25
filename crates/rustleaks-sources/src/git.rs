@@ -494,8 +494,8 @@ impl Source for GitSource {
         } else {
             EMPTY_TREE_SHA1
         };
-        if let Some(plan) = history::plan(this, cancellation)? {
-            return history::visit(this, &plan, empty_tree, cancellation, emit);
+        if let Some(control) = history::visit(this, empty_tree, cancellation, emit)? {
+            return Ok(control);
         }
         let mut stream = PatchStream::new(this.limits);
         // Each file record is parsed and emitted once the next record starts,
