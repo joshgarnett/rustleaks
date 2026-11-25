@@ -927,7 +927,11 @@ fn parse_hunk(
 /// Counts the added bytes of the hunk lines that start at `lines` the way
 /// [`parse_hunk`] reads them, so that the bytes need one allocation. The
 /// count stops early where [`parse_hunk`] fails.
-fn added_bytes(lines: &[&[u8]], mut old_remaining: usize, mut new_remaining: usize) -> usize {
+pub(super) fn added_bytes(
+    lines: &[&[u8]],
+    mut old_remaining: usize,
+    mut new_remaining: usize,
+) -> usize {
     let mut total = 0_usize;
     for line in lines {
         if old_remaining == 0 && new_remaining == 0 {
@@ -943,7 +947,7 @@ fn added_bytes(lines: &[&[u8]], mut old_remaining: usize, mut new_remaining: usi
                 old_remaining -= 1;
                 new_remaining -= 1;
             }
-            Some(b'\\') => {}
+            Some(b'\\') if line.starts_with(b"\\ ") => {}
             _ => break,
         }
     }

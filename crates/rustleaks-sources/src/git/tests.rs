@@ -1827,3 +1827,14 @@ fn hunk_bytes_are_allocated_once_at_their_exact_size() {
     assert_eq!(hunks[1].added, b"four\nfive");
     assert_eq!(hunks[1].added.capacity(), hunks[1].added.len() + 1);
 }
+
+#[test]
+fn hunk_byte_count_stops_where_hunk_parsing_fails() {
+    let large = [b"+".as_slice(), &[b'x'; 4096], b"\n"].concat();
+    // A no-newline marker keeps the count going; any other `\` line ends it,
+    // as it makes the hunk invalid.
+    let valid: [&[u8]; 3] = [b"+a\n", b"\\ No newline at end of file\n", &large];
+    assert_eq!(added_bytes(&valid, 0, 2), 2 + 4097);
+    let invalid: [&[u8]; 3] = [b"+a\n", b"\\x\n", &large];
+    assert_eq!(added_bytes(&invalid, 0, 2), 2);
+}

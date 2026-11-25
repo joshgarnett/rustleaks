@@ -25,8 +25,11 @@ impl FragmentCommit {
         author_name: Vec<u8>,
         author_email: Vec<u8>,
         date: Vec<u8>,
-        message: Vec<u8>,
+        mut message: Vec<u8>,
     ) -> Self {
+        // The message grows line by line, and every fragment of the commit
+        // keeps it, so give back the spare capacity once.
+        message.shrink_to_fit();
         Self {
             sha: Arc::new(sha),
             author_name: Arc::new(author_name),
