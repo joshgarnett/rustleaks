@@ -1689,3 +1689,126 @@ fn streamed_command_stops_and_fails_when_the_consumer_does() {
         })
     ));
 }
+
+/// Returns scripted reads in order, each at most the size of the caller's
+/// buffer, and then end of file.
+struct ScriptedReader(std::collections::VecDeque<io::Result<Vec<u8>>>);
+
+impl ScriptedReader {
+    fn new(reads: impl IntoIterator<Item = io::Result<&'static [u8]>>) -> Self {
+        Self(
+            reads
+                .into_iter()
+                .map(|read| read.map(<[u8]>::to_vec))
+                .collect(),
+        )
+    }
+}
+
+impl Read for ScriptedReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        match self.0.front_mut() {
+            None => Ok(0),
+            Some(Err(_)) => Err(self.0.pop_front().and_then(Result::err).expect("error")),
+            Some(Ok(bytes)) => {
+                let read = bytes.len().min(buffer.len());
+                buffer[..read].copy_from_slice(&bytes[..read]);
+                bytes.drain(..read);
+                if bytes.is_empty() {
+                    self.0.pop_front();
+                }
+                Ok(read)
+            }
+        }
+    }
+}
+
+/// Collects what a stdout reader sends: chunks, then an error message if
+/// one ended the output.
+fn collect_chunks(
+    read: impl FnOnce(&std::sync::mpsc::SyncSender<io::Result<Vec<u8>>>),
+) -> (Vec<Vec<u8>>, Option<String>) {
+    let (sender, receiver) = std::sync::mpsc::sync_channel(64);
+    read(&sender);
+    drop(sender);
+    let mut chunks = Vec::new();
+    for message in receiver {
+        match message {
+            Ok(chunk) => chunks.push(chunk),
+            Err(error) => return (chunks, Some(error.to_string())),
+        }
+    }
+    (chunks, None)
+}
+
+fn interrupted() -> io::Result<&'static [u8]> {
+    Err(io::Error::from(io::ErrorKind::Interrupted))
+}
+
+#[test]
+fn stdout_reads_are_sent_one_chunk_for_each_read() {
+    let reader = ScriptedReader::new([Ok(b"abc".as_slice()), interrupted(), Ok(b"defg")]);
+    let (chunks, error) = collect_chunks(|sender| read_chunks(reader, sender));
+    assert_eq!(chunks, [b"abc".to_vec(), b"defg".to_vec()]);
+    assert_eq!(error, None);
+    for chunk in &chunks {
+        assert_eq!(chunk.capacity(), chunk.len());
+    }
+
+    let reader = ScriptedReader::new([
+        Ok(b"ab".as_slice()),
+        Err(io::Error::other("injected pipe read failure")),
+    ]);
+    let (chunks, error) = collect_chunks(|sender| read_chunks(reader, sender));
+    assert_eq!(chunks, [b"ab".to_vec()]);
+    assert_eq!(error.as_deref(), Some("injected pipe read failure"));
+}
+
+#[test]
+fn filled_stdout_chunks_keep_every_byte_in_order() {
+    let buffers = || {
+        let mut buffer = Vec::new();
+        buffer.try_reserve_exact(8).map_err(io::Error::other)?;
+        Ok(buffer)
+    };
+    // 3 + 4 + 6 + 2 bytes fill one 8-byte buffer and part of a second.
+    let reader = ScriptedReader::new([
+        Ok(b"abc".as_slice()),
+        interrupted(),
+        Ok(b"defg"),
+        Ok(b"hijklm"),
+        Ok(b"no"),
+    ]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert_eq!(chunks, [b"abcdefgh".to_vec(), b"ijklmno".to_vec()]);
+    assert_eq!(error, None);
+    for chunk in &chunks {
+        assert_eq!(chunk.capacity(), 8, "a filled chunk keeps its buffer");
+    }
+
+    // Output that ends at a buffer boundary sends no empty chunk.
+    let reader = ScriptedReader::new([Ok(b"abcdefgh".as_slice())]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert_eq!(chunks, [b"abcdefgh".to_vec()]);
+    assert_eq!(error, None);
+
+    let reader = ScriptedReader::new([]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert!(chunks.is_empty());
+    assert_eq!(error, None);
+
+    // Bytes read before an error are sent before it.
+    let reader = ScriptedReader::new([
+        Ok(b"abcdefghij".as_slice()),
+        Err(io::Error::other("injected pipe read failure")),
+    ]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &buffers));
+    assert_eq!(chunks, [b"abcdefgh".to_vec(), b"ij".to_vec()]);
+    assert_eq!(error.as_deref(), Some("injected pipe read failure"));
+
+    let failing = || Err(io::Error::other("injected buffer failure"));
+    let reader = ScriptedReader::new([Ok(b"abc".as_slice())]);
+    let (chunks, error) = collect_chunks(|sender| fill_chunks(reader, sender, &failing));
+    assert!(chunks.is_empty());
+    assert_eq!(error.as_deref(), Some("injected buffer failure"));
+}

@@ -14,6 +14,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
+use std::io;
 use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -129,6 +130,7 @@ fn list_commits(
             input: None,
             stderr: &OutputBudget::new(source.limits.stderr_bytes()),
             clear_attribute_source: false,
+            buffers: None,
         },
         &source.environment,
         cancellation,
@@ -202,6 +204,7 @@ fn pretty_format_is_unset(
             input: None,
             stderr: &OutputBudget::new(source.limits.stderr_bytes()),
             clear_attribute_source: false,
+            buffers: None,
         },
         &source.environment,
         cancellation,
@@ -308,17 +311,13 @@ impl ReorderBuffer {
     }
 
     /// Returns an empty piece from the pool, or a new one.
-    fn piece(&self) -> Result<Vec<u8>, SourceError> {
+    fn piece(&self) -> io::Result<Vec<u8>> {
         if let Some(piece) = self.lock().spare.pop() {
             return Ok(piece);
         }
         let mut piece = Vec::new();
         piece.try_reserve_exact(MESSAGE_BYTES).map_err(|error| {
-            SourceError::terminal(
-                SourceStage::GitCommand,
-                None,
-                format!("could not reserve Git history output: {error}"),
-            )
+            io::Error::other(format!("could not reserve Git history output: {error}"))
         })?;
         Ok(piece)
     }
@@ -485,40 +484,30 @@ fn run_batches(shared: &Shared<'_>) -> Option<SourceError> {
             }
             true
         };
-        // Pipe reads are often small. Joining them keeps the memory of a
-        // waiting batch close to its output size.
-        let mut pending = Vec::new();
-        let mut result = stream_command_with(
+        // Pipe reads are often small. Filled pieces keep the memory of a
+        // waiting batch close to its output size and need fewer handoffs.
+        let pieces = || shared.buffer.piece();
+        let result = stream_command_with(
             shared.executable,
             &shared.arguments,
             CommandIo {
                 input: Some(&shared.plan.commits[shared.plan.batches[job.batch].clone()]),
                 stderr: &shared.plan.stderr,
                 clear_attribute_source: true,
+                buffers: Some(&pieces),
             },
             shared.environment,
             &shared.abort,
             SourceStage::GitCommand,
-            &mut |chunk| {
-                // A chunk is at most 64 KiB, so it fits an empty piece.
-                if pending.capacity() - pending.len() < chunk.len() {
-                    if !pending.is_empty() && !deliver(std::mem::take(&mut pending)) {
-                        // The parser ended; stop this Git.
-                        return Ok(SourceControl::Stop);
-                    }
-                    pending = shared.buffer.piece()?;
+            &mut |piece| {
+                if deliver(piece) {
+                    Ok(SourceControl::Continue)
+                } else {
+                    // The parser ended; stop this Git.
+                    Ok(SourceControl::Stop)
                 }
-                pending.extend_from_slice(&chunk);
-                Ok(SourceControl::Continue)
             },
         );
-        // Output that the parser did not take ends the batch as stopped.
-        if !pending.is_empty()
-            && !deliver(pending)
-            && let Ok(output) = &mut result
-        {
-            output.stopped = true;
-        }
         if let Err(mpsc::SendError(Message::End(Err(error)))) =
             job.output.send(Message::End(result))
             && !matches!(error, SourceError::Cancelled)
