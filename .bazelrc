@@ -30,14 +30,21 @@ build:macos-aarch64 --platforms=//platforms:macos_aarch64
 build:windows-x86_64-msvc --platforms=//platforms:windows_x86_64_msvc
 build:windows-aarch64-msvc --platforms=//platforms:windows_aarch64_msvc
 
-# Release artifacts use optimized, unstamped builds. Mach-O UUIDs depend on
-# linker state outside the source tree, so omit them before comparing isolated
-# macOS builds. Apple Silicon binaries remain ad-hoc signed by the linker.
-build:release-linux-x86_64-gnu --config=linux-x86_64-gnu --compilation_mode=opt --stamp=no
-build:release-linux-aarch64-gnu --config=linux-aarch64-gnu --compilation_mode=opt --stamp=no
-build:release-linux-x86_64-musl --config=linux-x86_64-musl --compilation_mode=opt --stamp=no
-build:release-linux-aarch64-musl --config=linux-aarch64-musl --compilation_mode=opt --stamp=no
-build:release-macos-x86_64 --config=macos-x86_64 --compilation_mode=opt --stamp=no --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
-build:release-macos-aarch64 --config=macos-aarch64 --compilation_mode=opt --stamp=no --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
-build:release-windows-x86_64-msvc --config=windows-x86_64-msvc --compilation_mode=opt --stamp=no
-build:release-windows-aarch64-msvc --config=windows-aarch64-msvc --compilation_mode=opt --stamp=no
+# Release artifacts use optimized, unstamped builds. Linux and macOS builds
+# also use whole-program link-time optimization in one code generation unit,
+# which makes the binary smaller and startup shorter. Windows builds do not
+# yet, because only the hosted release dry run links them. Mach-O UUIDs depend
+# on linker state outside the source tree, so omit them before comparing
+# isolated macOS builds. Apple Silicon binaries remain ad-hoc signed by the
+# linker.
+build:release-opt --compilation_mode=opt --stamp=no
+build:release-lto --@rules_rust//rust/settings:lto=fat
+build:release-lto --@rules_rust//rust/settings:codegen_units=1
+build:release-linux-x86_64-gnu --config=linux-x86_64-gnu --config=release-opt --config=release-lto
+build:release-linux-aarch64-gnu --config=linux-aarch64-gnu --config=release-opt --config=release-lto
+build:release-linux-x86_64-musl --config=linux-x86_64-musl --config=release-opt --config=release-lto
+build:release-linux-aarch64-musl --config=linux-aarch64-musl --config=release-opt --config=release-lto
+build:release-macos-x86_64 --config=macos-x86_64 --config=release-opt --config=release-lto --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
+build:release-macos-aarch64 --config=macos-aarch64 --config=release-opt --config=release-lto --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
+build:release-windows-x86_64-msvc --config=windows-x86_64-msvc --config=release-opt
+build:release-windows-aarch64-msvc --config=windows-aarch64-msvc --config=release-opt
