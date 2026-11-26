@@ -240,9 +240,14 @@ rust_clippy_test(
     transitive = True,
 )
 
+# The Go and Python binding tests run natively on every lane. They are not in
+# the cross-compile check above, which cannot link a program or shared library
+# for another system.
 test_suite(
     name = "test",
     tests = [
+        "//bindings/go:all_tests",
+        "//bindings/python:all_tests",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_doc_test",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
         "//crates/rustleaks-cli:all_tests",

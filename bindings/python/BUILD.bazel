@@ -1,0 +1,49 @@
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//bazel:musl_c.bzl", "musl_c_test")
+
+# Pull requests test the oldest and newest supported CPython versions.
+_PYTHON_VERSIONS = [
+    "3.12",
+    "3.15",
+]
+
+_NAMES = ["python_" + version.replace(".", "_") for version in _PYTHON_VERSIONS]
+
+# On musl each test builds only for the musl C platform, through its
+# _musl_test wrapper, so the shared library links against a shared musl libc.
+[
+    py_test(
+        name = name + "_test",
+        size = "small",
+        srcs = ["spike_test.py"],
+        data = ["//bindings/spike:spike_shared"],
+        env = {
+            "RUSTLEAKS_SPIKE_LIBRARY": "$(rlocationpaths //bindings/spike:spike_shared)",
+            "RUSTLEAKS_SPIKE_PYTHON": version,
+        },
+        main = "spike_test.py",
+        python_version = version,
+        target_compatible_with = select({
+            "//platforms:musl_c_libc": [],
+            "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for name, version in zip(_NAMES, _PYTHON_VERSIONS)
+]
+
+[
+    musl_c_test(
+        name = name + "_musl_test",
+        size = "small",
+        target_compatible_with = ["//platforms:musl"],
+        test = ":" + name + "_test",
+    )
+    for name in _NAMES
+]
+
+test_suite(
+    name = "all_tests",
+    tests = [":" + name + "_test" for name in _NAMES] + [":" + name + "_musl_test" for name in _NAMES],
+    visibility = ["//visibility:public"],
+)

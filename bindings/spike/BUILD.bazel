@@ -1,0 +1,35 @@
+# Temporary smoke library for the binding build spike. It is replaced by
+# crates/rustleaks-ffi and must be deleted before the bindings pull request
+# merges. It is not a Cargo workspace member.
+
+load("@rules_rust//rust:defs.bzl", "rust_shared_library", "rust_static_library")
+
+package(default_visibility = ["//bindings:__subpackages__"])
+
+rust_static_library(
+    name = "spike_static",
+    srcs = ["spike.rs"],
+    crate_name = "rustleaks_spike",
+    crate_root = "spike.rs",
+    edition = "2024",
+)
+
+# A shared library on musl must link musl's C library dynamically, so it
+# turns off crt-static there. Windows links the C runtime statically so the
+# DLL needs only system DLLs.
+rust_shared_library(
+    name = "spike_shared",
+    srcs = ["spike.rs"],
+    crate_name = "rustleaks_spike",
+    crate_root = "spike.rs",
+    edition = "2024",
+    deps = select({
+        "//platforms:musl": ["//bazel:musl_libc_shared"],
+        "//conditions:default": [],
+    }),
+    rustc_flags = select({
+        "//platforms:musl": ["-Ctarget-feature=-crt-static"],
+        "@platforms//os:windows": ["-Ctarget-feature=+crt-static"],
+        "//conditions:default": [],
+    }),
+)

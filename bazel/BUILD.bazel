@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 load(":execution_tool.bzl", "execution_tool")
@@ -23,6 +24,28 @@ cc_import(
 cc_import(
     name = "llvm_unwind",
     static_library = "@llvm//runtimes/libunwind:libunwind.static",
+    visibility = ["//visibility:public"],
+)
+
+# The hermetic musl toolchain links musl's C library statically. A shared
+# library that a dynamic musl process loads, such as the Python binding
+# library, must instead use that process's C library. Linking against the
+# LLVM module's shared musl libc.so records its soname, libc.so, as a
+# DT_NEEDED entry, which the musl loader resolves to itself. The copy has its
+# own file name because rules_rust searches the Rust self-contained folder,
+# which holds a static libc.a, before any dependency folder.
+copy_file(
+    name = "musl_libc_shared_file",
+    src = "@llvm//runtimes/musl:musl_libc.so",
+    out = "musl/librustleaks_musl_c.so",
+    allow_symlink = True,
+    target_compatible_with = ["//platforms:musl"],
+)
+
+cc_import(
+    name = "musl_libc_shared",
+    shared_library = ":musl_libc_shared_file",
+    target_compatible_with = ["//platforms:musl"],
     visibility = ["//visibility:public"],
 )
 
