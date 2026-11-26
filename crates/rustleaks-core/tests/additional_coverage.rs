@@ -376,6 +376,7 @@ fn native_rule_allowlists_and_inherited_global_policy_remain_effective() {
         for case in &cases().primary {
             let input = STANDARD.decode(&case.input_base64).unwrap();
             let fragment = Fragment::builder(input.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .commit("synthetic-additional-coverage")
                 .build();
@@ -459,6 +460,7 @@ fn every_primary_rule_remains_subject_to_explicit_resource_limits() {
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         let fragment = Fragment::builder(input.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         for budget in [
@@ -560,6 +562,7 @@ fn assert_long_input(
         "{rule} {length}"
     );
     let fragment = Fragment::builder(input.as_bytes())
+        .start_line(0)
         .file_path(path.as_str())
         .build();
     for budget in [

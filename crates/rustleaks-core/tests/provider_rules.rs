@@ -46,7 +46,10 @@ fn composed() -> &'static NativeEngine {
 }
 
 fn scan(engine: &Engine, bytes: &[u8]) -> Vec<Finding> {
-    let result = engine.scan_fragment(&Fragment::new(bytes), &ScanOptions::default());
+    let result = engine.scan_fragment(
+        &Fragment::builder(bytes).start_line(0).build(),
+        &ScanOptions::default(),
+    );
     assert!(result.is_complete());
     result.findings().to_vec()
 }
@@ -250,7 +253,10 @@ fn inherited_allowlists_and_allow_markers_remain_effective() {
     let engine = composed().engine();
     let secret = token("gsk_", 52);
     for path in ["settings.pdf", "node_modules/example.js", "gitleaks.toml"] {
-        let fragment = Fragment::builder(secret.as_bytes()).file_path(path).build();
+        let fragment = Fragment::builder(secret.as_bytes())
+            .start_line(0)
+            .file_path(path)
+            .build();
         let result = engine.scan_fragment(&fragment, &ScanOptions::default());
         assert!(result.is_complete());
         assert!(result.findings().is_empty(), "{path}");
@@ -258,6 +264,7 @@ fn inherited_allowlists_and_allow_markers_remain_effective() {
     // Bun is excluded in the pinned Betterleaks source but not the inherited
     // Rustleaks default. This is a declared source-policy difference.
     let fragment = Fragment::builder(secret.as_bytes())
+        .start_line(0)
         .file_path("bun.lock")
         .build();
     assert_eq!(
@@ -278,7 +285,10 @@ fn inherited_allowlists_and_allow_markers_remain_effective() {
     let options = ScanOptions::builder().honor_allow_markers(false).build();
     assert_eq!(
         engine
-            .scan_fragment(&Fragment::new(marked.as_bytes()), &options)
+            .scan_fragment(
+                &Fragment::builder(marked.as_bytes()).start_line(0).build(),
+                &options
+            )
             .findings()
             .len(),
         1
@@ -307,6 +317,7 @@ fn rule_local_and_targeted_global_allowlists_only_suppress_the_selected_rule() {
             .unwrap();
         let input = format!("{};\n{};", token("gsk_", 52), token("r8_", 37));
         let fragment = Fragment::builder(input.as_bytes())
+            .start_line(0)
             .file_path("synthetic.conf")
             .build();
         let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
@@ -398,7 +409,7 @@ fn pack_identity_binds_exact_bytes_and_composition_order() {
 #[test]
 fn dense_provider_candidates_respect_existing_finding_and_work_budgets() {
     let input = format!("{};\n", token("gsk_", 52)).repeat(32);
-    let fragment = Fragment::new(input.as_bytes());
+    let fragment = Fragment::builder(input.as_bytes()).start_line(0).build();
     let options = ScanOptions::default();
     let full = isolated().scan_fragment(&fragment, &options);
     assert!(full.is_complete());
@@ -736,6 +747,7 @@ fn companion_allowlists_and_finite_limits_apply_to_each_increment() {
     for (id, secret, suffix) in companion_samples() {
         let text = format!("{secret}{suffix}");
         let fragment = Fragment::builder(text.as_bytes())
+            .start_line(0)
             .file_path("synthetic.pdf")
             .build();
         let outcome = composed()
@@ -777,6 +789,7 @@ fn companion_allowlists_and_finite_limits_apply_to_each_increment() {
                     .build()
                     .unwrap();
                 let fragment = Fragment::builder(text.as_bytes())
+                    .start_line(0)
                     .file_path("synthetic.conf")
                     .commit("synthetic-commit")
                     .build();
@@ -788,7 +801,7 @@ fn companion_allowlists_and_finite_limits_apply_to_each_increment() {
             }
         }
         let dense = format!("{text}\n").repeat(12);
-        let fragment = Fragment::new(dense.as_bytes());
+        let fragment = Fragment::builder(dense.as_bytes()).start_line(0).build();
         let full = isolated().scan_fragment(&fragment, &ScanOptions::default());
         assert!(full.is_complete());
         assert_eq!(full.findings().len(), 12);
@@ -1105,7 +1118,10 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
     for (id, prefix, minimum, maximum, _) in STANDALONE_CASES {
         let secret = standalone_secret(prefix, minimum);
         for path in ["synthetic.pdf", "node_modules/synthetic.js"] {
-            let fragment = Fragment::builder(secret.as_bytes()).file_path(path).build();
+            let fragment = Fragment::builder(secret.as_bytes())
+                .start_line(0)
+                .file_path(path)
+                .build();
             let outcome = composed()
                 .engine()
                 .scan_fragment(&fragment, &ScanOptions::default());
@@ -1145,6 +1161,7 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
                 .build()
                 .unwrap();
             let fragment = Fragment::builder(secret.as_bytes())
+                .start_line(0)
                 .file_path("synthetic.conf")
                 .build();
             let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
@@ -1158,7 +1175,7 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
         ] {
             assert!(scan(isolated(), text.as_bytes()).is_empty(), "{id}");
             let limited = isolated().scan_fragment_controlled(
-                &Fragment::new(text.as_bytes()),
+                &Fragment::builder(text.as_bytes()).start_line(0).build(),
                 &ScanOptions::default(),
                 &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(1)),
             );
@@ -1166,7 +1183,7 @@ fn standalone_provider_allowlists_and_long_input_limits_are_preserved() {
             assert!(limited.findings().is_empty());
         }
         let dense = format!("{secret};\n").repeat(12);
-        let fragment = Fragment::new(dense.as_bytes());
+        let fragment = Fragment::builder(dense.as_bytes()).start_line(0).build();
         let full = isolated().scan_fragment(&fragment, &ScanOptions::default());
         assert!(full.is_complete());
         assert_eq!(full.findings().len(), 12);
@@ -1776,7 +1793,10 @@ fn assert_followup_entropy_and_keywords(original: &RawConfig, case: &FollowupCas
 
 fn assert_followup_allowlists(original: &RawConfig, case: &FollowupCase, text: &str) {
     for path in ["synthetic.pdf", "node_modules/synthetic.js"] {
-        let fragment = Fragment::builder(text.as_bytes()).file_path(path).build();
+        let fragment = Fragment::builder(text.as_bytes())
+            .start_line(0)
+            .file_path(path)
+            .build();
         assert!(
             composed()
                 .engine()
@@ -1819,6 +1839,7 @@ fn assert_followup_allowlists(original: &RawConfig, case: &FollowupCase, text: &
                 .build()
                 .unwrap();
             let fragment = Fragment::builder(text.as_bytes())
+                .start_line(0)
                 .file_path("synthetic.conf")
                 .commit("synthetic-commit")
                 .build();
@@ -1877,7 +1898,7 @@ fn followup_entropy_keywords_allowlists_and_resource_caps_remain_effective() {
         let text = format!("{}{}", followup_text(&case), case.suffix);
         assert_followup_allowlists(&original, &case, &text);
         let dense = format!("{text}\n").repeat(6);
-        let fragment = Fragment::new(dense.as_bytes());
+        let fragment = Fragment::builder(dense.as_bytes()).start_line(0).build();
         let full = isolated().scan_fragment(&fragment, &ScanOptions::default());
         assert!(full.is_complete());
         assert_eq!(full.findings().len(), 6);
@@ -1904,7 +1925,7 @@ fn followup_entropy_keywords_allowlists_and_resource_caps_remain_effective() {
         assert_eq!(exact.findings(), full.findings());
     }
     let long = format!("xoxd-{}==!", body(256 * 1024));
-    let fragment = Fragment::new(long.as_bytes());
+    let fragment = Fragment::builder(long.as_bytes()).start_line(0).build();
     let result = isolated().scan_fragment_controlled(
         &fragment,
         &ScanOptions::default(),
@@ -2347,6 +2368,7 @@ fn assert_byte_provider_rule_allowlists(id: &str, input: &str) {
             .insert("allowlists".into(), toml::Value::Array(vec![allowlist]));
         let engine = native_single_rule(rule);
         let fragment = Fragment::builder(input.as_bytes())
+            .start_line(0)
             .file_path("synthetic.conf")
             .commit("synthetic-commit")
             .build();
@@ -2370,7 +2392,10 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
             "node_modules/synthetic.js",
             "gitleaks.toml",
         ] {
-            let fragment = Fragment::builder(input.as_bytes()).file_path(path).build();
+            let fragment = Fragment::builder(input.as_bytes())
+                .start_line(0)
+                .file_path(path)
+                .build();
             assert!(
                 native_selected()
                     .scan_fragment(&fragment, &ScanOptions::default())
@@ -2379,6 +2404,7 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
             );
         }
         let bun = Fragment::builder(input.as_bytes())
+            .start_line(0)
             .file_path("bun.lock")
             .build();
         assert_eq!(
@@ -2400,7 +2426,7 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
         assert_byte_provider_rule_allowlists(id, &input);
         let encoded = base64::engine::general_purpose::STANDARD.encode(input.as_bytes());
         let decoded = native_selected().scan_fragment(
-            &Fragment::new(encoded.as_bytes()),
+            &Fragment::builder(encoded.as_bytes()).start_line(0).build(),
             &ScanOptions::builder().max_decode_depth(1).build(),
         );
         assert!(decoded.is_complete());
@@ -2412,7 +2438,7 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
                     && f.secret().as_bytes() == secret.as_bytes())
         );
         let low = format!("{prefix}{};\n", "A".repeat(minimum));
-        let low_fragment = Fragment::new(low.as_bytes());
+        let low_fragment = Fragment::builder(low.as_bytes()).start_line(0).build();
         let rejected = native_selected().scan_fragment_controlled(
             &low_fragment,
             &ScanOptions::default(),
@@ -2423,7 +2449,7 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
         assert_eq!(rejected.usage().finding_records(), 0);
         let mixed = format!("{}{input}", low.repeat(8));
         let admitted = native_selected().scan_fragment_controlled(
-            &Fragment::new(mixed.as_bytes()),
+            &Fragment::builder(mixed.as_bytes()).start_line(0).build(),
             &ScanOptions::default(),
             &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(1)),
         );
@@ -2436,7 +2462,7 @@ fn byte_provider_allowlists_decoding_and_budget_accounting_preserve_native_predi
             ScanBudget::unlimited().max_finding_payload_bytes(1),
         ] {
             let result = native_selected().scan_fragment_controlled(
-                &Fragment::new(input.as_bytes()),
+                &Fragment::builder(input.as_bytes()).start_line(0).build(),
                 &ScanOptions::default(),
                 &ScanControl::unlimited().with_budget(budget),
             );
@@ -2723,7 +2749,10 @@ fn widened_betterleaks_rules_keep_source_path_and_secret_filters() {
     let slack = format!("xoxe.xoxp-1-{}", body(166));
     let scan_path = |secret: &str, path: &str| {
         let input = format!("key={secret}\n");
-        let fragment = Fragment::builder(input.as_bytes()).file_path(path).build();
+        let fragment = Fragment::builder(input.as_bytes())
+            .start_line(0)
+            .file_path(path)
+            .build();
         let result = widened().scan_fragment(&fragment, &ScanOptions::default());
         assert!(result.is_complete());
         result.findings().len()

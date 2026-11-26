@@ -298,7 +298,10 @@ fn ordinary_rule_engine(rule: toml::Value) -> Engine {
 fn local_count(rule: toml::Value, value: &str, path: &str) -> usize {
     let engine = ordinary_rule_engine(rule);
     let input = format!("probe:{value}END");
-    let fragment = Fragment::builder(input.as_bytes()).file_path(path).build();
+    let fragment = Fragment::builder(input.as_bytes())
+        .start_line(0)
+        .file_path(path)
+        .build();
     let result = engine.scan_fragment(&fragment, &ScanOptions::default());
     assert!(result.is_complete());
     result.findings().len()
@@ -378,6 +381,7 @@ fn actual_rules_keep_every_source_path_filter() {
             assert_eq!(local_count(changed, "Q7z9b2N4c6", path), 1);
             let raw = bytes(&case.input_base64);
             let fragment = Fragment::builder(raw.as_slice())
+                .start_line(0)
                 .file_path(path.as_str())
                 .build();
             let out = engines()[&case.rule].scan_fragment(&fragment, &ScanOptions::default());
@@ -418,6 +422,7 @@ fn actual_rules_keep_controlled_resource_contracts() {
     {
         let input = bytes(&case.input_base64);
         let fragment = Fragment::builder(input.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         let engine = &engines()[&case.rule];

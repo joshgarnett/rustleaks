@@ -54,7 +54,7 @@ fn byte_text_and_ranges_preserve_arbitrary_bytes() {
 
     let fragment = Fragment::new(raw);
     assert_eq!(fragment.content().as_bytes(), raw);
-    assert_eq!(fragment.start_line(), 0);
+    assert_eq!(fragment.start_line(), 1);
 }
 
 #[test]

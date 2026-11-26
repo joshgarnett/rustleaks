@@ -156,7 +156,9 @@ mod tests {
             .build()
             .unwrap()
             .scan_fragment_controlled(
-                &Fragment::new(fixture.input.clone()),
+                &Fragment::builder(fixture.input.clone())
+                    .start_line(0)
+                    .build(),
                 &ScanOptions::builder()
                     .max_decode_depth(fixture.depth)
                     .build(),

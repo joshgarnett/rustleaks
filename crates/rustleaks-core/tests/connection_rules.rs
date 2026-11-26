@@ -72,7 +72,10 @@ fn isolated() -> &'static Engine {
 }
 
 fn scan(engine: &Engine, input: &[u8]) -> Vec<Finding> {
-    let outcome = engine.scan_fragment(&Fragment::new(input), &ScanOptions::default());
+    let outcome = engine.scan_fragment(
+        &Fragment::builder(input).start_line(0).build(),
+        &ScanOptions::default(),
+    );
     assert!(outcome.is_complete());
     outcome.findings().to_vec()
 }
@@ -628,6 +631,7 @@ fn custom_global_rule_and_targeted_allowlists_keep_existing_behavior() {
                 .build()
                 .unwrap();
             let fragment = Fragment::builder(b"Host=d;Pwd=R7!q;".as_slice())
+                .start_line(0)
                 .file_path("allowed.conf")
                 .commit("synthetic-commit")
                 .build();
@@ -755,7 +759,7 @@ fn existing_decoding_keeps_raw_spelling_and_marks_ranges_unavailable() {
     });
     assert!(scan(isolated(), encoded.as_bytes()).is_empty());
     let result = isolated().scan_fragment(
-        &Fragment::new(encoded.as_bytes()),
+        &Fragment::builder(encoded.as_bytes()).start_line(0).build(),
         &ScanOptions::builder().max_decode_depth(1).build(),
     );
     assert!(result.is_complete());
@@ -826,7 +830,7 @@ fn builtin_identity_names_each_rule_file_order() {
 #[test]
 fn dense_matches_keep_finite_finding_and_work_budgets() {
     let input = "item=Host=d;Pwd=R7!q; ".repeat(32);
-    let fragment = Fragment::new(input.as_bytes());
+    let fragment = Fragment::builder(input.as_bytes()).start_line(0).build();
     let options = ScanOptions::default();
     let full = isolated().scan_fragment(&fragment, &options);
     assert!(full.is_complete());
@@ -1036,7 +1040,10 @@ fn database_uri_retains_all_source_rejection_families_without_confidence_suppres
             "shell_history",
         ] {
             let result = isolated().scan_fragment(
-                &Fragment::builder(input.as_bytes()).file_path(path).build(),
+                &Fragment::builder(input.as_bytes())
+                    .start_line(0)
+                    .file_path(path)
+                    .build(),
                 &ScanOptions::default(),
             );
             assert!(result.is_complete());
@@ -1185,6 +1192,7 @@ fn database_uri_allowlists_and_decoding_retain_native_contracts() {
                 .build()
                 .unwrap();
             let fragment = Fragment::builder(b"postgres://app:R7!q@db.invalid/".as_slice())
+                .start_line(0)
                 .file_path("allowed.conf")
                 .commit("synthetic-commit")
                 .build();
@@ -1207,7 +1215,7 @@ fn database_uri_allowlists_and_decoding_retain_native_contracts() {
     });
     assert!(scan(isolated(), encoded.as_bytes()).is_empty());
     let result = isolated().scan_fragment(
-        &Fragment::new(encoded.as_bytes()),
+        &Fragment::builder(encoded.as_bytes()).start_line(0).build(),
         &ScanOptions::builder().max_decode_depth(1).build(),
     );
     assert!(result.is_complete());
@@ -1231,7 +1239,7 @@ fn database_uri_unbounded_host_lists_and_paths_obey_scan_controls() {
         ",db.invalid:5432".repeat(1024),
         "p".repeat(32768)
     );
-    let fragment = Fragment::new(input.as_bytes());
+    let fragment = Fragment::builder(input.as_bytes()).start_line(0).build();
     let options = ScanOptions::default();
     let full = isolated().scan_fragment(&fragment, &options);
     assert!(full.is_complete());
@@ -1261,7 +1269,7 @@ fn database_uri_unbounded_host_lists_and_paths_obey_scan_controls() {
     assert!(result.findings().is_empty());
     let dense = "postgres://app:R7!q@db.invalid/ ".repeat(64);
     let result = isolated().scan_fragment_controlled(
-        &Fragment::new(dense.as_bytes()),
+        &Fragment::builder(dense.as_bytes()).start_line(0).build(),
         &options,
         &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_collected_spans(3)),
     );
@@ -1495,6 +1503,7 @@ fn libpq_occurrences_and_global_path_suppression_remain_distinct() {
     assert_eq!(findings[1].secret().as_bytes(), b"T8w0S3");
     assert_eq!(findings[1].secret_range(), range(61, 67));
     let fragment = Fragment::builder(b"host=db.invalid password='Q7v9R2'".to_vec())
+        .start_line(0)
         .file_path("vendor/github.com/example/settings.conf")
         .build();
     assert!(
@@ -1609,6 +1618,7 @@ fn libpq_explicit_allowlists_keep_targets_and_fragment_context() {
         let fragment = Fragment::builder(
             b"host=db.invalid password='Q7v9R2'\nhost=db.invalid password=T8w0S3".to_vec(),
         )
+        .start_line(0)
         .file_path("allowed.conf")
         .commit("synthetic-commit")
         .build();
@@ -1647,7 +1657,10 @@ fn all_rules() -> &'static Engine {
 type Outcome = (String, String, Option<(usize, usize)>);
 
 fn outcomes(engine: &Engine, input: &str, options: &ScanOptions) -> Vec<Outcome> {
-    let outcome = engine.scan_fragment(&Fragment::new(input.as_bytes()), options);
+    let outcome = engine.scan_fragment(
+        &Fragment::builder(input.as_bytes()).start_line(0).build(),
+        options,
+    );
     assert!(outcome.is_complete(), "scan did not complete");
     let mut found = outcome
         .findings()
@@ -2125,6 +2138,7 @@ fn assert_no_new_finding(input: &str) {
 
 fn scan_path(engine: &Engine, input: &str, path: &str) -> Vec<Finding> {
     let fragment = Fragment::builder(input.as_bytes().to_vec())
+        .start_line(0)
         .file_path(path)
         .build();
     let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());

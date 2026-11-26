@@ -34,8 +34,8 @@ tags = ["credential"]
     assert_eq!(finding.match_text().as_bytes(), b"token=\"abc123\"");
     assert_eq!(finding.secret().as_bytes(), b"abc123");
     assert_eq!(finding.line().as_bytes(), b"\n token=\"abc123\" tail");
-    assert_eq!(finding.location().start_line(), 1);
-    assert_eq!(finding.location().end_line(), 1);
+    assert_eq!(finding.location().start_line(), 2);
+    assert_eq!(finding.location().end_line(), 2);
     assert_eq!(finding.location().start_column(), 3);
     assert_eq!(finding.location().end_column(), 16);
     assert_eq!(
@@ -48,6 +48,43 @@ tags = ["credential"]
     );
     assert_eq!(finding.tags()[0].as_bytes(), b"credential");
     assert!(finding.entropy() > 2.0);
+}
+
+#[test]
+fn fragments_start_at_line_one_unless_they_set_a_start_line() {
+    let engine = build_engine(
+        r#"
+[[rules]]
+id = "token"
+regex = '''TOKEN'''
+"#,
+    );
+    let raw = b"TOKEN\nTOKEN\n";
+    let lines = |fragment: &Fragment| {
+        let outcome = engine.scan_fragment(fragment, &ScanOptions::default());
+        assert!(outcome.is_complete());
+        outcome
+            .findings()
+            .iter()
+            .map(|finding| {
+                let location = finding.location();
+                (location.start_line(), location.end_line())
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(Fragment::default().start_line(), 1);
+    assert_eq!(Fragment::new(raw).start_line(), 1);
+    assert_eq!(Fragment::builder(raw).build().start_line(), 1);
+    assert_eq!(lines(&Fragment::new(raw)), [(1, 1), (2, 2)]);
+    assert_eq!(
+        lines(&Fragment::builder(raw).start_line(0).build()),
+        [(0, 0), (1, 1)]
+    );
+    assert_eq!(
+        lines(&Fragment::builder(raw).start_line(10).build()),
+        [(10, 10), (11, 11)]
+    );
 }
 
 #[test]
@@ -362,8 +399,8 @@ tags = ["credential"]
     assert_eq!(finding.match_text().as_bytes(), b"secret=decoded-secret");
     assert_eq!(finding.secret().as_bytes(), b"decoded-secret");
     assert_eq!(finding.line().as_bytes(), b"\nsecret=ZGVjb2RlZC1zZWNyZXQ=");
-    assert_eq!(finding.location().start_line(), 1);
-    assert_eq!(finding.location().end_line(), 1);
+    assert_eq!(finding.location().start_line(), 2);
+    assert_eq!(finding.location().end_line(), 2);
     assert_eq!(finding.location().start_column(), 2);
     assert_eq!(finding.location().end_column(), 28);
     assert_eq!(finding.match_range(), FindingRange::Unavailable);

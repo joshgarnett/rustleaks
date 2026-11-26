@@ -924,7 +924,9 @@ fn directory_workload(
     };
     if !engine
         .scan_fragment(
-            &Fragment::new(b"warm initialization"),
+            &Fragment::builder(b"warm initialization")
+                .start_line(0)
+                .build(),
             &ScanOptions::default(),
         )
         .is_complete()

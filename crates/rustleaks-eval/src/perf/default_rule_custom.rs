@@ -121,7 +121,10 @@ fn generic_filter(ctx: &mut Context<'_>, generic: usize) -> Fallible<Plan> {
     let expected = ctx.expected(&raw, plants, candidates)?;
     Ok(plan_of(
         ctx,
-        vec![scan_of(Fragment::builder(raw).build(), expected)],
+        vec![scan_of(
+            Fragment::builder(raw).start_line(0).build(),
+            expected,
+        )],
         json!({"generic_findings": generic, "specific_findings": specific}),
     ))
 }
@@ -188,7 +191,10 @@ fn many_rules(ctx: &mut Context<'_>, rules: usize) -> Fallible<Plan> {
         raw.extend_from_slice(&filler(size - raw.len()));
         let candidates = plants.len();
         let expected = ctx.expected(&raw, plants, candidates)?;
-        scans.push(scan_of(Fragment::builder(raw).build(), expected));
+        scans.push(scan_of(
+            Fragment::builder(raw).start_line(0).build(),
+            expected,
+        ));
     }
     Ok(plan_of(
         ctx,
@@ -274,6 +280,7 @@ fn heavy_scan(
     let retained = plants.len();
     let expected = ctx.expected(&raw, plants, candidates)?;
     let fragment = Fragment::builder(raw)
+        .start_line(0)
         .file_path("src/heavy/allowed-path.rs")
         .build();
     Ok((scan_of(fragment, expected), candidates, retained))
@@ -332,7 +339,10 @@ fn keywordless(ctx: &mut Context<'_>, rules: usize) -> Fallible<Plan> {
         let candidates = plants.len();
         planted_counts.push(candidates);
         let expected = ctx.expected(&raw, plants, candidates)?;
-        scans.push(scan_of(Fragment::builder(raw).build(), expected));
+        scans.push(scan_of(
+            Fragment::builder(raw).start_line(0).build(),
+            expected,
+        ));
     }
     Ok(plan_of(
         ctx,

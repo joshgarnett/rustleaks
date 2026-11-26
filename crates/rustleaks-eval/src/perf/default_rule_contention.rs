@@ -69,7 +69,7 @@ fn dense_case(mut ctx: Context<'_>, workers: usize) -> Fallible<Case> {
     raw.resize(size, b'\n');
     let candidates = plants.len();
     let expected: Expected = ctx.expected(&raw, plants, candidates)?;
-    let fragment = Fragment::builder(raw).build();
+    let fragment = Fragment::builder(raw).start_line(0).build();
     let fragments = (0..workers).map(|_| fragment.clone()).collect();
     Ok(Case {
         workers,

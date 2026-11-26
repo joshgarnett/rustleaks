@@ -182,7 +182,7 @@ impl Fixture {
             .build()?;
         let fragments = input
             .chunks_exact(fragment_bytes)
-            .map(|bytes| Fragment::builder(bytes).build())
+            .map(|bytes| Fragment::builder(bytes).start_line(0).build())
             .collect();
         Ok(Self {
             fragments,
@@ -356,7 +356,8 @@ mod tests {
         let options = ScanOptions::default();
         let complete = detector.scan_fragment(&fixture.fragments[0], &options);
         fixture.validate(&complete).unwrap();
-        let skipped = detector.scan_fragment(&Fragment::builder(&b""[..]).build(), &options);
+        let skipped =
+            detector.scan_fragment(&Fragment::builder(&b""[..]).start_line(0).build(), &options);
         assert!(fixture.validate(&skipped).is_err());
         let partial = detector.scan_fragment_controlled(
             &fixture.fragments[0],

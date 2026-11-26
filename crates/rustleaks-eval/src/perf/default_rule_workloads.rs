@@ -838,7 +838,7 @@ fn single(ctx: Context<'_>, scan: Scan, counts: Value) -> Plan {
 fn ascii_scan(ctx: &Context<'_>, raw: Vec<u8>, plants: Vec<Plant>, c: usize) -> Fallible<Scan> {
     let expected = ctx.expected(&raw, plants, c)?;
     Ok(Scan {
-        fragment: Fragment::builder(raw).build(),
+        fragment: Fragment::builder(raw).start_line(0).build(),
         expected,
     })
 }
@@ -1236,6 +1236,7 @@ fn tiny_content(ctx: &Context<'_>, size: usize) -> Fallible<Vec<u8>> {
 
 fn tiny_fragment(content: &[u8], index: usize) -> Fragment {
     Fragment::builder(content)
+        .start_line(0)
         .file_path(format!("src/pkg{index:05}/module{index:05}.rs"))
         .commit(format!("{:040x}", index + 1))
         .build()

@@ -398,13 +398,19 @@ impl FileTarget {
         self.with_commit(builder).build()
     }
 
+    /// The empty fragment that reports a read error. It starts at line 0,
+    /// as the recorded source corpus expects.
     fn error_fragment(&self) -> Fragment {
         let path = self
             .logical_path
             .windows_original()
             .unwrap_or_else(|| self.logical_path.normalized());
-        self.with_commit(Fragment::builder(Vec::<u8>::new()).file_path(path.clone()))
-            .build()
+        self.with_commit(
+            Fragment::builder(Vec::<u8>::new())
+                .file_path(path.clone())
+                .start_line(0),
+        )
+        .build()
     }
 
     #[cfg(feature = "archives")]
@@ -1296,7 +1302,7 @@ mod tests {
             events,
             [Recorded::Fragment {
                 content: Vec::new(),
-                start_line: Fragment::builder(Vec::<u8>::new()).build().start_line(),
+                start_line: 0,
                 issue: Some((
                     SourceStage::BoundaryRead,
                     SourceIssueKind::BoundaryRead,
@@ -1608,10 +1614,6 @@ mod tests {
             Ok(())
         }
 
-        fn empty_fragment_line() -> usize {
-            Fragment::builder(Vec::<u8>::new()).build().start_line()
-        }
-
         pub(super) fn visit(
             inner: Box<dyn SourceReader>,
             options: FileOptions,
@@ -1643,7 +1645,7 @@ mod tests {
                     if let ReadStatus::Error { message, .. } = outcome.status() {
                         events.push(Recorded::Fragment {
                             content: Vec::new(),
-                            start_line: empty_fragment_line(),
+                            start_line: 0,
                             issue: Some((
                                 SourceStage::Read,
                                 SourceIssueKind::Read,
@@ -1670,7 +1672,7 @@ mod tests {
                     }
                     events.push(Recorded::Fragment {
                         content: Vec::new(),
-                        start_line: empty_fragment_line(),
+                        start_line: 0,
                         issue: Some(issue_parts(&failure)),
                     });
                     return (events, Ok(SourceControl::Continue));

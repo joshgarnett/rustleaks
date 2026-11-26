@@ -128,7 +128,6 @@ use rustleaks_core::model::{Fragment, ScanOptions};
 fn main() {
     let fragment = Fragment::builder(b"token = \"value\"\n")
         .file_path("config/app.env")
-        .start_line(1)
         .build();
     let options = ScanOptions::builder().max_decode_depth(5).build();
     let _ = (fragment, options);
@@ -138,7 +137,7 @@ fn main() {
 | Builder method | Meaning |
 | --- | --- |
 | `file_path` | The path reported in `Finding::file`. Path rules and path allowlists test this value. |
-| `start_line` | The line number of the first line. The default is 0. Use 1 to number lines like the CLI. |
+| `start_line` | The line number of the first line. The default is 1, which numbers lines like the CLI. A finding of a rule that has only a `path` pattern has line 0. |
 | `commit`, `commit_metadata` | Git details reported in findings. |
 | `symlink_file` | The link path for a file reached through a symbolic link. |
 | `windows_file_path` | The original Windows spelling of the path, with `\` separators. Rule `path` patterns also test this value. It is not reported. |
@@ -320,7 +319,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fragment = Fragment::builder(b"string AWSToken = \"AKIALALEMEL33243OLIB\";") // rustleaks:allow
         .file_path("config/app.env")
-        .start_line(1)
         .build();
     let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
     assert!(outcome.is_complete());
