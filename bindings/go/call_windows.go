@@ -23,41 +23,43 @@ const (
 
 // nativeProcs holds the address of every export the package calls.
 type nativeProcs struct {
-	abiVersion, version                                               uintptr
-	optionsNew, optionsSetConfig, optionsAddRuleID                    uintptr
-	optionsSetU64, optionsSetBool, optionsFree                        uintptr
-	engineNew, engineFree, engineWorkers, engineRuleCount, engineRule uintptr
-	cancelNew, cancelSet, cancelFree                                  uintptr
-	scan, resultStatus, resultCount, resultFinding, resultFree        uintptr
-	errorKind, errorMessage, errorFree                                uintptr
+	abiVersion, version                                        uintptr
+	optionsNew, optionsSetConfig, optionsAddRuleID             uintptr
+	optionsSetU64, optionsSetBool, optionsFree                 uintptr
+	engineNew, engineFree, engineWorkers, engineMaxInputBytes  uintptr
+	engineRuleCount, engineRule                                uintptr
+	cancelNew, cancelSet, cancelFree                           uintptr
+	scan, resultStatus, resultCount, resultFinding, resultFree uintptr
+	errorKind, errorMessage, errorFree                         uintptr
 }
 
 func (p *nativeProcs) symbols() map[string]*uintptr {
 	return map[string]*uintptr{
-		"rustleaks_abi_version":         &p.abiVersion,
-		"rustleaks_version":             &p.version,
-		"rustleaks_options_new":         &p.optionsNew,
-		"rustleaks_options_set_config":  &p.optionsSetConfig,
-		"rustleaks_options_add_rule_id": &p.optionsAddRuleID,
-		"rustleaks_options_set_u64":     &p.optionsSetU64,
-		"rustleaks_options_set_bool":    &p.optionsSetBool,
-		"rustleaks_options_free":        &p.optionsFree,
-		"rustleaks_engine_new":          &p.engineNew,
-		"rustleaks_engine_free":         &p.engineFree,
-		"rustleaks_engine_workers":      &p.engineWorkers,
-		"rustleaks_engine_rule_count":   &p.engineRuleCount,
-		"rustleaks_engine_rule":         &p.engineRule,
-		"rustleaks_cancel_new":          &p.cancelNew,
-		"rustleaks_cancel_set":          &p.cancelSet,
-		"rustleaks_cancel_free":         &p.cancelFree,
-		"rustleaks_scan":                &p.scan,
-		"rustleaks_result_status":       &p.resultStatus,
-		"rustleaks_result_count":        &p.resultCount,
-		"rustleaks_result_finding":      &p.resultFinding,
-		"rustleaks_result_free":         &p.resultFree,
-		"rustleaks_error_kind":          &p.errorKind,
-		"rustleaks_error_message":       &p.errorMessage,
-		"rustleaks_error_free":          &p.errorFree,
+		"rustleaks_abi_version":            &p.abiVersion,
+		"rustleaks_version":                &p.version,
+		"rustleaks_options_new":            &p.optionsNew,
+		"rustleaks_options_set_config":     &p.optionsSetConfig,
+		"rustleaks_options_add_rule_id":    &p.optionsAddRuleID,
+		"rustleaks_options_set_u64":        &p.optionsSetU64,
+		"rustleaks_options_set_bool":       &p.optionsSetBool,
+		"rustleaks_options_free":           &p.optionsFree,
+		"rustleaks_engine_new":             &p.engineNew,
+		"rustleaks_engine_free":            &p.engineFree,
+		"rustleaks_engine_workers":         &p.engineWorkers,
+		"rustleaks_engine_max_input_bytes": &p.engineMaxInputBytes,
+		"rustleaks_engine_rule_count":      &p.engineRuleCount,
+		"rustleaks_engine_rule":            &p.engineRule,
+		"rustleaks_cancel_new":             &p.cancelNew,
+		"rustleaks_cancel_set":             &p.cancelSet,
+		"rustleaks_cancel_free":            &p.cancelFree,
+		"rustleaks_scan":                   &p.scan,
+		"rustleaks_result_status":          &p.resultStatus,
+		"rustleaks_result_count":           &p.resultCount,
+		"rustleaks_result_finding":         &p.resultFinding,
+		"rustleaks_result_free":            &p.resultFree,
+		"rustleaks_error_kind":             &p.errorKind,
+		"rustleaks_error_message":          &p.errorMessage,
+		"rustleaks_error_free":             &p.errorFree,
 	}
 }
 
@@ -174,6 +176,10 @@ func callEngineFree(engine unsafe.Pointer) int32 {
 
 func callEngineWorkers(engine unsafe.Pointer, out *uintptr) int32 {
 	return call(procs.engineWorkers, uintptr(engine), uintptr(unsafe.Pointer(out)))
+}
+
+func callEngineMaxInputBytes(engine unsafe.Pointer, out *uint64) int32 {
+	return call(procs.engineMaxInputBytes, uintptr(engine), uintptr(unsafe.Pointer(out)))
 }
 
 func callEngineRuleCount(engine unsafe.Pointer, out *uintptr) int32 {

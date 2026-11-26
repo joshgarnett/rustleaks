@@ -119,6 +119,10 @@ func callEngineWorkers(engine unsafe.Pointer, out *uintptr) int32 {
 	return int32(C.rustleaks_engine_workers((*C.rustleaks_engine)(engine), (*C.size_t)(unsafe.Pointer(out))))
 }
 
+func callEngineMaxInputBytes(engine unsafe.Pointer, out *uint64) int32 {
+	return int32(C.rustleaks_engine_max_input_bytes((*C.rustleaks_engine)(engine), (*C.uint64_t)(unsafe.Pointer(out))))
+}
+
 func callEngineRuleCount(engine unsafe.Pointer, out *uintptr) int32 {
 	return int32(C.rustleaks_engine_rule_count((*C.rustleaks_engine)(engine), (*C.size_t)(unsafe.Pointer(out))))
 }
