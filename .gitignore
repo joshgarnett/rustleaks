@@ -8,6 +8,8 @@
 
 # Python bytecode from running the binding outside Bazel
 __pycache__/
+# A native library copied into the Python package to try it from a checkout
+/bindings/python/src/rustleaks/_native/
 
 # Coverage and profiling output
 *.profraw

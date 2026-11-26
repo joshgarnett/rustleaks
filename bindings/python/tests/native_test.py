@@ -191,6 +191,7 @@ class LibraryTest(unittest.TestCase):
         with self.assertRaises(rustleaks.LibraryError) as caught:
             _native.load(missing)
         self.assertIn("missing", str(caught.exception))
+        self.assertEqual(caught.exception.kind, "load")
 
     def test_file_that_is_not_a_library(self) -> None:
         with self.assertRaises(rustleaks.LibraryError):
@@ -205,6 +206,7 @@ class LibraryTest(unittest.TestCase):
         finally:
             _native.__version__ = version
         self.assertIn("version", str(caught.exception))
+        self.assertEqual(caught.exception.kind, "version")
 
     def test_library_has_the_package_version(self) -> None:
         library = _native.library()

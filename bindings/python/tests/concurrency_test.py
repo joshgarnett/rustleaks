@@ -236,6 +236,31 @@ class InterruptTest(unittest.TestCase):
         engine.close()
         self.assertFalse(engine._handle)
 
+    def test_interrupts_during_scans_release_the_worker(self) -> None:
+        # An interrupt can arrive at any step of a scan. With one worker, a
+        # lost worker slot would make the next scan time out, and a scan that
+        # stayed registered would make close wait forever.
+        engine = rustleaks.Engine(config=MARKER_CONFIG, workers=1)
+        data = marker_input() * 100
+        for delay in (0.0, 0.0005, 0.001, 0.002, 0.005, 0.01):
+            with self.subTest(delay=delay):
+                timer = threading.Timer(delay, _thread.interrupt_main)
+                deadline = time.monotonic() + 10
+                try:
+                    timer.start()
+                    while time.monotonic() < deadline:
+                        engine.scan(data, timeout=60)
+                except KeyboardInterrupt:
+                    pass
+                finally:
+                    timer.join()
+                self.assertEqual(engine._in_flight, 0)
+                self.assertEqual(len(engine.scan(data, timeout=5)), 100)
+        closer, closed = start(engine.close)
+        join(closer)
+        self.assertIsNone(closed.error)
+        self.assertTrue(engine.closed)
+
     def test_interrupts_around_construction_never_free_twice(self) -> None:
         library = rustleaks._native.library()
         counts = {"new": 0, "free": 0}

@@ -289,19 +289,21 @@ def _declare(library: ctypes.CDLL) -> None:
 def _check_identity(library: ctypes.CDLL, path: str) -> None:
     abi = c_uint32()
     if library.rustleaks_abi_version(ctypes.byref(abi)) != OK:
-        raise LibraryError(f"cannot read the ABI number of {path}")
+        raise LibraryError(f"cannot read the ABI number of {path}", "version")
     if abi.value != ABI_VERSION:
         raise LibraryError(
-            f"{path} has ABI number {abi.value}, but this package needs {ABI_VERSION}"
+            f"{path} has ABI number {abi.value}, but this package needs {ABI_VERSION}",
+            "version",
         )
     pointer = c_void_p()
     length = c_size_t()
     if library.rustleaks_version(ctypes.byref(pointer), ctypes.byref(length)) != OK:
-        raise LibraryError(f"cannot read the version of {path}")
+        raise LibraryError(f"cannot read the version of {path}", "version")
     version = ctypes.string_at(pointer.value or 0, length.value).decode("utf-8", "replace")
     if version != __version__:
         raise LibraryError(
-            f"{path} has version {version}, but this package has version {__version__}"
+            f"{path} has version {version}, but this package has version {__version__}",
+            "version",
         )
 
 
@@ -316,8 +318,10 @@ def load(path: str) -> ctypes.CDLL:
     if not os.path.isfile(path):
         raise LibraryError(f"the Rustleaks native library is missing: {path}")
     try:
-        # An absolute path, so Windows searches only the library's own
-        # folder and the system folders for its dependencies.
+        # An absolute path, so the library itself is never searched for. On
+        # Windows its dependencies are searched in its own folder, the
+        # application folder, the system folders and folders added with
+        # os.add_dll_directory. The library needs only system DLLs.
         loaded = ctypes.CDLL(path)
     except OSError as error:
         raise LibraryError(f"cannot load the Rustleaks native library {path}: {error}") from error

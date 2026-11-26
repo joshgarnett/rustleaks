@@ -14,6 +14,7 @@ import unittest
 from support import MARKER_CONFIG, MARKER_SECRET, aws_key, marker_input
 
 import rustleaks
+from rustleaks import _engine, _native
 
 
 def exception_text(error: BaseException) -> str:
@@ -197,6 +198,29 @@ class OptionsTest(unittest.TestCase):
             (finding,) = engine.scan(allowed)
             self.assertEqual(finding.secret, b"REDACTED")
 
+    def test_redaction(self) -> None:
+        secret = MARKER_SECRET.encode()
+        half = secret[:2] + b"..."
+        encoded = b"value = " + base64.b64encode(b"token MARK-" + secret) + b"\n"
+        with rustleaks.Engine(config=MARKER_CONFIG) as engine:
+            for percent, replacement in ((100, b"REDACTED"), (50, half)):
+                with self.subTest(percent=percent):
+                    (finding,) = engine.scan(marker_input(), redaction=percent)
+                    # The secret is replaced in the secret, the match and
+                    # the line.
+                    self.assertEqual(finding.secret, replacement)
+                    self.assertEqual(finding.match, b"MARK-" + replacement)
+                    self.assertEqual(finding.line, b"name = MARK-" + replacement)
+                    self.assertEqual(finding.secret_range, range(12, 16))
+            (decoded,) = engine.scan(encoded, decode_depth=1, redaction=100)
+            # The line of a decoded finding holds the secret in encoded
+            # form, so the whole line is replaced.
+            self.assertEqual(decoded.secret, b"REDACTED")
+            self.assertEqual(decoded.line, b"REDACTED")
+            self.assertNotIn(secret, decoded.match)
+            (unredacted,) = engine.scan(marker_input())
+            self.assertEqual(unredacted.line, b"name = MARK-" + secret)
+
     def test_scan_overrides(self) -> None:
         encoded = b"value = " + base64.b64encode(b"token MARK-" + MARKER_SECRET.encode()) + b"\n"
         allowed = marker_input().rstrip(b"\n") + b" # gitleaks:allow\n"
@@ -205,10 +229,6 @@ class OptionsTest(unittest.TestCase):
             self.assertEqual(len(engine.scan(encoded, decode_depth=1)), 1)
             self.assertEqual(len(engine.scan(encoded, decode_depth=1, base64_mode="extended")), 1)
             self.assertEqual(len(engine.scan(allowed, allow_comments=False)), 1)
-            (redacted,) = engine.scan(marker_input(), redaction=100)
-            self.assertEqual(redacted.secret, b"REDACTED")
-            (half,) = engine.scan(marker_input(), redaction=50)
-            self.assertEqual(half.secret, MARKER_SECRET[:2].encode() + b"...")
             with self.assertRaises(rustleaks.BudgetExceededError):
                 engine.scan(two, budget=rustleaks.Budget(finding_records=1))
         # The engine's budget applies unless a scan overrides it.
@@ -529,6 +549,23 @@ class ErrorTest(unittest.TestCase):
                 self.assertIsNone(error.__cause__)
                 self.assertIsNone(error.__context__)
 
+    def test_native_error_kinds(self) -> None:
+        cases = {
+            _native.ERROR_CONFIG: (rustleaks.ConfigError, "config"),
+            _native.ERROR_RULE_SELECTION: (rustleaks.ConfigError, "rule_selection"),
+            _native.ERROR_ABI_MISMATCH: (rustleaks.LibraryError, "version"),
+            _native.ERROR_ENGINE: (rustleaks.LibraryError, "engine"),
+            _native.ERROR_PANIC: (rustleaks.LibraryError, "panic"),
+        }
+        for status, (error_type, kind) in cases.items():
+            with self.subTest(status=status):
+                error = _engine._status_error(status, "message")
+                self.assertIs(type(error), error_type)
+                self.assertEqual(error.kind, kind)  # type: ignore[attr-defined]
+                with self.assertRaises(error_type):
+                    _engine._check(status, "call")
+        self.assertIs(type(_engine._status_error(_native.ERROR_INVALID_ARGUMENT, "m")), rustleaks.Error)
+
     def test_errors_can_be_pickled(self) -> None:
         original = rustleaks.BudgetExceededError(
             "budget",
@@ -546,6 +583,8 @@ class ErrorTest(unittest.TestCase):
         self.assertEqual((copied.limit, copied.consumed, copied.requested), (1, 1, 2))
         config = pickle.loads(pickle.dumps(rustleaks.ConfigError("bad", "rule_selection")))
         self.assertEqual(config.kind, "rule_selection")
+        library = pickle.loads(pickle.dumps(rustleaks.LibraryError("bad", "panic")))
+        self.assertEqual(library.kind, "panic")
 
 
 if __name__ == "__main__":

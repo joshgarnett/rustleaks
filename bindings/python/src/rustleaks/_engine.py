@@ -157,7 +157,11 @@ def _status_error(kind: int, message: str) -> Error:
     if kind == _native.ERROR_RULE_SELECTION:
         return ConfigError(message, "rule_selection")
     if kind == _native.ERROR_ABI_MISMATCH:
-        return LibraryError(message)
+        return LibraryError(message, "version")
+    if kind == _native.ERROR_ENGINE:
+        return LibraryError(message, "engine")
+    if kind == _native.ERROR_PANIC:
+        return LibraryError(message, "panic")
     return Error(message)
 
 
@@ -179,7 +183,7 @@ def _take_error(library: ctypes.CDLL, status: int, error: ctypes._Pointer[_nativ
 
 def _check(status: int, what: str) -> None:
     if status != _native.OK:
-        raise Error(f"rustleaks {what} failed with status {status}")
+        raise _status_error(status, f"rustleaks {what} failed with status {status}")
 
 
 class CancelToken:
@@ -307,8 +311,9 @@ class Engine:
         self._rules = _read_rules(library, self._handle)
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
-        self._slots = threading.Semaphore(self._workers)
-        self._in_flight = 0
+        # One entry for each scan that holds a worker. Adding or removing an
+        # entry is one step, so an interrupt cannot leave a count wrong.
+        self._active: dict[object, None] = {}
         self._closed = False
         _live_engines.add(self)
 
@@ -436,7 +441,7 @@ class Engine:
             return
         with self._idle:
             self._closed = True
-            while self._in_flight:
+            while self._active:
                 # A short wait lets an interrupt reach this thread.
                 self._idle.wait(_POLL_SECONDS)
             handle = self._handle
@@ -492,33 +497,52 @@ class Engine:
         self._handle = POINTER(_native.Engine)()
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
-        self._slots = threading.Semaphore(self._workers)
-        self._in_flight = 0
+        self._active = {}
         self._closed = True
 
-    def _acquire(self, deadline: float | None, cancel: CancelToken | None) -> None:
-        """Waits for a free worker."""
-        while True:
-            if self._closed:
-                raise ClosedError("the engine is closed")
-            if cancel is not None and cancel.cancelled:
-                raise ScanCancelledError(
-                    "the scan was cancelled before it started",
-                    termination="cancelled",
-                    usage=Usage(),
-                )
-            wait = _POLL_SECONDS
-            if deadline is not None:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise ScanTimeoutError(
-                        "the timeout passed while the scan waited for a worker",
-                        termination="timeout",
+    @property
+    def _in_flight(self) -> int:
+        """How many scans hold a worker."""
+        return len(self._active)
+
+    def _acquire(self, key: object, deadline: float | None, cancel: CancelToken | None) -> None:
+        """Waits for a free worker and registers ``key`` as a running scan.
+
+        Call it inside the ``try`` whose ``finally`` calls ``_leave(key)``.
+        The registration is one dictionary store, so an interrupt leaves the
+        scan either registered or not, and ``_leave`` handles both.
+        """
+        with self._idle:
+            while True:
+                if self._closed:
+                    raise ClosedError("the engine is closed")
+                if cancel is not None and cancel.cancelled:
+                    raise ScanCancelledError(
+                        "the scan was cancelled before it started",
+                        termination="cancelled",
                         usage=Usage(),
                     )
-                wait = min(wait, remaining)
-            if self._slots.acquire(timeout=wait):
-                return
+                wait = _POLL_SECONDS
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ScanTimeoutError(
+                            "the timeout passed while the scan waited for a worker",
+                            termination="timeout",
+                            usage=Usage(),
+                        )
+                    wait = min(wait, remaining)
+                if len(self._active) < self._workers:
+                    self._active[key] = None
+                    return
+                # A short wait lets the scan see its token and timeout.
+                self._idle.wait(wait)
+
+    def _leave(self, key: object) -> None:
+        """Removes ``key`` if it is registered and wakes waiting threads."""
+        with self._idle:
+            if self._active.pop(key, self) is None:
+                self._idle.notify_all()
 
     def _run(self, payload: bytes, request: _ScanRequest) -> list[Finding]:
         if self._closed:
@@ -526,22 +550,14 @@ class Engine:
         deadline = None
         if request.timeout is not None:
             deadline = time.monotonic() + request.timeout
-        self._acquire(deadline, request.cancel)
+        key = object()
         try:
-            with self._lock:
-                if self._closed:
-                    raise ClosedError("the engine is closed")
-                self._in_flight += 1
-                handle = self._handle
-            try:
-                return self._scan_native(handle, payload, request, deadline)
-            finally:
-                with self._idle:
-                    self._in_flight -= 1
-                    if not self._in_flight:
-                        self._idle.notify_all()
+            self._acquire(key, deadline, request.cancel)
+            # close() frees the handle only when no scan is registered.
+            handle = self._handle
+            return self._scan_native(handle, payload, request, deadline)
         finally:
-            self._slots.release()
+            self._leave(key)
 
     def _scan_native(
         self,
