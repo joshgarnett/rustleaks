@@ -902,3 +902,28 @@ fn a_misaligned_error_pointer_is_invalid() {
     assert_eq!(status, ERROR_INVALID_ARGUMENT);
     assert!(engine.is_null());
 }
+
+#[test]
+fn a_misaligned_error_pointer_is_invalid_for_a_scan() {
+    let engine = token_engine();
+    // A dangling non-null value, so the assertion below proves that the
+    // library wrote NULL to `out`.
+    let mut result = ptr::NonNull::dangling().as_ptr();
+    let misaligned = ptr::without_provenance_mut::<*mut crate::handles::FfiError>(1);
+    // SAFETY: the engine is live, the input is a valid buffer, and the
+    // library rejects the misaligned error pointer before it writes through
+    // it.
+    let status = unsafe {
+        rustleaks_scan(
+            engine.raw(),
+            b"TOKEN".as_ptr(),
+            5,
+            ptr::null(),
+            ptr::null(),
+            &raw mut result,
+            misaligned,
+        )
+    };
+    assert_eq!(status, ERROR_INVALID_ARGUMENT);
+    assert!(result.is_null());
+}
