@@ -27,19 +27,15 @@ version, creating an engine raises `LibraryError`.
 
 ## Install
 
-The package is not published, and no wheel is built yet. To try it from a
-checkout of this repository, build the native library with Bazel, copy it
-into the package, and put the package folder on the import path:
+The package is not published yet. To try it from a checkout of this
+repository, build the wheel for your platform with Bazel and install it
+with pip. Pick the `release-bindings-*` configuration in `.bazelrc` that
+matches your platform, for example on Linux x86_64 with glibc:
 
 ```sh
-bazelisk build //crates/rustleaks-ffi:rustleaks_ffi_shared
-mkdir -p bindings/python/src/rustleaks/_native
-cp bazel-bin/crates/rustleaks-ffi/librustleaks_ffi.so bindings/python/src/rustleaks/_native/
-export PYTHONPATH="$PWD/bindings/python/src"
+bazelisk build --config=release-bindings-linux-x86_64-gnu //release/python:wheel
+python -m pip install bazel-bin/release/python/rustleaks-*.whl
 ```
-
-On macOS the file is `librustleaks_ffi.dylib`, and on Windows it is
-`rustleaks_ffi.dll`.
 
 ## A first scan
 
@@ -109,7 +105,7 @@ order, as `Rule` values with `id`, `description`, `tags` and `keywords`.
 ## Options and defaults
 
 Every option is a keyword argument of `Engine`. `None`, the default, keeps
-the value of the native library, which is the same as in `rustleaks-core`.
+the value of the native library.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -121,14 +117,19 @@ the value of the native library, which is the same as in `rustleaks-core`.
 | `base64_mode` | `"compatible"` | `"compatible"` or `"extended"`, as `--base64-mode` in the [command reference](cli-reference.md). |
 | `redaction` | 0 | The percent of each secret to hide, from 0 to 100. See [Logging findings safely](#logging-findings-safely). |
 
-Two defaults differ from the `rustleaks` command:
+Three defaults differ from the `rustleaks` command:
 
 - The command decodes 5 levels. The package decodes none unless you set
   `decode_depth=5`.
-- Allow comments are honored, as in the command. Anyone who can write the
-  scanned content can hide a secret with one. When you scan content that
-  other people write, such as uploads or messages, set
-  `allow_comments=False`.
+- An input longer than 10,000,000 bytes raises `InputTooLargeError`. The
+  command reads large files in parts and has no such limit.
+- A scan stops with `BudgetExceededError` after 100,000 finding records.
+  The command sets no finding record limit.
+
+Allow comments are honored, as in the command. Anyone who can write the
+scanned content can hide a secret with one. When you scan content that
+other people write, such as uploads or messages, set
+`allow_comments=False`.
 
 `scan` and `scan_text` take `allow_comments`, `decode_depth`,
 `base64_mode`, `redaction` and `budget` too. A value there applies to that
@@ -215,6 +216,12 @@ finding of a rule that has only a `path` pattern, such as `pkcs12-file`, has
 line and column 0 and no ranges. Use the ranges, not the columns, to find
 the secret in the input.
 
+When a match starts on, or runs to, a last line that has no line break,
+`line` currently holds the text from the start of the input instead of
+that one line. It can then contain other secrets, which redaction does not
+mask. End the input with a line break to avoid this. A fix in the engine is
+pending in pull request #216.
+
 Findings with the same long line share one `bytes` object for `line`, so
 many findings on one large line do not copy it many times.
 
@@ -230,11 +237,11 @@ argument types raise `TypeError` and bad values raise `ValueError`. A
 | `InputTooLargeError` | The input is longer than `max_input_bytes`. It has `size` and `limit`. |
 | `IncompleteScanError` | The scan stopped early. Its subclasses are `ScanCancelledError`, `ScanTimeoutError` and `BudgetExceededError`. |
 | `ClosedError` | The engine is closed, or was created before the process forked. |
-| `LibraryError` | The native library is missing, cannot load or has another version. |
+| `LibraryError` | The native library cannot be used, or failed inside. `kind` is `"load"` (missing, cannot load or lacks an export), `"version"` (another ABI number or version), `"engine"` (a failure outside the configuration, such as a thread that cannot start in a restricted process) or `"panic"` (the library caught an internal error). |
 | `TextEncodingError` | `scan_text` got text that UTF-8 cannot encode. |
 
-Other failures of the native library, such as a thread that cannot start
-in a restricted process, raise `rustleaks.Error` itself.
+A status that this version of the package does not name raises
+`rustleaks.Error` itself.
 
 An `IncompleteScanError` has `termination` (`"cancelled"`, `"timeout"`,
 `"budget"` or `"other"`) and `usage`, a `Usage` value with what the scan
@@ -318,6 +325,10 @@ keeps servers that fork worker processes working: create the engines in the
 workers, or create new ones there. Python warns about `fork` in a process
 with threads, and every engine has native threads. Prefer the `spawn` or
 `forkserver` start methods of `multiprocessing` when you can.
+
+On macOS, a forked child currently stops with `SIGTRAP` when it scans on the
+thread that called `fork`, if that thread scanned before the fork. Scans on
+other threads of the child work. A fix in the native library is pending.
 
 ## Logging findings safely
 

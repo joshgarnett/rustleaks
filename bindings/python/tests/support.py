@@ -75,11 +75,10 @@ def aws_key() -> bytes:
     return b"AKIA" + b"LALEMEL33243OLIB"
 
 
-def slow_input(engine: rustleaks.Engine, size: int = 40_000_000) -> bytes:
+def slow_input(engine: rustleaks.Engine, size: int = 10_000_000) -> bytes:
     """An input of about ``size`` bytes that holds every keyword of the
-    engine's rules many times, so that a scan of it takes seconds even in an
-    optimized build. Tests cancel or time out these scans; none waits for
-    one to finish."""
+    engine's rules many times, so that a scan of it takes far longer than a
+    scan of a small input. The test that uses it cancels the scan."""
     block = b"".join(
         keyword.encode() + b' = "x0x0x0x0x0x0"\n'
         for rule in engine.rules()
