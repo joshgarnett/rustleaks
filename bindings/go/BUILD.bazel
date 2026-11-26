@@ -1,50 +1,93 @@
-load("@rules_go//go:def.bzl", "go_test")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//bazel:musl_c.bzl", "musl_c_test")
 
-_SRCS = [
-    "call_cgo.go",
-    "call_windows.go",
-    "spike_test.go",
-    "thread_linux_test.go",
-    "thread_other_test.go",
-]
-
-# Linux and macOS: cgo links the Rust static library. On musl the test builds
-# only for the musl C platform, through go_cgo_musl_test.
-go_test(
-    name = "go_cgo_test",
-    size = "small",
-    srcs = _SRCS,
-    args = ["-test.v"],
-    cdeps = ["//bindings/spike:spike_static"],
+# The package. On Linux and macOS cgo links the Rust static library. On
+# Windows the tests build it without cgo, and it loads the Rust DLL.
+go_library(
+    name = "rustleaks",
+    srcs = [
+        "abi.go",
+        "call_cgo.go",
+        "call_windows.go",
+        "dllcache.go",
+        "doc.go",
+        "engine.go",
+        "errors.go",
+        "finding.go",
+        "library.go",
+        "nocgo.go",
+        "options.go",
+        "rustleaks.h",
+    ],
+    cdeps = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["//crates/rustleaks-ffi:rustleaks_ffi_static"],
+    }),
     cgo = True,
     importpath = "github.com/joshgarnett/rustleaks-go",
+    visibility = ["//visibility:public"],
+)
+
+_TEST_SRCS = glob(["*_test.go"])
+
+_TEST_DATA = [
+    "rustleaks.h",
+    "//crates/rustleaks-ffi:header",
+    "//testdata:bindings",
+]
+
+# On musl the cgo tests build only for the musl C platform, through the
+# _musl wrapper below.
+_CGO_COMPATIBLE = select({
+    "//platforms:musl_c_libc": [],
+    "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+    "@platforms//os:windows": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+# Linux and macOS: cgo links the Rust static library.
+go_test(
+    name = "go_cgo_test",
+    size = "medium",
+    srcs = _TEST_SRCS,
+    data = _TEST_DATA,
+    embed = [":rustleaks"],
     pure = "off",
+    target_compatible_with = _CGO_COMPATIBLE,
+)
+
+musl_c_test(
+    name = "go_cgo_musl_test",
+    size = "medium",
+    target_compatible_with = ["//platforms:musl"],
+    test = ":go_cgo_test",
+)
+
+# The race detector needs cgo and a glibc or macOS C library, so it runs on
+# the Linux GNU and macOS lanes only.
+go_test(
+    name = "go_race_test",
+    size = "large",
+    srcs = _TEST_SRCS,
+    data = _TEST_DATA,
+    embed = [":rustleaks"],
+    pure = "off",
+    race = "on",
     target_compatible_with = select({
-        "//platforms:musl_c_libc": [],
         "//platforms:musl_any_libc": ["@platforms//:incompatible"],
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
 )
 
-musl_c_test(
-    name = "go_cgo_musl_test",
-    size = "small",
-    args = ["-test.v"],
-    target_compatible_with = ["//platforms:musl"],
-    test = ":go_cgo_test",
-)
-
-# Windows: no cgo. The test loads the Rust MSVC DLL through syscall.
+# Windows: no cgo. The tests load the Rust MSVC DLL through syscall.
 go_test(
     name = "go_windows_test",
-    size = "small",
-    srcs = _SRCS,
-    args = ["-test.v"],
-    data = ["//bindings/spike:spike_shared"],
-    env = {"RUSTLEAKS_SPIKE_LIBRARY": "$(rlocationpaths //bindings/spike:spike_shared)"},
-    importpath = "github.com/joshgarnett/rustleaks-go",
+    size = "medium",
+    srcs = _TEST_SRCS,
+    data = _TEST_DATA + ["//crates/rustleaks-ffi:rustleaks_ffi_shared"],
+    embed = [":rustleaks"],
+    env = {"RUSTLEAKS_TEST_LIBRARY": "$(rlocationpaths //crates/rustleaks-ffi:rustleaks_ffi_shared)"},
     pure = "on",
     target_compatible_with = ["@platforms//os:windows"],
 )
@@ -54,6 +97,7 @@ test_suite(
     tests = [
         ":go_cgo_musl_test",
         ":go_cgo_test",
+        ":go_race_test",
         ":go_windows_test",
     ],
     visibility = ["//visibility:public"],
