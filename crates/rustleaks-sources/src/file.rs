@@ -1390,7 +1390,6 @@ mod tests {
             Cancellation, FileOptions, SourceControl, SourceError, SourceIssue, SourceIssueKind,
             SourceStage, mime,
         };
-        use rustleaks_core::model::Fragment;
 
         pub(super) struct Scenario {
             pub(super) data: Vec<u8>,
