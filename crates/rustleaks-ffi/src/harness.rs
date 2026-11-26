@@ -5,7 +5,7 @@
 //!
 //! This module is not a supported Rust API.
 
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use crate::abi::{
     ABI_VERSION, Bytes, ERROR_ABI_MISMATCH, ERROR_CLOSED, ERROR_CONFIG, ERROR_ENGINE,
@@ -334,7 +334,7 @@ pub struct Outcome {
 
 /// An owned engine handle. Many threads can scan with it at once.
 #[derive(Debug)]
-pub struct Engine(*mut EngineHandle);
+pub struct Engine(NonNull<EngineHandle>);
 
 // SAFETY: the library allows scans from many threads with one engine, and
 // the engine is freed only when the owner drops it.
@@ -346,7 +346,7 @@ impl Drop for Engine {
     fn drop(&mut self) {
         // SAFETY: the handle is owned and freed once, after every scan that
         // borrowed it returned.
-        assert_eq!(unsafe { rustleaks_engine_free(self.0) }, STATUS_OK);
+        assert_eq!(unsafe { rustleaks_engine_free(self.0.as_ptr()) }, STATUS_OK);
     }
 }
 
@@ -368,14 +368,14 @@ impl Engine {
             return Err(unsafe { Error::take(status, error) });
         }
         assert!(error.is_null());
-        assert!(!handle.is_null());
+        let handle = NonNull::new(handle).expect("a successful engine_new returns a handle");
         Ok(Self(handle))
     }
 
     /// The raw handle, for tests that call the exports directly.
     #[must_use]
     pub const fn raw(&self) -> *const EngineHandle {
-        self.0
+        self.0.as_ptr()
     }
 
     /// The engine behind the handle, borrowed for as long as `self`.
@@ -385,7 +385,7 @@ impl Engine {
         // library made it with `Box::into_raw`, and this value frees it only
         // when it drops, so it stays live and unchanged while `self` is
         // borrowed.
-        unsafe { &*self.0 }
+        unsafe { self.0.as_ref() }
     }
 
     /// The worker count.
@@ -393,7 +393,7 @@ impl Engine {
     pub fn workers(&self) -> usize {
         let mut workers = 0;
         // SAFETY: the handle is live and the out pointer is a valid local.
-        let status = unsafe { rustleaks_engine_workers(self.0, &raw mut workers) };
+        let status = unsafe { rustleaks_engine_workers(self.0.as_ptr(), &raw mut workers) };
         assert_eq!(status, STATUS_OK);
         workers
     }
@@ -403,7 +403,7 @@ impl Engine {
     pub fn max_input_bytes(&self) -> u64 {
         let mut limit = 0;
         // SAFETY: the handle is live and the out pointer is a valid local.
-        let status = unsafe { rustleaks_engine_max_input_bytes(self.0, &raw mut limit) };
+        let status = unsafe { rustleaks_engine_max_input_bytes(self.0.as_ptr(), &raw mut limit) };
         assert_eq!(status, STATUS_OK);
         limit
     }
@@ -413,7 +413,7 @@ impl Engine {
     pub fn rules(&self) -> Vec<Rule> {
         let mut count = 0;
         // SAFETY: the handle is live and the out pointer is a valid local.
-        let status = unsafe { rustleaks_engine_rule_count(self.0, &raw mut count) };
+        let status = unsafe { rustleaks_engine_rule_count(self.0.as_ptr(), &raw mut count) };
         assert_eq!(status, STATUS_OK);
         (0..count)
             .map(|index| {
@@ -429,7 +429,7 @@ impl Engine {
                 // its contents belong to the live engine while copied.
                 unsafe {
                     assert_eq!(
-                        rustleaks_engine_rule(self.0, index, &raw mut view),
+                        rustleaks_engine_rule(self.0.as_ptr(), index, &raw mut view),
                         STATUS_OK
                     );
                     Rule {
@@ -492,7 +492,7 @@ impl Engine {
         // guarantees the input and path; the out pointers are valid locals.
         let status = unsafe {
             rustleaks_scan(
-                self.0,
+                self.0.as_ptr(),
                 input,
                 len,
                 args,
