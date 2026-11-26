@@ -3,8 +3,13 @@
 package rustleaks
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -16,10 +21,10 @@ import (
 // choose the library on this system.
 const libraryPathUsed = true
 
-const (
-	loadLibrarySearchDLLLoadDir = 0x00000100
-	loadLibrarySearchSystem32   = 0x00000800
-)
+// loadLibrarySearchSystem32 makes LoadLibraryExW look for the DLLs that the
+// Rust DLL needs only in System32. The DLL is built with a static C runtime
+// and needs only system DLLs.
+const loadLibrarySearchSystem32 = 0x00000800
 
 // nativeProcs holds the address of every export the package calls.
 type nativeProcs struct {
@@ -69,11 +74,11 @@ var procs nativeProcs
 
 // loadNativeLibrary finds the DLL and loads it. The DLL is never unloaded.
 func loadNativeLibrary() error {
-	path, err := resolveLibraryPath()
+	path, want, err := resolveLibraryPath()
 	if err != nil {
 		return err
 	}
-	_, loaded, err := loadDLL(path)
+	_, loaded, err := loadDLL(path, want)
 	if err != nil {
 		return err
 	}
@@ -81,15 +86,32 @@ func loadNativeLibrary() error {
 	return nil
 }
 
-// loadDLL loads the DLL at an absolute path. Only the DLL's own folder and
-// System32 are searched for the DLLs it needs.
-func loadDLL(path string) (syscall.Handle, nativeProcs, error) {
+// loadDLL loads the DLL at an absolute path, and only System32 is searched
+// for the DLLs it needs. It holds the file open without write or delete
+// sharing from before the hash check until the load returns, so no other
+// process can change the file in between. want is the expected hex SHA-256,
+// or empty for a path the caller chose.
+func loadDLL(path, want string) (syscall.Handle, nativeProcs, error) {
 	var loaded nativeProcs
 	fail := func(message string, err error) (syscall.Handle, nativeProcs, error) {
-		return 0, loaded, &LibraryError{Op: "load", Path: path, Message: message, Err: err}
+		return 0, loaded, &LibraryError{Kind: LibraryLoad, Op: "load", Path: path, Message: message, Err: err}
 	}
 	if !filepath.IsAbs(path) {
 		return fail("the library path is not absolute", nil)
+	}
+	file, err := openShareRead(path)
+	if err != nil {
+		return fail("cannot open the library", err)
+	}
+	defer file.Close()
+	if want != "" {
+		h := sha256.New()
+		if _, err := io.Copy(h, io.LimitReader(file, maxLibraryBytes+1)); err != nil {
+			return fail("cannot read the library", err)
+		}
+		if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), want) {
+			return fail("the library does not match its SHA-256", nil)
+		}
 	}
 	kernel32, err := syscall.LoadDLL("kernel32.dll")
 	if err != nil {
@@ -106,7 +128,7 @@ func loadDLL(path string) (syscall.Handle, nativeProcs, error) {
 	result, _, callErr := loadLibraryEx.Call(
 		uintptr(unsafe.Pointer(name)),
 		0,
-		loadLibrarySearchDLLLoadDir|loadLibrarySearchSystem32,
+		loadLibrarySearchSystem32,
 	)
 	if result == 0 {
 		return fail("cannot load the library", callErr)
@@ -121,6 +143,21 @@ func loadDLL(path string) (syscall.Handle, nativeProcs, error) {
 		*target = address
 	}
 	return handle, loaded, nil
+}
+
+// openShareRead opens path for reading and lets other handles only read
+// it, so while the file is open no one can write, rename or delete it.
+func openShareRead(path string) (*os.File, error) {
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := syscall.CreateFile(name, syscall.GENERIC_READ, syscall.FILE_SHARE_READ, nil,
+		syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(handle), path), nil
 }
 
 // call calls an export and returns its int32 status. Every caller converts

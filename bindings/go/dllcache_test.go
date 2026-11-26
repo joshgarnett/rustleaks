@@ -88,8 +88,12 @@ func TestExtractLibraryWritesAPrivateReadOnlyFile(t *testing.T) {
 		t.Errorf("folder mode %v, want 0700", dir.Mode().Perm())
 	}
 	entries, _ := os.ReadDir(filepath.Dir(path))
-	if len(entries) != 1 {
-		t.Errorf("the folder holds %d entries, want only the library", len(entries))
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if len(names) != 2 || names[0] != ".lock" || names[1] != "rustleaks_ffi.dll" {
+		t.Errorf("the folder holds %q, want only the lock file and the library", names)
 	}
 }
 
@@ -178,15 +182,20 @@ func TestExtractLibraryRejectsBadMetadata(t *testing.T) {
 	}
 }
 
-func TestExtractLibraryWaitsForTheLock(t *testing.T) {
-	root := cacheRoot(t)
-	lib := fakeLibrary(t, []byte("locked library"))
+func lockPath(t *testing.T, root string, lib *embeddedDLL) string {
+	t.Helper()
 	dir := filepath.Join(root, "0.2.0-"+lib.dllSHA256[:16])
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lock := filepath.Join(dir, ".lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+	return filepath.Join(dir, ".lock")
+}
+
+func TestExtractLibraryWaitsForTheLock(t *testing.T) {
+	root := cacheRoot(t)
+	lib := fakeLibrary(t, []byte("locked library"))
+	unlock, err := lockFile(lockPath(t, root, lib), time.Second)
+	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
@@ -196,34 +205,44 @@ func TestExtractLibraryWaitsForTheLock(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
+		unlock()
 		t.Fatalf("extraction did not wait for the lock: %v", err)
 	case <-time.After(200 * time.Millisecond):
 	}
-	if err := os.Remove(lock); err != nil {
-		t.Fatal(err)
-	}
+	unlock()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestExtractLibraryRemovesAStaleLock(t *testing.T) {
+func TestLockFileTimesOut(t *testing.T) {
 	root := cacheRoot(t)
-	lib := fakeLibrary(t, []byte("stale lock library"))
-	dir := filepath.Join(root, "0.2.0-"+lib.dllSHA256[:16])
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	path := lockPath(t, root, fakeLibrary(t, []byte("x")))
+	unlock, err := lockFile(path, time.Second)
+	if err != nil {
 		t.Fatal(err)
 	}
-	lock := filepath.Join(dir, ".lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+	defer unlock()
+	if second, err := lockFile(path, 100*time.Millisecond); err == nil {
+		second()
+		t.Fatal("a held lock was taken twice")
+	}
+}
+
+// A lock file that a stopped process left behind is not held, because the
+// system releases the lock with the process, so it does not block.
+func TestExtractLibraryIgnoresALeftoverLockFile(t *testing.T) {
+	root := cacheRoot(t)
+	lib := fakeLibrary(t, []byte("leftover lock library"))
+	if err := os.WriteFile(lockPath(t, root, lib), []byte("left behind"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-2 * staleLock)
-	if err := os.Chtimes(lock, old, old); err != nil {
-		t.Fatal(err)
-	}
+	start := time.Now()
 	if _, err := extractLibrary(root, lib); err != nil {
 		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > lockWait/2 {
+		t.Fatalf("extraction waited %v for a lock no one held", elapsed)
 	}
 }
 

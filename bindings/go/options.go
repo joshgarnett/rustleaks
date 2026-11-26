@@ -81,12 +81,15 @@ const (
 	// BudgetWorkUnits limits detection steps. A work unit has no fixed
 	// time cost, and the count for one input can change between releases.
 	BudgetWorkUnits
-	// BudgetFindingRecords limits the number of findings. The default is
+	// BudgetFindingRecords limits finding records. The engine counts a
+	// record for each candidate finding before its final filters, so a
+	// scan can stop with fewer findings than the limit. The default is
 	// 100,000.
 	BudgetFindingRecords
 	// BudgetFindingPayloadBytes limits the bytes held by findings.
 	BudgetFindingPayloadBytes
-	// BudgetCollectedSpans limits the candidate matches collected.
+	// BudgetCollectedSpans limits the candidate matches collected. A
+	// finite limit turns off a faster search path for some rules.
 	BudgetCollectedSpans
 	// BudgetNormalizationBytes limits the bytes produced when text is
 	// normalized for matching.
@@ -159,7 +162,8 @@ func (s *scanSettings) err() error { return errors.Join(s.detection.errs...) }
 // format instead of the built-in rules. A configuration with
 // [extend] useDefault = true keeps the built-in rules and adds its own. A
 // configuration with [extend] path fails with a *ConfigError, because the
-// package reads no files. The bytes are copied.
+// package reads no files. An empty configuration builds an engine with no
+// rules, which finds nothing. The bytes are copied.
 func WithConfig(toml []byte) Option {
 	config := append([]byte(nil), toml...)
 	return engineOption(func(s *engineSettings) {

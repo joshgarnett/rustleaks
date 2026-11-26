@@ -53,10 +53,10 @@ func SetLibraryPath(path string) error {
 	library.mu.Lock()
 	defer library.mu.Unlock()
 	if library.loaded {
-		return &LibraryError{Op: "set library path", Message: "the library is already loaded"}
+		return &LibraryError{Kind: LibraryLoad, Op: "set library path", Message: "the library is already loaded"}
 	}
 	if !filepath.IsAbs(path) {
-		return &LibraryError{Op: "set library path", Path: path, Message: "the library path is not absolute"}
+		return &LibraryError{Kind: LibraryLoad, Op: "set library path", Path: path, Message: "the library path is not absolute"}
 	}
 	library.path = path
 	return nil
@@ -87,7 +87,7 @@ func checkLibraryIdentity() error {
 		return statusError("read the library ABI number", status)
 	}
 	if abi != abiVersion {
-		return &LibraryError{Op: "check library", Message: "the library has ABI number " +
+		return &LibraryError{Kind: LibraryVersion, Op: "check library", Message: "the library has ABI number " +
 			strconv.FormatUint(uint64(abi), 10) + ", but this package needs " + strconv.Itoa(abiVersion)}
 	}
 	var ptr unsafe.Pointer
@@ -96,7 +96,7 @@ func checkLibraryIdentity() error {
 		return statusError("read the library version", status)
 	}
 	if version := nativeString(nativeBytes{ptr: ptr, len: n}); version != packageVersion {
-		return &LibraryError{Op: "check library", Message: "the library is version " + version +
+		return &LibraryError{Kind: LibraryVersion, Op: "check library", Message: "the library is version " + version +
 			", but this package is version " + packageVersion}
 	}
 	return nil
@@ -104,21 +104,24 @@ func checkLibraryIdentity() error {
 
 // resolveLibraryPath returns the DLL path on Windows: the SetLibraryPath
 // value, then RUSTLEAKS_LIBRARY_PATH, then the embedded library, written to
-// the user cache folder. The caller holds library.mu.
-func resolveLibraryPath() (string, error) {
+// the user cache folder. For the embedded library it also returns the
+// expected SHA-256, which the loader checks again. The caller holds
+// library.mu.
+func resolveLibraryPath() (path, sha256Hex string, err error) {
 	path, lib, err := chooseLibrary(library.path, os.Getenv(LibraryPathEnv), embeddedLibrary)
 	if err != nil || lib == nil {
-		return path, err
+		return path, "", err
 	}
 	if lib.version != packageVersion {
-		return "", &LibraryError{Op: "load", Message: "the embedded library is version " + lib.version +
+		return "", "", &LibraryError{Kind: LibraryVersion, Op: "load", Message: "the embedded library is version " + lib.version +
 			", but this package is version " + packageVersion}
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
-		return "", &LibraryError{Op: "extract library", Message: "cannot find the user cache folder", Err: err}
+		return "", "", &LibraryError{Kind: LibraryLoad, Op: "extract library", Message: "cannot find the user cache folder", Err: err}
 	}
-	return extractLibrary(filepath.Join(cache, "rustleaks"), lib)
+	path, err = extractLibrary(filepath.Join(cache, "rustleaks"), lib)
+	return path, lib.dllSHA256, err
 }
 
 // chooseLibrary picks the library source in order: a path set with
@@ -130,14 +133,14 @@ func chooseLibrary(setPath, envPath string, embedded *embeddedDLL) (string, *emb
 		return setPath, nil, nil
 	case envPath != "":
 		if !filepath.IsAbs(envPath) {
-			return "", nil, &LibraryError{Op: "load", Path: envPath,
+			return "", nil, &LibraryError{Kind: LibraryLoad, Op: "load", Path: envPath,
 				Message: LibraryPathEnv + " is not an absolute path"}
 		}
 		return envPath, nil, nil
 	case embedded != nil:
 		return "", embedded, nil
 	default:
-		return "", nil, &LibraryError{Op: "load", Message: "no Rustleaks library: import the " +
+		return "", nil, &LibraryError{Kind: LibraryLoad, Op: "load", Message: "no Rustleaks library: import the " +
 			"platform module for this system, call SetLibraryPath, or set " + LibraryPathEnv}
 	}
 }
