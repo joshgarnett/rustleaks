@@ -258,6 +258,8 @@ def default_library_path() -> str:
     return os.path.join(package, "_native", library_file_name())
 
 
+_LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x00000800
+
 _lock = threading.Lock()
 _library: ctypes.CDLL | None = None
 _library_path: str | None = None
@@ -318,11 +320,15 @@ def load(path: str) -> ctypes.CDLL:
     if not os.path.isfile(path):
         raise LibraryError(f"the Rustleaks native library is missing: {path}")
     try:
-        # An absolute path, so the library itself is never searched for. On
-        # Windows its dependencies are searched in its own folder, the
-        # application folder, the system folders and folders added with
-        # os.add_dll_directory. The library needs only system DLLs.
-        loaded = ctypes.CDLL(path)
+        # An absolute path, so the library itself is never searched for. The
+        # Windows library needs only system DLLs, so its dependencies are
+        # searched in the system folder alone
+        # (LOAD_LIBRARY_SEARCH_SYSTEM32), not in the application folder or
+        # folders added with os.add_dll_directory.
+        if sys.platform == "win32":
+            loaded = ctypes.CDLL(path, winmode=_LOAD_LIBRARY_SEARCH_SYSTEM32)
+        else:
+            loaded = ctypes.CDLL(path)
     except OSError as error:
         raise LibraryError(f"cannot load the Rustleaks native library {path}: {error}") from error
     try:
