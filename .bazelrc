@@ -14,6 +14,13 @@ common --incompatible_default_to_explicit_init_py
 build --verbose_failures
 test --test_output=errors
 
+# The LLVM toolchain adds -no-pie to executable links on GNU and unconstrained
+# Linux platforms unless force_pic is set. Rust links Linux executables as PIE,
+# and as static PIE for musl, so these configs set force_pic to keep that.
+build:linux-x86_64-gnu --force_pic
+build:linux-aarch64-gnu --force_pic
+build:linux-x86_64-musl --force_pic
+build:linux-aarch64-musl --force_pic
 build:linux-x86_64-gnu --platforms=//platforms:linux_x86_64_gnu
 build:linux-aarch64-gnu --platforms=//platforms:linux_aarch64_gnu
 build:linux-x86_64-musl --platforms=//platforms:linux_x86_64_musl
