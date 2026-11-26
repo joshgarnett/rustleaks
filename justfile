@@ -20,6 +20,14 @@ build:
 test:
     bazelisk test //:test
 
+# Run the Go binding tests through Bazel.
+test-go:
+    bazelisk test //bindings/go:all_tests
+
+# Run the Python binding tests through Bazel.
+test-python:
+    bazelisk test //bindings/python:all_tests
+
 # Run every first-party test ten uncached times to expose nondeterminism.
 flake-check:
     bazelisk test --nocache_test_results --runs_per_test=10 //:test

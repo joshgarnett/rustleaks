@@ -1,0 +1,60 @@
+load("@rules_go//go:def.bzl", "go_test")
+load("//bazel:musl_c.bzl", "musl_c_test")
+
+_SRCS = [
+    "call_cgo.go",
+    "call_windows.go",
+    "spike_test.go",
+    "thread_linux_test.go",
+    "thread_other_test.go",
+]
+
+# Linux and macOS: cgo links the Rust static library. On musl the test builds
+# only for the musl C platform, through go_cgo_musl_test.
+go_test(
+    name = "go_cgo_test",
+    size = "small",
+    srcs = _SRCS,
+    args = ["-test.v"],
+    cdeps = ["//bindings/spike:spike_static"],
+    cgo = True,
+    importpath = "github.com/joshgarnett/rustleaks-go",
+    pure = "off",
+    target_compatible_with = select({
+        "//platforms:musl_c_libc": [],
+        "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+musl_c_test(
+    name = "go_cgo_musl_test",
+    size = "small",
+    args = ["-test.v"],
+    target_compatible_with = ["//platforms:musl"],
+    test = ":go_cgo_test",
+)
+
+# Windows: no cgo. The test loads the Rust MSVC DLL through syscall.
+go_test(
+    name = "go_windows_test",
+    size = "small",
+    srcs = _SRCS,
+    args = ["-test.v"],
+    data = ["//bindings/spike:spike_shared"],
+    env = {"RUSTLEAKS_SPIKE_LIBRARY": "$(rlocationpaths //bindings/spike:spike_shared)"},
+    importpath = "github.com/joshgarnett/rustleaks-go",
+    pure = "on",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":go_cgo_musl_test",
+        ":go_cgo_test",
+        ":go_windows_test",
+    ],
+    visibility = ["//visibility:public"],
+)

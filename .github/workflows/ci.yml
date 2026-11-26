@@ -211,6 +211,14 @@ jobs:
         env:
           EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
         run: test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+      # The Python binding tests on musl run a dynamic musl CPython, which
+      # needs the musl loader that the Ubuntu host lacks.
+      - name: Install the musl loader
+        if: endsWith(matrix.target, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl
+          ls -l /lib/ld-musl-*.so.1
       - name: Build and test the native target
         working-directory: rustleaks
         env:
@@ -221,6 +229,21 @@ jobs:
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" //:build
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --extra_execution_platforms="${PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --build_tests_only //:test
           bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --extra_execution_platforms="${PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --jobs=1 //:test
+      # Spike only: print the binding probe results. Remove before merging.
+      - name: Print binding spike results
+        if: always()
+        working-directory: rustleaks
+        env:
+          BAZEL_CONFIG: ${{ matrix.config }}
+          PLATFORM: ${{ matrix.platform }}
+          TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
+        run: |
+          bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --extra_execution_platforms="${PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --nocache_test_results --test_output=all //bindings/go:all_tests //bindings/python:all_tests 2>&1 | grep -E "SPIKE|PASSED|FAILED|SKIPPED|NO STATUS" || true
+          musl_c=""
+          case "${BAZEL_CONFIG}" in *-musl) musl_c="--platforms=//platforms:$(echo "${BAZEL_CONFIG}" | tr - _)_c" ;; esac
+          bazelisk build --config="release-${BAZEL_CONFIG}" ${musl_c} --host_platform="${PLATFORM}" //bindings/spike:spike_static //bindings/spike:spike_shared
+          ls -l bazel-bin/bindings/spike/
+          if [ "$(uname)" = Linux ]; then readelf -d bazel-bin/bindings/spike/librustleaks_spike.so | grep -E "NEEDED|RUNPATH"; else otool -L bazel-bin/bindings/spike/librustleaks_spike.dylib; fi
 
   native-windows:
     name: Native ${{ matrix.target }}
@@ -276,6 +299,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --extra_execution_platforms="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Spike only: print the binding probe results. Remove before merging.
+      - name: Print binding spike results
+        if: always()
+        shell: pwsh
+        working-directory: rustleaks
+        env:
+          BAZEL_CONFIG: ${{ matrix.config }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --extra_execution_platforms="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --nocache_test_results --test_output=all //bindings/go:all_tests //bindings/python:all_tests 2>&1 | Select-String -Pattern "SPIKE|PASSED|FAILED|SKIPPED|NO STATUS"
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks build --config="release-$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all //bindings/spike:spike_static //bindings/spike:spike_shared
+          Get-ChildItem bazel-bin/bindings/spike | Format-Table Name, Length
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
+          $dumpbin = & $vswhere -products * -find "VC/Tools/MSVC/**/dumpbin.exe" | Select-Object -First 1
+          if ($dumpbin) { & $dumpbin /dependents bazel-bin/bindings/spike/rustleaks_spike.dll }
+          exit 0
 
   required:
     name: Required

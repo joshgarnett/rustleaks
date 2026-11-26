@@ -730,6 +730,8 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "security",
         "security-deep",
         "test",
+        "test-go",
+        "test-python",
     ]
     .into_iter()
     .map(str::to_owned)
@@ -742,6 +744,8 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
     for (recipe, command) in [
         ("build", "bazelisk build //:build"),
         ("test", "bazelisk test //:test"),
+        ("test-go", "bazelisk test //bindings/go:all_tests"),
+        ("test-python", "bazelisk test //bindings/python:all_tests"),
         (
             "flake-check",
             "bazelisk test --nocache_test_results --runs_per_test=10 //:test",
