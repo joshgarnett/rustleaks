@@ -1,0 +1,4 @@
+# A pattern that does not compile.
+[[rules]]
+id = "synthetic-invalid"
+regex = '''MARK-(unclosed'''

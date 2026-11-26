@@ -481,7 +481,11 @@ fn validate_owned_unsafe_package(
     forbids_unsafe: bool,
 ) -> Result<(), String> {
     let source = &id["source"];
-    if (source.is_null() || source.get("Path").is_some()) && (used_unsafe != 0 || !forbids_unsafe) {
+    let owned = source.is_null() || source.get("Path").is_some();
+    if owned && id["name"].as_str() == Some(UNSAFE_CRATE) {
+        return Ok(());
+    }
+    if owned && (used_unsafe != 0 || !forbids_unsafe) {
         return Err(format!(
             "owned package {}@{} does not have a zero-unsafe forbid inventory",
             id["name"].as_str().unwrap_or("unknown"),
@@ -643,6 +647,59 @@ fn owned_crate_roots(root: &Path) -> Result<Vec<String>, String> {
     Ok(roots)
 }
 
+/// The only owned crate that may use unsafe Rust: the C ABI of the Go and
+/// Python bindings. See `docs/dev/dependencies.md`.
+const UNSAFE_CRATE: &str = "rustleaks-ffi";
+/// The crate root of [`UNSAFE_CRATE`]. Its other roots, such as fuzz
+/// targets, still forbid unsafe code.
+const UNSAFE_CRATE_ROOT: &str = "crates/rustleaks-ffi/src/lib.rs";
+/// Lints that [`UNSAFE_CRATE`] must deny, in its root and its manifest.
+const UNSAFE_CRATE_LINTS: [&str; 3] = [
+    "unsafe_op_in_unsafe_fn",
+    "clippy::undocumented_unsafe_blocks",
+    "clippy::missing_safety_doc",
+];
+
+/// Checks the root of the one crate that may use unsafe code: it denies the
+/// unsafe lints and refuses to build without unwinding, which its
+/// `catch_unwind` boundary needs.
+fn validate_unsafe_crate_root(source: &str) -> Result<(), String> {
+    let deny = source
+        .split("#![deny(")
+        .nth(1)
+        .and_then(|tail| tail.split(")]").next())
+        .ok_or_else(|| format!("{UNSAFE_CRATE_ROOT} has no #![deny(...)] lint list"))?;
+    for lint in UNSAFE_CRATE_LINTS {
+        if !deny.split(',').any(|entry| entry.trim() == lint) {
+            return Err(format!("{UNSAFE_CRATE_ROOT} does not deny {lint}"));
+        }
+    }
+    if !source.contains("#[cfg(not(panic = \"unwind\"))]\ncompile_error!(") {
+        return Err(format!(
+            "{UNSAFE_CRATE_ROOT} must fail to compile without panic=unwind"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks that the manifest of [`UNSAFE_CRATE`] denies the unsafe lints
+/// for Cargo builds.
+fn validate_unsafe_crate_manifest(manifest: &str) -> Result<(), String> {
+    if manifest.contains("[lints]\nworkspace = true") {
+        return Err(format!("{UNSAFE_CRATE} cannot inherit the workspace forbid"));
+    }
+    for line in [
+        "unsafe_op_in_unsafe_fn = \"deny\"",
+        "undocumented_unsafe_blocks = \"deny\"",
+        "missing_safety_doc = \"deny\"",
+    ] {
+        if !manifest.lines().any(|entry| entry == line) {
+            return Err(format!("{UNSAFE_CRATE} manifest lacks `{line}`"));
+        }
+    }
+    Ok(())
+}
+
 fn owned_safety_check() -> Result<(), String> {
     let root = workspace_root()?;
     let workspace = std::fs::read_to_string(root.join("Cargo.toml"))
@@ -651,9 +708,16 @@ fn owned_safety_check() -> Result<(), String> {
         return Err("workspace must forbid unsafe code for inheriting owned crates".into());
     }
     let crate_roots = owned_crate_roots(&root)?;
+    if !crate_roots.iter().any(|relative| relative == UNSAFE_CRATE_ROOT) {
+        return Err(format!("{UNSAFE_CRATE_ROOT} is missing"));
+    }
     for relative in &crate_roots {
         let source = std::fs::read_to_string(root.join(relative))
             .map_err(|error| format!("cannot read owned crate root {relative}: {error}"))?;
+        if relative == UNSAFE_CRATE_ROOT {
+            validate_unsafe_crate_root(&source)?;
+            continue;
+        }
         if !source
             .lines()
             .take(50)
@@ -664,7 +728,12 @@ fn owned_safety_check() -> Result<(), String> {
             ));
         }
     }
-    println!("workspace, fork, executable, example, and standalone fuzz roots forbid unsafe code");
+    let manifest = std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml"))
+        .map_err(|error| format!("cannot read the {UNSAFE_CRATE} manifest: {error}"))?;
+    validate_unsafe_crate_manifest(&manifest)?;
+    println!(
+        "every owned crate root forbids unsafe code except {UNSAFE_CRATE_ROOT}, which denies undocumented unsafe code"
+    );
     Ok(())
 }
 
@@ -706,6 +775,24 @@ fn miri_check() -> Result<(), String> {
             "rustleaks-report",
             "go_json::tests::float32_format_uses_go_json_cutoffs_and_sign",
         ),
+        // The C ABI: pointer checks, views read after a scan on a scan
+        // thread, and a panic that crosses that thread.
+        (
+            "rustleaks-ffi",
+            "tests::null_handles_and_out_pointers_are_invalid_arguments",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::findings_carry_every_field_and_the_given_path",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::views_have_null_pointers_for_empty_lists",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::a_panicking_scan_drops_its_scratch_and_returns_an_internal_error",
+        ),
     ];
     for (package, case) in cases {
         command_status_with_timeout(
@@ -729,7 +816,7 @@ fn miri_check() -> Result<(), String> {
             &format!("Miri case {package}::{case}"),
         )?;
     }
-    println!("selected core, source, and report state transitions passed pinned Miri");
+    println!("selected core, source, report and C ABI state transitions passed pinned Miri");
     Ok(())
 }
 
@@ -765,8 +852,8 @@ mod tests {
     use super::{
         COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, owned_crate_roots, parse_civil_day,
         reviewed_unsafe_packages, validate_compcol_exemption_scope, validate_dependency_boundaries,
-        validate_owned_unsafe_package, validate_supply_chain_exceptions,
-        validate_unsafe_package_set, validate_vet_exemption,
+        validate_owned_unsafe_package, validate_supply_chain_exceptions, validate_unsafe_crate_manifest,
+        validate_unsafe_crate_root, validate_unsafe_package_set, validate_vet_exemption,
     };
 
     #[test]
@@ -824,6 +911,38 @@ mod tests {
 
         id["source"] = serde_json::json!({ "Registry": { "name": "crates.io" } });
         assert!(validate_owned_unsafe_package(&id, 1, false).is_ok());
+    }
+
+    #[test]
+    fn only_the_ffi_crate_may_use_unsafe_code() {
+        let ffi = serde_json::json!({
+            "name": "rustleaks-ffi",
+            "version": "0.2.0",
+            "source": { "Path": "file:///workspace/crates/rustleaks-ffi" },
+        });
+        assert!(validate_owned_unsafe_package(&ffi, 12, false).is_ok());
+        let other = serde_json::json!({
+            "name": "rustleaks-ffi-extra",
+            "version": "0.2.0",
+            "source": { "Path": "file:///workspace/crates/rustleaks-ffi-extra" },
+        });
+        assert!(validate_owned_unsafe_package(&other, 1, false).is_err());
+
+        let root = crate::workspace_root().unwrap();
+        let source = std::fs::read_to_string(root.join("crates/rustleaks-ffi/src/lib.rs")).unwrap();
+        assert!(validate_unsafe_crate_root(&source).is_ok());
+        assert!(validate_unsafe_crate_root("#![forbid(unsafe_code)]\n").is_err());
+        let weaker = source.replace("    clippy::undocumented_unsafe_blocks,\n", "");
+        assert!(validate_unsafe_crate_root(&weaker).is_err());
+        let abort = source.replace("#[cfg(not(panic = \"unwind\"))]", "");
+        assert!(validate_unsafe_crate_root(&abort).is_err());
+
+        let manifest =
+            std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml")).unwrap();
+        assert!(validate_unsafe_crate_manifest(&manifest).is_ok());
+        assert!(validate_unsafe_crate_manifest("[lints]\nworkspace = true\n").is_err());
+        let weaker = manifest.replace("missing_safety_doc = \"deny\"", "missing_safety_doc = \"warn\"");
+        assert!(validate_unsafe_crate_manifest(&weaker).is_err());
     }
 
     #[test]

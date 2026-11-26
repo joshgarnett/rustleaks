@@ -6,7 +6,7 @@ use super::*;
 fn profiles_and_selection_are_explicit_and_bounded() {
     let default = Request::parse(&[]).unwrap();
     assert_eq!(default.profile, Profile::Deep);
-    assert_eq!(default.targets.len(), 8);
+    assert_eq!(default.targets.len(), 9);
     assert_eq!(default.deadline_seconds, 7200);
     let request = Request::parse(&[
         "--profile".into(),

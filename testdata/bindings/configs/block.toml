@@ -1,0 +1,6 @@
+# A rule whose match can span lines.
+[[rules]]
+id = "synthetic-block"
+description = "A synthetic block"
+regex = '''(?s)BEGIN.*?END'''
+keywords = ["begin"]

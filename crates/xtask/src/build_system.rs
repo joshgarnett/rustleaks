@@ -52,12 +52,13 @@ fn check_bazel_ignore(source: &str) -> Result<(), String> {
     let expected = [
         "target",
         "crates/rustleaks-core/fuzz/target",
+        "crates/rustleaks-ffi/fuzz/target",
         "crates/rustleaks-report/fuzz/target",
         "crates/rustleaks-sources/fuzz/target",
     ];
     if !source.lines().eq(expected) {
         return Err(
-            ".bazelignore must exclude exactly the workspace and three standalone fuzz Cargo target directories"
+            ".bazelignore must exclude exactly the workspace and four standalone fuzz Cargo target directories"
                 .into(),
         );
     }
@@ -985,7 +986,7 @@ mod tests {
 
     #[test]
     fn bazel_ignore_rejects_missing_outputs_and_source_exclusions() {
-        let expected = "target\ncrates/rustleaks-core/fuzz/target\ncrates/rustleaks-report/fuzz/target\ncrates/rustleaks-sources/fuzz/target\n";
+        let expected = "target\ncrates/rustleaks-core/fuzz/target\ncrates/rustleaks-ffi/fuzz/target\ncrates/rustleaks-report/fuzz/target\ncrates/rustleaks-sources/fuzz/target\n";
         assert!(check_bazel_ignore(expected).is_ok());
         let directories = expected.lines().collect::<Vec<_>>();
         for missing in 0..directories.len() {

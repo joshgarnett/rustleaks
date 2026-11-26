@@ -1,5 +1,5 @@
 {
-  "checksum": "420c1aab0652ec0c17acfa1f2ed56077cfee121f196b4e98e8ac25854c625a04",
+  "checksum": "0b4638a55bd35a87b64f0d6c483b44b7b8d52549f8f446fe08391d66c82cf19b",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -2213,6 +2213,48 @@
       ],
       "license_file": null
     },
+    "rustleaks-ffi 0.2.0": {
+      "name": "rustleaks-ffi",
+      "version": "0.2.0",
+      "package_url": null,
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "rustleaks_ffi",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "rustleaks_ffi",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps_dev": {
+          "common": [
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.2.0"
+      },
+      "license": "MIT",
+      "license_ids": [
+        "MIT"
+      ],
+      "license_file": null
+    },
     "rustleaks-rar-codec 0.9.3-rustleaks.1": {
       "name": "rustleaks-rar-codec",
       "version": "0.9.3-rustleaks.1",
@@ -4090,6 +4132,7 @@
     "rustleaks-cli 0.2.0": "crates/rustleaks-cli",
     "rustleaks-core 0.2.0": "crates/rustleaks-core",
     "rustleaks-eval 0.2.0": "crates/rustleaks-eval",
+    "rustleaks-ffi 0.2.0": "crates/rustleaks-ffi",
     "rustleaks-rar-codec 0.9.3-rustleaks.1": "crates/rustleaks-rar-codec",
     "rustleaks-report 0.2.0": "crates/rustleaks-report",
     "rustleaks-sevenz 0.20.2-rustleaks.1": "crates/rustleaks-sevenz",

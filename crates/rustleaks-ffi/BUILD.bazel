@@ -1,0 +1,86 @@
+load("@rules_rust//rust:defs.bzl", "rust_shared_library", "rust_static_library")
+load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files([
+    "Cargo.toml",
+    "include/rustleaks.h",
+])
+
+rustleaks_build_contract_files()
+
+_SRCS = glob(["src/**/*.rs"])
+
+_DEPS = ["//crates/rustleaks-core:rustleaks_core"]
+
+_RUSTC_ENV = {
+    "CARGO_MANIFEST_DIR": package_name(),
+    "CARGO_PKG_NAME": "rustleaks-ffi",
+    "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
+}
+
+# The Rust library form, for the Rust tests, Clippy, the docs and the
+# target compile check. The unit tests read the header.
+rustleaks_library(
+    name = "rustleaks_ffi",
+    compile_data = ["include/rustleaks.h"],
+    crate_name = "rustleaks_ffi",
+    deps = _DEPS,
+    edition = "2024",
+)
+
+# The C header, for the Go and Python builds.
+filegroup(
+    name = "header",
+    srcs = ["include/rustleaks.h"],
+    visibility = ["//visibility:public"],
+)
+
+# Static library (`librustleaks_ffi.a` or `rustleaks_ffi.lib`) for cgo.
+rust_static_library(
+    name = "rustleaks_ffi_static",
+    crate_name = "rustleaks_ffi",
+    crate_root = "src/lib.rs",
+    deps = _DEPS,
+    edition = "2024",
+    rustc_env = _RUSTC_ENV,
+    srcs = _SRCS,
+    visibility = ["//visibility:public"],
+)
+
+# Shared library (`librustleaks_ffi.so`, `.dylib` or `rustleaks_ffi.dll`) for
+# ctypes and for Go on Windows.
+rust_shared_library(
+    name = "rustleaks_ffi_shared",
+    crate_name = "rustleaks_ffi",
+    crate_root = "src/lib.rs",
+    deps = _DEPS,
+    edition = "2024",
+    rustc_env = _RUSTC_ENV,
+    srcs = _SRCS,
+    visibility = ["//visibility:public"],
+)
+
+rustleaks_integration_test(
+    name = "contract_test",
+    src = "tests/contract.rs",
+    data = ["//testdata:bindings"],
+    deps = [":rustleaks_ffi"],
+)
+
+rustleaks_integration_test(
+    name = "exports_fuzz_test",
+    src = "tests/exports_fuzz.rs",
+    data = glob(["fuzz/seeds/exports/*"]),
+    deps = [":rustleaks_ffi"],
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":contract_test",
+        ":exports_fuzz_test",
+        ":rustleaks_ffi_doc_test",
+        ":rustleaks_ffi_unit_test",
+    ],
+    visibility = ["//visibility:public"],
+)

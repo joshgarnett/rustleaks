@@ -1,0 +1,3 @@
+# The bindings read no files, so loading this configuration fails.
+[extend]
+path = "marker.toml"

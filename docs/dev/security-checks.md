@@ -10,7 +10,7 @@ repository root with the committed lockfiles unchanged.
 | Command | What it does |
 | --- | --- |
 | `just security` | Runs cargo-deny, a fresh RustSec audit, locked cargo-vet policy, exact dependency graphs, the first-party unsafe policy, the cargo-geiger inventory, pinned Miri and the `panic=abort` archive check |
-| `just fuzz-build` | Builds all eight cargo-fuzz targets from their locked manifests |
+| `just fuzz-build` | Builds all nine cargo-fuzz targets from their locked manifests |
 | `just fuzz-smoke` | Runs short AddressSanitizer campaigns on copies of the reviewed seeds |
 | `just fuzz` | Runs private local fuzz campaigns and corpus operations (Unix) |
 | `just security-deep` | Runs the optional deep security profile (Unix) |
@@ -45,6 +45,7 @@ All other dependency decisions are bound to `Cargo.lock`.
 | `rustleaks-sources/fuzz` | `reader_schedule` | Chunking, short reads, errors, cancellation and scheduling |
 | `rustleaks-sources/fuzz` | `git_patch` | Patch parsing, quoting, renames, copies, binary changes, submodules, numbers and line endings |
 | `rustleaks-report/fuzz` | `template` | Template parsing, evaluation, escaping, output limits and repeat rendering |
+| `rustleaks-ffi/fuzz` | `exports` | The C ABI: pointer and length pairs, option keys and values, rule IDs, scan arguments, statuses and views |
 
 The default cargo-fuzz Clang setup provides AddressSanitizer. Campaigns run
 on Apple Silicon macOS locally and on `ubuntu-24.04` x86-64 in CI. Other
@@ -313,6 +314,7 @@ and 256 entries.
 | Archives | `archive`, larger members, source stress driver | Member use, nesting, entry and total limits, structured issues |
 | Readers and Git | `reader_schedule`, `git_patch`, larger schedules and patches | Bounded reads, parser results, byte accounting |
 | Templates | `template`, report stress driver | Source, action and output limits, complete or structured failure |
+| C ABI | `exports`, seed replay test | Known status for every call, ranges inside the input, views copied before free |
 
 ## Dependency review
 

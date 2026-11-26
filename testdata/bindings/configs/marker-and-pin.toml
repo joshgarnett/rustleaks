@@ -1,0 +1,14 @@
+# Two synthetic rules. synthetic-pin has no capture group, so its secret is
+# the whole match.
+[[rules]]
+id = "synthetic-marker"
+description = "A synthetic marker"
+regex = '''MARK-([A-Z]{4})'''
+secretGroup = 1
+keywords = ["mark-"]
+
+[[rules]]
+id = "synthetic-pin"
+description = "A synthetic PIN"
+regex = '''PIN-[0-9]{4}'''
+keywords = ["pin-"]

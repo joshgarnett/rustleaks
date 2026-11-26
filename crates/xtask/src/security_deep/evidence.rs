@@ -17,6 +17,7 @@ const LOCKS: &[&str] = &[
     "crates/rustleaks-core/fuzz/Cargo.lock",
     "crates/rustleaks-sources/fuzz/Cargo.lock",
     "crates/rustleaks-report/fuzz/Cargo.lock",
+    "crates/rustleaks-ffi/fuzz/Cargo.lock",
 ];
 const POLICY: &[&str] = &[
     "deny.toml",

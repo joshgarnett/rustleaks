@@ -9,6 +9,7 @@ contributors. For how to run and add tests, see
 | Path | Contents | Read by |
 | --- | --- | --- |
 | `allowlist-corpus/` | Allowlist methods and allowlist decisions during detection | `//crates/rustleaks-core:allowlist_test` |
+| `bindings/` | Contract cases for the C ABI and the Go and Python bindings, written by hand | `//crates/rustleaks-ffi:contract_test` and the binding tests |
 | `cli-corpus/` | Recorded CLI cases | `//crates/xtask:cli_regression_test` |
 | `composite-corpus/` | Required (composite) rules, generic rule suppression and redaction | `//crates/rustleaks-core:composite_corpus_test`, `//crates/rustleaks-core:rustleaks_core_unit_test` |
 | `config-corpus/` | Configuration loading, extension and validation errors | `//crates/rustleaks-core:config_test` |

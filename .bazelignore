@@ -1,4 +1,5 @@
 target
 crates/rustleaks-core/fuzz/target
+crates/rustleaks-ffi/fuzz/target
 crates/rustleaks-report/fuzz/target
 crates/rustleaks-sources/fuzz/target

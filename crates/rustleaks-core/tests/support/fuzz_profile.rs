@@ -13,6 +13,7 @@ pub const TARGETS: &[&str] = &[
     "reader_schedule",
     "git_patch",
     "template",
+    "exports",
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,7 +73,7 @@ impl Profile {
     pub fn input_limit(self, target: &str) -> Option<usize> {
         let smoke = match target {
             "go_regex" | "reader_schedule" => 4 * 1024,
-            "config" | "fragment_scan" | "archive" | "template" => 8 * 1024,
+            "config" | "fragment_scan" | "archive" | "template" | "exports" => 8 * 1024,
             "session" | "git_patch" => 16 * 1024,
             _ => return None,
         };
@@ -256,6 +257,15 @@ pub fn deep_seed(target: &str) -> Option<Vec<u8>> {
             let mut bytes = vec![0, 0, 64];
             bytes.resize(3 + 16 * 1024, b'.');
             bytes.extend_from_slice(b"synthetic-finding");
+            bytes
+        }
+        "exports" => {
+            // Configuration length, option count, path length, overrides
+            // and the scan argument fields are all zero, so the engine has
+            // no rules and the rest of the input is scanned.
+            let mut bytes = vec![0; 23];
+            bytes.resize(16 * 1024, b'.');
+            bytes.extend_from_slice(b"\nsynthetic-input\n");
             bytes
         }
         _ => return None,

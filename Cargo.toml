@@ -7,6 +7,7 @@ members = [
     "crates/rustleaks-sources",
     "crates/rustleaks-report",
     "crates/rustleaks-cli",
+    "crates/rustleaks-ffi",
     "crates/rustleaks-eval",
     "crates/xtask",
 ]

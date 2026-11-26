@@ -222,6 +222,7 @@ fn validate_publish_policy(metadata: &str) -> Result<(), String> {
                 | "rustleaks-sources"
                 | "rustleaks-report"
                 | "rustleaks-cli"
+                | "rustleaks-ffi"
                 | "rustleaks-eval"
                 | "xtask"
         );
