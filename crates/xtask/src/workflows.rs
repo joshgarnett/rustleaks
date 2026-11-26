@@ -63,6 +63,10 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read publication workflow: {error}"))?;
     let packages = fs::read_to_string(directory.join("packages.yml"))
         .map_err(|error| format!("cannot read package manager workflow: {error}"))?;
+    let publish_go = fs::read_to_string(directory.join("publish-go.yml"))
+        .map_err(|error| format!("cannot read Go publication workflow: {error}"))?;
+    let publish_python = fs::read_to_string(directory.join("publish-python.yml"))
+        .map_err(|error| format!("cannot read Python publication workflow: {error}"))?;
     let scorecard = fs::read_to_string(directory.join("scorecard.yml"))
         .map_err(|error| format!("cannot read Scorecard workflow: {error}"))?;
     let codeql = fs::read_to_string(directory.join("codeql.yml"))
@@ -75,6 +79,8 @@ pub(crate) fn check(root: &Path) -> Result<(), String> {
     validate_github_release_workflow(&release)?;
     validate_publish_workflow(&publish)?;
     validate_packages_workflow(&packages)?;
+    validate_binding_publish_workflow(&publish_go, BindingPublish::Go)?;
+    validate_binding_publish_workflow(&publish_python, BindingPublish::Python)?;
     validate_scorecard_workflow(&scorecard)?;
     validate_codeql_workflow(&codeql)?;
     validate_secret_scanning_config(&secret_scanning)?;
@@ -703,6 +709,153 @@ fn published_native_bindings(platform: &str) -> &'static [&'static str] {
     }
 }
 
+/// The two binding publication workflows.
+#[derive(Clone, Copy)]
+enum BindingPublish {
+    Go,
+    Python,
+}
+
+/// Checks a binding publication workflow: dispatch only, the candidate and
+/// dry run checks, the checksum and attestation checks of the dry run's
+/// packages artifact, one protected job, and the one credential that job
+/// may use.
+fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Result<(), String> {
+    let context = match kind {
+        BindingPublish::Go => "Go publication workflow",
+        BindingPublish::Python => "Python publication workflow",
+    };
+    let on = source
+        .split_once("\non:\n")
+        .and_then(|(_, rest)| rest.split_once("\npermissions:\n"))
+        .map(|(on, _)| on)
+        .ok_or_else(|| format!("{context} has no on: block before its permissions"))?;
+    if on
+        .lines()
+        .filter(|line| !line.starts_with(' ') && !line.is_empty())
+        .count()
+        != 0
+        || !on.starts_with("  workflow_dispatch:\n")
+        || on.lines().any(|line| {
+            line.starts_with("  ") && !line.starts_with("   ") && line != "  workflow_dispatch:"
+        })
+    {
+        return Err(format!("{context} must run only by workflow_dispatch"));
+    }
+    for forbidden in [
+        "pull_request",
+        "push:",
+        "schedule:",
+        "workflow_call:",
+        "--force",
+        "push -f",
+        "+refs/",
+        "cargo ",
+        "bazelisk",
+        "uses: ./.github/actions/setup",
+    ] {
+        if source.contains(forbidden) {
+            return Err(format!("{context} contains forbidden text {forbidden:?}"));
+        }
+    }
+    for required in [
+        "      candidate:\n",
+        "      dry_run_id:\n",
+        "      version:\n",
+        "        required: true\n",
+        "permissions:\n  contents: read\n",
+        "test \"${TRIGGER_COMMIT}\" = \"${CANDIDATE}\"",
+        "test \"${TRIGGER_REF}\" = refs/heads/main",
+        "test \"$(git rev-parse origin/main)\" = \"${CANDIDATE}\"",
+        "test \"$(jq -r '.path' <<<\"${run_json}\")\" = \".github/workflows/release-dry-run.yml\"",
+        "test \"$(jq -r '.head_sha' <<<\"${run_json}\")\" = \"${CANDIDATE}\"",
+        "test \"$(jq -r '.conclusion' <<<\"${run_json}\")\" = \"success\"",
+        "--name \"rustleaks-bindings-${EXPECTED_VERSION}-packages\"",
+        "sha256sum --check --strict SHA256SUMS",
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/bindings.yml\"",
+        "--source-digest \"${CANDIDATE}\"",
+    ] {
+        if !source.contains(required) {
+            return Err(format!("{context} omits required boundary {required:?}"));
+        }
+    }
+    if source.matches("        required: true\n").count() != 3 {
+        return Err(format!("{context} must require exactly its three inputs"));
+    }
+    let (required, counts): (&[&str], &[(&str, usize)]) = match kind {
+        BindingPublish::Go => (
+            &[
+                "actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0",
+                PACKAGING_SECRET,
+                "repositories: |\n            rustleaks-go\n",
+                "permission-contents: write",
+                "git -C \"${checkout}\" push --atomic origin \"${refs[@]}\"",
+                "test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${EXPECTED_HEAD}\"",
+                "already has a tag for v${EXPECTED_VERSION}",
+                "https://sum.golang.org/lookup/",
+            ],
+            &[
+                ("environment: release", 1),
+                ("sha256sum --check --strict SHA256SUMS", 3),
+                ("gh attestation verify", 3),
+                ("actions/create-github-app-token@", 1),
+                (" push ", 1),
+                ("id-token:", 0),
+                ("attestations:", 0),
+            ],
+        ),
+        BindingPublish::Python => (
+            &[
+                "id-token: write",
+                "audience=pypi",
+                "https://pypi.org/_/oidc/mint-token",
+                "python3 -I release/python/upload.py upload",
+                "https://upload.pypi.org/legacy/",
+                "'.info.requires_python'",
+                "'.info.license_expression'",
+            ],
+            &[
+                ("environment: release", 1),
+                ("sha256sum --check --strict SHA256SUMS", 1),
+                ("gh attestation verify", 1),
+                ("id-token: write", 1),
+                ("upload.py upload", 1),
+            ],
+        ),
+    };
+    for needle in required {
+        if !source.contains(needle) {
+            return Err(format!("{context} omits required boundary {needle:?}"));
+        }
+    }
+    for (needle, expected) in counts {
+        let actual = source.matches(needle).count();
+        if actual != *expected {
+            return Err(format!(
+                "{context} contains {actual} instances of {needle:?}; expected {expected}"
+            ));
+        }
+    }
+    // Only the protected job holds the credential: the App key, or the
+    // identity token that PyPI exchanges.
+    let protected = workflow_job(source, "publish")?;
+    if !protected.contains("environment: release") {
+        return Err(format!(
+            "{context} must run its publish job in the release environment"
+        ));
+    }
+    let credential = match kind {
+        BindingPublish::Go => PACKAGING_SECRET,
+        BindingPublish::Python => "id-token: write",
+    };
+    if !protected.contains(credential) {
+        return Err(format!(
+            "{context} must keep {credential:?} in its protected job"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_scorecard_workflow(source: &str) -> Result<(), String> {
     if source.contains("${{ secrets.") {
         return Err("Scorecard workflow must not use repository secrets".into());
@@ -786,8 +939,8 @@ fn validate_release_workflow(source: &str) -> Result<(), String> {
             "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2",
             4,
         ),
-        ("id-token: write", 4),
-        ("attestations: write", 4),
+        ("id-token: write", 5),
+        ("attestations: write", 5),
         ("gh attestation verify", 4),
         ("steps.attest.outputs.bundle-path", 4),
         ("release-artifact compare-bundles", 3),
@@ -1777,6 +1930,43 @@ mod tests {
         );
         validate_codeql_workflow(&source).unwrap();
         assert!(validate_codeql_workflow(&source.replace(CODEQL_ACTION_PIN, PIN)).is_err());
+    }
+
+    #[test]
+    fn binding_publish_workflows_keep_their_boundaries() {
+        use super::{BindingPublish, validate_binding_publish_workflow};
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (file, kind) in [
+            ("publish-go.yml", BindingPublish::Go),
+            ("publish-python.yml", BindingPublish::Python),
+        ] {
+            let source = std::fs::read_to_string(root.join(".github/workflows").join(file))
+                .expect("read binding publication workflow");
+            validate_binding_publish_workflow(&source, kind).unwrap();
+            for (before, after) in [
+                ("    environment: release\n", ""),
+                (
+                    "on:\n  workflow_dispatch:\n",
+                    "on:\n  push:\n  workflow_dispatch:\n",
+                ),
+                (
+                    "test \"${TRIGGER_REF}\" = refs/heads/main",
+                    "test -n \"${TRIGGER_REF}\"",
+                ),
+                ("sha256sum --check --strict SHA256SUMS", "true"),
+                ("        required: true\n", "        required: false\n"),
+            ] {
+                assert!(source.contains(before), "{file} omits {before:?}");
+                let changed = source.replacen(before, after, 1);
+                assert!(
+                    validate_binding_publish_workflow(&changed, kind).is_err(),
+                    "{file} accepted {after:?} in place of {before:?}"
+                );
+            }
+        }
+        let go = std::fs::read_to_string(root.join(".github/workflows/publish-go.yml")).unwrap();
+        let forced = go.replacen("push --atomic", "push --force --atomic", 1);
+        assert!(validate_binding_publish_workflow(&forced, BindingPublish::Go).is_err());
     }
 
     #[test]

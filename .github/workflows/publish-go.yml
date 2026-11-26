@@ -82,6 +82,13 @@ jobs:
           gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
             --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
           (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
           grep -q "^github.com/joshgarnett/rustleaks-go v${EXPECTED_VERSION} h1:" "${packages}/proxy/hashes.txt"
       - name: Require that rustleaks-go has no tag for the version
         id: remote
@@ -113,6 +120,7 @@ jobs:
     steps:
       - name: Download and check the dry run layout
         env:
+          CANDIDATE: ${{ inputs.candidate }}
           DRY_RUN_ID: ${{ inputs.dry_run_id }}
           EXPECTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
@@ -122,6 +130,13 @@ jobs:
           gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
             --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
           (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
       - name: Prepare the release commit on the checked head
         env:
           EXPECTED_HEAD: ${{ needs.check.outputs.head }}
@@ -185,6 +200,7 @@ jobs:
     steps:
       - name: Compare the checksum database with the dry run hashes
         env:
+          CANDIDATE: ${{ inputs.candidate }}
           DRY_RUN_ID: ${{ inputs.dry_run_id }}
           EXPECTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
@@ -193,6 +209,12 @@ jobs:
           packages="${RUNNER_TEMP}/packages"
           gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
             --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
+          (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
           modules=(github.com/joshgarnett/rustleaks-go)
           for platform in linux-amd64 linux-arm64 linux-amd64-musl linux-arm64-musl darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
             modules+=("github.com/joshgarnett/rustleaks-go/lib/${platform}")

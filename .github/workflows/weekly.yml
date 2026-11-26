@@ -87,9 +87,12 @@ jobs:
   bindings:
     name: Binding packages
     needs: binding-version
+    # The layout job attests the checksums of the binding packages.
     permissions:
       actions: read
+      attestations: write
       contents: read
+      id-token: write
     uses: ./.github/workflows/bindings.yml
     with:
       candidate: ${{ github.sha }}

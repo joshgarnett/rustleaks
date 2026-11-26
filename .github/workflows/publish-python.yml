@@ -81,6 +81,13 @@ jobs:
           gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
             --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
           (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
           for tag in manylinux_2_28_x86_64 manylinux_2_28_aarch64 musllinux_1_2_x86_64 musllinux_1_2_aarch64 \
             macosx_14_0_x86_64 macosx_14_0_arm64 win_amd64 win_arm64; do
             test -f "${packages}/wheels/rustleaks-${EXPECTED_VERSION}-py3-none-${tag}.whl"
@@ -101,19 +108,13 @@ jobs:
             | curl --fail --silent --show-error --request POST --data @- https://pypi.org/_/oidc/mint-token \
             | jq -r '.token')"
           echo "::add-mask::${token}"
+          # PyPI builds the release metadata from the upload form, and keeps
+          # the first upload's for good. upload.py sends every core metadata
+          # field of the wheel and refuses a wheel whose metadata differs
+          # from pyproject.toml.
           for wheel in "${RUNNER_TEMP}"/packages/wheels/*.whl; do
-            digest="$(sha256sum "${wheel}" | awk '{print $1}')"
-            curl --fail --silent --show-error --user "__token__:${token}" \
-              --form-string ':action=file_upload' \
-              --form-string 'protocol_version=1' \
-              --form-string 'metadata_version=2.1' \
-              --form-string 'name=rustleaks' \
-              --form-string "version=${EXPECTED_VERSION}" \
-              --form-string 'filetype=bdist_wheel' \
-              --form-string 'pyversion=py3' \
-              --form-string "sha256_digest=${digest}" \
-              --form "content=@${wheel}" \
-              https://upload.pypi.org/legacy/
+            PYPI_TOKEN="${token}" python3 -I release/python/upload.py upload \
+              "${wheel}" bindings/python/pyproject.toml https://upload.pypi.org/legacy/
             printf 'Uploaded %s\n' "$(basename "${wheel}")" >> "${GITHUB_STEP_SUMMARY}"
           done
       - name: Verify the published files
@@ -132,6 +133,12 @@ jobs:
             sleep 3
           done
           test "$(jq -r '.info.version' "${metadata}")" = "${EXPECTED_VERSION}"
+          expected() {
+            python3 -I -c 'import sys, tomllib; print(tomllib.load(open("bindings/python/pyproject.toml", "rb"))["project"][sys.argv[1]])' "$1"
+          }
+          test "$(jq -r '.info.requires_python' "${metadata}")" = "$(expected requires-python)"
+          test "$(jq -r '.info.summary' "${metadata}")" = "$(expected description)"
+          test "$(jq -r '.info.license_expression' "${metadata}")" = "$(expected license)"
           for wheel in "${RUNNER_TEMP}"/packages/wheels/*.whl; do
             name="$(basename "${wheel}")"
             digest="$(sha256sum "${wheel}" | awk '{print $1}')"
