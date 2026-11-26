@@ -3,88 +3,245 @@
 package rustleaks
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"unsafe"
 )
+
+// On Windows the package loads the Rust DLL at run time with the syscall
+// package, so it builds without cgo or a C compiler.
+
+// libraryPathUsed reports whether SetLibraryPath and RUSTLEAKS_LIBRARY_PATH
+// choose the library on this system.
+const libraryPathUsed = true
 
 const (
 	loadLibrarySearchDLLLoadDir = 0x00000100
 	loadLibrarySearchSystem32   = 0x00000800
 )
 
-var procs struct {
-	add, sum, stack uintptr
+// nativeProcs holds the address of every export the package calls.
+type nativeProcs struct {
+	abiVersion, version                                        uintptr
+	optionsNew, optionsSetConfig, optionsAddRuleID             uintptr
+	optionsSetU64, optionsSetBool, optionsFree                 uintptr
+	engineNew, engineFree, engineWorkers, engineMaxInputBytes  uintptr
+	engineRuleCount, engineRule                                uintptr
+	cancelNew, cancelSet, cancelFree                           uintptr
+	scan, resultStatus, resultCount, resultFinding, resultFree uintptr
+	errorKind, errorMessage, errorFree                         uintptr
 }
 
-// loadLibrary loads the DLL at an absolute path. Only the DLL's own folder
-// and System32 are searched for its dependencies.
-func loadLibrary(path string) error {
+func (p *nativeProcs) symbols() map[string]*uintptr {
+	return map[string]*uintptr{
+		"rustleaks_abi_version":            &p.abiVersion,
+		"rustleaks_version":                &p.version,
+		"rustleaks_options_new":            &p.optionsNew,
+		"rustleaks_options_set_config":     &p.optionsSetConfig,
+		"rustleaks_options_add_rule_id":    &p.optionsAddRuleID,
+		"rustleaks_options_set_u64":        &p.optionsSetU64,
+		"rustleaks_options_set_bool":       &p.optionsSetBool,
+		"rustleaks_options_free":           &p.optionsFree,
+		"rustleaks_engine_new":             &p.engineNew,
+		"rustleaks_engine_free":            &p.engineFree,
+		"rustleaks_engine_workers":         &p.engineWorkers,
+		"rustleaks_engine_max_input_bytes": &p.engineMaxInputBytes,
+		"rustleaks_engine_rule_count":      &p.engineRuleCount,
+		"rustleaks_engine_rule":            &p.engineRule,
+		"rustleaks_cancel_new":             &p.cancelNew,
+		"rustleaks_cancel_set":             &p.cancelSet,
+		"rustleaks_cancel_free":            &p.cancelFree,
+		"rustleaks_scan":                   &p.scan,
+		"rustleaks_result_status":          &p.resultStatus,
+		"rustleaks_result_count":           &p.resultCount,
+		"rustleaks_result_finding":         &p.resultFinding,
+		"rustleaks_result_free":            &p.resultFree,
+		"rustleaks_error_kind":             &p.errorKind,
+		"rustleaks_error_message":          &p.errorMessage,
+		"rustleaks_error_free":             &p.errorFree,
+	}
+}
+
+// procs is written once by loadNativeLibrary, under the library lock and
+// before any other call, and only read after that.
+var procs nativeProcs
+
+// loadNativeLibrary finds the DLL and loads it. The DLL is never unloaded.
+func loadNativeLibrary() error {
+	path, err := resolveLibraryPath()
+	if err != nil {
+		return err
+	}
+	_, loaded, err := loadDLL(path)
+	if err != nil {
+		return err
+	}
+	procs = loaded
+	return nil
+}
+
+// loadDLL loads the DLL at an absolute path. Only the DLL's own folder and
+// System32 are searched for the DLLs it needs.
+func loadDLL(path string) (syscall.Handle, nativeProcs, error) {
+	var loaded nativeProcs
+	fail := func(message string, err error) (syscall.Handle, nativeProcs, error) {
+		return 0, loaded, &LibraryError{Op: "load", Path: path, Message: message, Err: err}
+	}
 	if !filepath.IsAbs(path) {
-		return fmt.Errorf("library path %q is not absolute", path)
+		return fail("the library path is not absolute", nil)
 	}
 	kernel32, err := syscall.LoadDLL("kernel32.dll")
 	if err != nil {
-		return err
+		return fail("cannot load kernel32.dll", err)
 	}
 	loadLibraryEx, err := kernel32.FindProc("LoadLibraryExW")
 	if err != nil {
-		return err
+		return fail("cannot find LoadLibraryExW", err)
 	}
 	name, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
-		return err
+		return fail("the library path holds a NUL character", err)
 	}
-	handle, _, callErr := loadLibraryEx.Call(
+	result, _, callErr := loadLibraryEx.Call(
 		uintptr(unsafe.Pointer(name)),
 		0,
 		loadLibrarySearchDLLLoadDir|loadLibrarySearchSystem32,
 	)
-	if handle == 0 {
-		return fmt.Errorf("load %s: %w", path, callErr)
+	if result == 0 {
+		return fail("cannot load the library", callErr)
 	}
-	for symbol, target := range map[string]*uintptr{
-		"spike_add":   &procs.add,
-		"spike_sum":   &procs.sum,
-		"spike_stack": &procs.stack,
-	} {
-		address, err := syscall.GetProcAddress(syscall.Handle(handle), symbol)
+	handle := syscall.Handle(result)
+	for symbol, target := range loaded.symbols() {
+		address, err := syscall.GetProcAddress(handle, symbol)
 		if err != nil {
-			return fmt.Errorf("find %s: %w", symbol, err)
+			_ = syscall.FreeLibrary(handle)
+			return fail(fmt.Sprintf("the library has no %s export", symbol), err)
 		}
 		*target = address
 	}
-	return nil
+	return handle, loaded, nil
 }
 
-func spikeAdd(a, b uint64) uint64 {
-	mustBeLoaded()
-	result, _, _ := syscall.SyscallN(procs.add, uintptr(a), uintptr(b))
-	return uint64(result)
+// call calls an export and returns its int32 status. Every caller converts
+// its pointer arguments to uintptr in the argument list of call, and
+// go:uintptrescapes keeps what they point to alive and in place until call
+// returns, as for syscall.SyscallN.
+//
+//go:uintptrescapes
+func call(proc uintptr, args ...uintptr) int32 {
+	result, _, _ := syscall.SyscallN(proc, args...)
+	return int32(uint32(result))
 }
 
-func spikeSum(data []byte) uint64 {
-	mustBeLoaded()
-	if len(data) == 0 {
-		result, _, _ := syscall.SyscallN(procs.sum, 0, 0)
-		return uint64(result)
-	}
-	result, _, _ := syscall.SyscallN(procs.sum, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)))
-	runtime.KeepAlive(data)
-	return uint64(result)
+func callABIVersion(out *uint32) int32 {
+	return call(procs.abiVersion, uintptr(unsafe.Pointer(out)))
 }
 
-func spikeStack(kib uint32) uint64 {
-	mustBeLoaded()
-	result, _, _ := syscall.SyscallN(procs.stack, uintptr(kib))
-	return uint64(result)
+func callVersion(ptr *unsafe.Pointer, n *uintptr) int32 {
+	return call(procs.version, uintptr(unsafe.Pointer(ptr)), uintptr(unsafe.Pointer(n)))
 }
 
-func mustBeLoaded() {
-	if procs.add == 0 || procs.sum == 0 || procs.stack == 0 {
-		panic(errors.New("rustleaks: library is not loaded"))
-	}
+func callOptionsNew(abi uint32, out *unsafe.Pointer) int32 {
+	return call(procs.optionsNew, uintptr(abi), uintptr(unsafe.Pointer(out)))
+}
+
+func callOptionsSetConfig(options, config unsafe.Pointer, n uintptr) int32 {
+	return call(procs.optionsSetConfig, uintptr(options), uintptr(config), n)
+}
+
+func callOptionsAddRuleID(options, id unsafe.Pointer, n uintptr) int32 {
+	return call(procs.optionsAddRuleID, uintptr(options), uintptr(id), n)
+}
+
+func callOptionsSetU64(options unsafe.Pointer, key uint32, value uint64) int32 {
+	return call(procs.optionsSetU64, uintptr(options), uintptr(key), uintptr(value))
+}
+
+func callOptionsSetBool(options unsafe.Pointer, key uint32, value uint8) int32 {
+	return call(procs.optionsSetBool, uintptr(options), uintptr(key), uintptr(value))
+}
+
+func callOptionsFree(options unsafe.Pointer) int32 {
+	return call(procs.optionsFree, uintptr(options))
+}
+
+func callEngineNew(options unsafe.Pointer, out, failure *unsafe.Pointer) int32 {
+	return call(procs.engineNew, uintptr(options), uintptr(unsafe.Pointer(out)), uintptr(unsafe.Pointer(failure)))
+}
+
+func callEngineFree(engine unsafe.Pointer) int32 {
+	return call(procs.engineFree, uintptr(engine))
+}
+
+func callEngineWorkers(engine unsafe.Pointer, out *uintptr) int32 {
+	return call(procs.engineWorkers, uintptr(engine), uintptr(unsafe.Pointer(out)))
+}
+
+func callEngineMaxInputBytes(engine unsafe.Pointer, out *uint64) int32 {
+	return call(procs.engineMaxInputBytes, uintptr(engine), uintptr(unsafe.Pointer(out)))
+}
+
+func callEngineRuleCount(engine unsafe.Pointer, out *uintptr) int32 {
+	return call(procs.engineRuleCount, uintptr(engine), uintptr(unsafe.Pointer(out)))
+}
+
+func callEngineRule(engine unsafe.Pointer, index uintptr, out *ruleView) int32 {
+	return call(procs.engineRule, uintptr(engine), index, uintptr(unsafe.Pointer(out)))
+}
+
+func callCancelNew(out *unsafe.Pointer) int32 {
+	return call(procs.cancelNew, uintptr(unsafe.Pointer(out)))
+}
+
+func callCancelSet(cancel unsafe.Pointer) int32 {
+	return call(procs.cancelSet, uintptr(cancel))
+}
+
+func callCancelFree(cancel unsafe.Pointer) int32 {
+	return call(procs.cancelFree, uintptr(cancel))
+}
+
+// callScan passes Go memory to the DLL: the input bytes and args. call
+// keeps every pointer argument alive and in place until it returns, and the
+// caller keeps the path alive. The library copies both before it returns.
+func callScan(engine, input unsafe.Pointer, n uintptr, args *scanArgs, cancel unsafe.Pointer, out, failure *unsafe.Pointer) int32 {
+	return call(
+		procs.scan,
+		uintptr(engine),
+		uintptr(input),
+		n,
+		uintptr(unsafe.Pointer(args)),
+		uintptr(cancel),
+		uintptr(unsafe.Pointer(out)),
+		uintptr(unsafe.Pointer(failure)),
+	)
+}
+
+func callResultStatus(result unsafe.Pointer, out *statusView) int32 {
+	return call(procs.resultStatus, uintptr(result), uintptr(unsafe.Pointer(out)))
+}
+
+func callResultCount(result unsafe.Pointer, out *uintptr) int32 {
+	return call(procs.resultCount, uintptr(result), uintptr(unsafe.Pointer(out)))
+}
+
+func callResultFinding(result unsafe.Pointer, index uintptr, out *findingView) int32 {
+	return call(procs.resultFinding, uintptr(result), index, uintptr(unsafe.Pointer(out)))
+}
+
+func callResultFree(result unsafe.Pointer) int32 {
+	return call(procs.resultFree, uintptr(result))
+}
+
+func callErrorKind(failure unsafe.Pointer, out *int32) int32 {
+	return call(procs.errorKind, uintptr(failure), uintptr(unsafe.Pointer(out)))
+}
+
+func callErrorMessage(failure unsafe.Pointer, ptr *unsafe.Pointer, n *uintptr) int32 {
+	return call(procs.errorMessage, uintptr(failure), uintptr(unsafe.Pointer(ptr)), uintptr(unsafe.Pointer(n)))
+}
+
+func callErrorFree(failure unsafe.Pointer) int32 {
+	return call(procs.errorFree, uintptr(failure))
 }

@@ -67,8 +67,8 @@ issues.
 
 Install Bazelisk and Just 1.53.0, as in CI. The Rust toolchain comes from
 `rust-toolchain.toml`, and `.bazelversion` pins Bazel. `just doctor` reports
-the selected versions and changes nothing. No Go installation or Gitleaks
-checkout is needed. Security checks need the exact tools listed in
+the selected versions and changes nothing. Bazel downloads the Go SDK for
+the Go package tests, so no Go installation or Gitleaks checkout is needed. Security checks need the exact tools listed in
 [Security checks](docs/dev/security-checks.md).
 
 Just is the public command interface, and Bazel is the build authority. Run
@@ -188,8 +188,9 @@ Choose the narrowest type:
 | `chore` | Narrow maintenance that fits no other type. |
 
 When useful, choose the narrowest stable lowercase scope: `core`, `sources`,
-`report`, `cli`, `ffi` (the C ABI crate), `eval`, `xtask`, `bazel`, `deps`,
-`docs`, `ci`, `security` (the security policy and checks) or `release`.
+`report`, `cli`, `ffi` (the C ABI crate), `go` (the Go package),
+`python` (the Python package), `eval`, `xtask`, `bazel`, `deps`, `docs`,
+`ci`, `security` (the security policy and checks) or `release`.
 Omit the scope for a change that crosses many areas. Never use a goal,
 agent, review round, ticket or temporary task as a scope.
 

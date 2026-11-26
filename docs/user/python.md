@@ -174,6 +174,7 @@ with rustleaks.Engine(config=config) as engine:
 
 The input limit applies to the encoded bytes. `scan_text` rejects a `str`
 with more characters than the limit before it encodes it.
+`engine.max_input_bytes` gives the engine's limit.
 
 `path` is the path that path rules and path allowlists test, as a `str` or
 an `os.PathLike` value. Findings report it unchanged. An empty path is the

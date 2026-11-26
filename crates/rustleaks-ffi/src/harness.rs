@@ -15,13 +15,13 @@ use crate::abi::{
 use crate::cancel::CancelHandle;
 use crate::exports::{
     rustleaks_abi_version, rustleaks_cancel_free, rustleaks_cancel_new, rustleaks_cancel_set,
-    rustleaks_engine_free, rustleaks_engine_new, rustleaks_engine_rule,
-    rustleaks_engine_rule_count, rustleaks_engine_workers, rustleaks_error_free,
-    rustleaks_error_kind, rustleaks_error_message, rustleaks_options_add_rule_id,
-    rustleaks_options_free, rustleaks_options_new, rustleaks_options_set_bool,
-    rustleaks_options_set_config, rustleaks_options_set_u64, rustleaks_result_count,
-    rustleaks_result_finding, rustleaks_result_free, rustleaks_result_status, rustleaks_scan,
-    rustleaks_version,
+    rustleaks_engine_free, rustleaks_engine_max_input_bytes, rustleaks_engine_new,
+    rustleaks_engine_rule, rustleaks_engine_rule_count, rustleaks_engine_workers,
+    rustleaks_error_free, rustleaks_error_kind, rustleaks_error_message,
+    rustleaks_options_add_rule_id, rustleaks_options_free, rustleaks_options_new,
+    rustleaks_options_set_bool, rustleaks_options_set_config, rustleaks_options_set_u64,
+    rustleaks_result_count, rustleaks_result_finding, rustleaks_result_free,
+    rustleaks_result_status, rustleaks_scan, rustleaks_version,
 };
 use crate::handles::{self, EngineHandle, FfiError, ResultHandle};
 
@@ -388,6 +388,16 @@ impl Engine {
         workers
     }
 
+    /// The inclusive input limit.
+    #[must_use]
+    pub fn max_input_bytes(&self) -> u64 {
+        let mut limit = 0;
+        // SAFETY: the handle is live and the out pointer is a valid local.
+        let status = unsafe { rustleaks_engine_max_input_bytes(self.0, &raw mut limit) };
+        assert_eq!(status, STATUS_OK);
+        limit
+    }
+
     /// The rules, in report order.
     #[must_use]
     pub fn rules(&self) -> Vec<Rule> {
@@ -706,6 +716,7 @@ pub fn exercise(data: &[u8]) {
     };
     drop(options);
     let _ = engine.rules();
+    assert_eq!(engine.max_input_bytes(), max_input);
     let path_len = usize::from(reader.byte() % 64);
     let path = reader.take(path_len);
     let mut args = scan_args(path);

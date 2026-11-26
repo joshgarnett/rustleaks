@@ -119,6 +119,17 @@ class OptionsTest(unittest.TestCase):
             rustleaks.Engine(config=MARKER_CONFIG, rules=["no-such-rule"])
         self.assertEqual(caught.exception.kind, "rule_selection")
 
+    def test_input_limit_comes_from_the_library(self) -> None:
+        with rustleaks.Engine(config=MARKER_CONFIG) as engine:
+            self.assertEqual(engine.max_input_bytes, 10_000_000)
+            self.assertEqual(len(engine.scan(bytes(10_000_000))), 0)
+            with self.assertRaises(rustleaks.InputTooLargeError) as caught:
+                engine.scan(bytes(10_000_001))
+            self.assertEqual(caught.exception.limit, 10_000_000)
+        for limit in (0, 64, rustleaks.UNLIMITED):
+            with rustleaks.Engine(config=MARKER_CONFIG, max_input_bytes=limit) as engine:
+                self.assertEqual(engine.max_input_bytes, limit)
+
     def test_workers_option(self) -> None:
         with rustleaks.Engine(config=MARKER_CONFIG, workers=3) as engine:
             self.assertEqual(engine.workers, 3)

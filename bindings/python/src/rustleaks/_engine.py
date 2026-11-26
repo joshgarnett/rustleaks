@@ -9,7 +9,7 @@ import threading
 import time
 import weakref
 from collections.abc import Iterable
-from ctypes import POINTER, byref, c_int32, c_size_t, c_void_p
+from ctypes import POINTER, byref, c_int32, c_size_t, c_uint64, c_void_p
 from typing import Literal, NoReturn
 
 from . import _native
@@ -277,9 +277,6 @@ class Engine:
         )
         library = _native.library()
         self._library = library
-        self._max_input_bytes = (
-            _native.DEFAULT_MAX_INPUT_BYTES if max_input_bytes is None else max_input_bytes
-        )
         options = POINTER(_native.Options)()
         error = POINTER(_native.Error)()
         try:
@@ -299,6 +296,14 @@ class Engine:
         count = c_size_t()
         _check(library.rustleaks_engine_workers(self._handle, byref(count)), "engine_workers")
         self._workers = count.value
+        # The package checks sizes with the engine's own limit before each
+        # native call, and the library checks again.
+        limit = c_uint64()
+        _check(
+            library.rustleaks_engine_max_input_bytes(self._handle, byref(limit)),
+            "engine_max_input_bytes",
+        )
+        self._max_input_bytes = limit.value
         self._rules = _read_rules(library, self._handle)
         self._lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
@@ -311,6 +316,12 @@ class Engine:
     def workers(self) -> int:
         """How many scans the engine runs at once."""
         return self._workers
+
+    @property
+    def max_input_bytes(self) -> int:
+        """The longest input in bytes, or ``UNLIMITED`` when there is no
+        limit."""
+        return self._max_input_bytes
 
     @property
     def closed(self) -> bool:

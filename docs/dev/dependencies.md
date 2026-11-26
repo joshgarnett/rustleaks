@@ -36,7 +36,8 @@ that enforce this policy are in [Security checks](security-checks.md).
 - Any change to a dependency version, feature, target or publication boundary
   reopens the review on this page.
 
-There is no Go module or other executable oracle in the dependency graph.
+The Go package in `bindings/go/` uses only the Go standard library. No Go
+program, Gitleaks or other executable oracle is in the dependency graph.
 
 ## Core dependencies
 

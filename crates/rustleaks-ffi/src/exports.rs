@@ -377,6 +377,27 @@ pub unsafe extern "C" fn rustleaks_engine_workers(
     })
 }
 
+/// Writes the engine's inclusive input limit in bytes, or `UNLIMITED`.
+/// Wrappers check an input against it before they copy or pass it.
+///
+/// # Safety
+///
+/// `engine` must be null or a live engine handle. `out` must be null or
+/// valid for one write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rustleaks_engine_max_input_bytes(
+    engine: *const EngineHandle,
+    out: *mut u64,
+) -> i32 {
+    guarded(|| {
+        // SAFETY: forwarded from the caller.
+        unsafe {
+            let engine = borrow(engine)?;
+            write_out(out, engine.max_input_bytes())
+        }
+    })
+}
+
 /// Writes the number of rules that can report findings.
 ///
 /// # Safety
