@@ -54,7 +54,11 @@ jobs:
           install-just: "false"
       - name: Produce the combined Bazel coverage report
         working-directory: rustleaks
-        run: bazelisk coverage //:test --combined_report=lcov
+        # The Python binding tests load the Rust library, whose profiles use
+        # Rust's LLVM profile format. Bazel merges a py_test's profiles with
+        # the LLVM toolchain's llvm-profdata, which reads only its own newer
+        # format, so those tests run in CI but not under coverage.
+        run: bazelisk coverage --combined_report=lcov -- //:test -//bindings/python:all
       - name: Retain the coverage report for review
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
