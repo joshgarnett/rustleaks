@@ -522,6 +522,11 @@ class Engine:
                         termination="cancelled",
                         usage=Usage(),
                     )
+                # A free worker is taken even when the timeout has passed;
+                # the scan then gets a deadline of 0.
+                if len(self._active) < self._workers:
+                    self._active[key] = None
+                    return
                 wait = _POLL_SECONDS
                 if deadline is not None:
                     remaining = deadline - time.monotonic()
@@ -532,9 +537,6 @@ class Engine:
                             usage=Usage(),
                         )
                     wait = min(wait, remaining)
-                if len(self._active) < self._workers:
-                    self._active[key] = None
-                    return
                 # A short wait lets the scan see its token and timeout.
                 self._idle.wait(wait)
 

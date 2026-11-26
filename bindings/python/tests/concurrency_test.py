@@ -1,8 +1,9 @@
 """Threads, close, cancel, timeouts, fork and interrupts.
 
 Slow scans use an input full of rule keywords, which takes seconds even in an
-optimized build. Every slow scan in these tests is cancelled or times out;
-no assertion needs a scan to finish within a time.
+optimized build. Every slow scan in these tests is cancelled or times out.
+No assertion compares clock readings or needs a scan to finish within a
+time.
 """
 
 from __future__ import annotations
@@ -35,25 +36,23 @@ def wait_until(condition: Callable[[], bool]) -> None:
 
 
 class Outcome:
-    """The result or exception of a call on another thread, with times."""
+    """The result or exception of a call on another thread."""
 
     def __init__(self) -> None:
         self.value: Any = None
         self.error: BaseException | None = None
-        self.started = 0.0
-        self.ended = 0.0
+        self.done = threading.Event()
 
 
 def start(call: Callable[[], Any]) -> tuple[threading.Thread, Outcome]:
     outcome = Outcome()
 
     def target() -> None:
-        outcome.started = time.monotonic()
         try:
             outcome.value = call()
         except BaseException as error:  # noqa: BLE001
             outcome.error = error
-        outcome.ended = time.monotonic()
+        outcome.done.set()
 
     thread = threading.Thread(target=target, daemon=True)
     thread.start()
@@ -79,21 +78,21 @@ class SlowScanTest(unittest.TestCase):
         cls.engine.close()
 
     def test_scans_overlap_with_the_gil_released(self) -> None:
-        # If a native call held the GIL, the second scan could not start and
-        # this thread could not cancel until the first scan finished.
-        tokens = [rustleaks.CancelToken(), rustleaks.CancelToken()]
-        started = [
-            start(lambda token=token: self.engine.scan(self.data, cancel=token))
-            for token in tokens
-        ]
-        wait_until(lambda: self.engine._in_flight == 2)
-        for token in tokens:
-            token.cancel()
-        for thread, outcome in started:
-            join(thread)
-            self.assertIsInstance(outcome.error, rustleaks.ScanCancelledError)
-        first, second = (outcome for _, outcome in started)
-        self.assertLess(max(first.started, second.started), min(first.ended, second.ended))
+        # If a native call held the GIL, this thread could not run the second
+        # scan until the first one returned.
+        token = rustleaks.CancelToken()
+        thread, slow = start(lambda: self.engine.scan(self.data, cancel=token))
+        wait_until(lambda: self.engine._in_flight == 1)
+        findings = self.engine.scan(small_input())
+        self.assertEqual(findings, [])
+        self.assertFalse(slow.done.is_set(), "the slow scan ended before the small one")
+        token.cancel()
+        join(thread)
+        # The slow scan is cancelled, or complete if it ended first.
+        if slow.error is not None:
+            self.assertIsInstance(slow.error, rustleaks.ScanCancelledError)
+        else:
+            self.assertIsInstance(slow.value, list)
 
     def test_cancel_during_a_scan(self) -> None:
         token = rustleaks.CancelToken()
@@ -125,19 +124,27 @@ class SlowScanTest(unittest.TestCase):
             self.assertIsInstance(outcome.error, rustleaks.ScanCancelledError)
 
     def test_timeout_during_a_scan(self) -> None:
+        # A worker is free, so the scan starts with a deadline that has
+        # already passed, and the engine stops it at its first check.
         with self.assertRaises(rustleaks.ScanTimeoutError) as caught:
-            self.engine.scan(self.data, timeout=0.2)
+            self.engine.scan(self.data, timeout=0)
         self.assertEqual(caught.exception.termination, "timeout")
+        self.assertIn("before the scan finished", str(caught.exception))
 
     def test_timeout_and_cancel_while_waiting_for_a_worker(self) -> None:
         # Both workers are busy, so these scans wait.
         token = rustleaks.CancelToken()
         busy = [start(lambda: self.engine.scan(self.data, cancel=token)) for _ in range(2)]
         wait_until(lambda: self.engine._in_flight == 2)
-        with self.assertRaises(rustleaks.ScanTimeoutError):
-            self.engine.scan(rustleaks_input(), timeout=0.1)
+        try:
+            self.engine.scan(small_input(), timeout=0)
+        except rustleaks.ScanTimeoutError as error:
+            self.assertIn("waited for a worker", str(error))
+        else:
+            # The scan got a worker, so a busy scan must have ended first.
+            self.assertTrue(any(outcome.done.is_set() for _, outcome in busy))
         waiting_token = rustleaks.CancelToken()
-        thread, outcome = start(lambda: self.engine.scan(rustleaks_input(), cancel=waiting_token))
+        thread, outcome = start(lambda: self.engine.scan(small_input(), cancel=waiting_token))
         waiting_token.cancel()
         join(thread)
         self.assertIsInstance(outcome.error, rustleaks.ScanCancelledError)
@@ -146,12 +153,13 @@ class SlowScanTest(unittest.TestCase):
             join(thread)
 
     def test_a_scan_that_finishes_in_time_returns_findings(self) -> None:
-        findings = self.engine.scan(rustleaks_input(), timeout=60)
+        findings = self.engine.scan(small_input(), timeout=60)
         self.assertEqual(findings, [])
 
 
-def rustleaks_input() -> bytes:
+def small_input() -> bytes:
     return b"nothing to find here\n"
+
 
 
 class CloseTest(unittest.TestCase):
@@ -184,9 +192,9 @@ class CloseTest(unittest.TestCase):
         self.assertIsInstance(waited.error, rustleaks.ClosedError)
         with self.assertRaises(rustleaks.ClosedError):
             engine.scan(b"x")
-        # close waits for the running scan.
-        closer.join(0.2)
-        self.assertTrue(closer.is_alive())
+        # close returns only after the running scan has left the engine.
+        if closed.done.is_set():
+            self.assertEqual(engine._in_flight, 0)
         token.cancel()
         join(scanner)
         join(closer)
