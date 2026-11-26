@@ -39,12 +39,19 @@ has:
     out; a binding reports that as its incomplete scan error.
   - `findings`: the findings in order. Empty when `error` is not `null`.
 
-A finding has `rule_id`; `secret`, `match` and `line` as lists of segments
-(`line` is optional); and `start_line`, `end_line`, `start_column` and
-`end_column`. It also has `secret_range`, the `[start, end]` byte offsets of
+A finding has `rule_id`; `secret`, `match` and `line` as lists of segments;
+and `start_line`, `end_line`, `start_column` and `end_column`. `line` is
+optional, and a runner checks it only when it is present. It also has `secret_range`, the `[start, end]` byte offsets of
 the secret in the input. It is `null` when the secret has no exact range, as
 for decoded text and path-only rules. Every finding of a case has the case's
 `path`.
+
+The cases `unterminated-last-line` and `match-over-the-last-line-end` leave
+out `line`. When a match starts on, or runs to, a last line that has no line
+break, core currently reports the text from the start of the input as the
+line, not the last line alone. The intended `line` is the last line, so
+these cases do not pin the current value. Add `line` back when core reports
+the last line.
 
 A segment is a JSON string, which stands for its UTF-8 bytes, or an object
 `{"hex": "..."}` with an even number of hex digits, which stands for those
