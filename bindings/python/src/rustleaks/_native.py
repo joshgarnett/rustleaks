@@ -52,11 +52,6 @@ ERROR_PANIC = 8
 
 UNLIMITED = 2**64 - 1
 
-# The header documents this default of RUSTLEAKS_OPTION_MAX_INPUT_BYTES. The
-# package uses it only to reject an input that is too large before the native
-# call; the library checks again. A test checks that the two agree.
-DEFAULT_MAX_INPUT_BYTES = 10_000_000
-
 OPTION_DECODE_DEPTH = 1
 OPTION_BASE64_MODE = 2
 OPTION_REDACTION_PERCENT = 3
@@ -223,6 +218,7 @@ FUNCTIONS: dict[str, tuple[Any, ...]] = {
     ),
     "rustleaks_engine_free": (POINTER(Engine),),
     "rustleaks_engine_workers": (POINTER(Engine), POINTER(c_size_t)),
+    "rustleaks_engine_max_input_bytes": (POINTER(Engine), POINTER(c_uint64)),
     "rustleaks_engine_rule_count": (POINTER(Engine), POINTER(c_size_t)),
     "rustleaks_engine_rule": (POINTER(Engine), c_size_t, POINTER(RuleView)),
     "rustleaks_cancel_new": (POINTER(POINTER(Cancel)),),
