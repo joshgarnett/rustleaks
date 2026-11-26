@@ -2071,9 +2071,7 @@ pub(crate) fn path_is_archive(path: &Path) -> bool {
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
+    memchr::memmem::find(haystack, needle).is_some()
 }
 
 fn final_extension(name: &[u8], extension: &[u8]) -> bool {

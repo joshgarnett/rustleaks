@@ -987,12 +987,7 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() {
-        return Some(0);
-    }
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+    memchr::memmem::find(haystack, needle)
 }
 
 fn try_reserve(output: &mut Vec<u8>, additional: usize, context: &str) -> Result<(), ScmError> {

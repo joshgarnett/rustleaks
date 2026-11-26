@@ -1,5 +1,5 @@
 {
-  "checksum": "925ccbc9ba0af58d9f07b90457f8a54e8818309974c1c12633810ffd631eebb0",
+  "checksum": "420c1aab0652ec0c17acfa1f2ed56077cfee121f196b4e98e8ac25854c625a04",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -1439,6 +1439,7 @@
         "crate_features": {
           "common": [
             "alloc",
+            "default",
             "std"
           ],
           "selects": {}
@@ -2121,6 +2122,10 @@
               "target": "base64"
             },
             {
+              "id": "memchr 2.8.3",
+              "target": "memchr"
+            },
+            {
               "id": "regex-automata 0.4.19",
               "target": "regex_automata"
             },
@@ -2400,6 +2405,10 @@
             {
               "id": "lzma-rust2 0.25.0",
               "target": "lzma_rust2"
+            },
+            {
+              "id": "memchr 2.8.3",
+              "target": "memchr"
             },
             {
               "id": "miniz_oxide 0.9.1",
@@ -4175,6 +4184,7 @@
     "flate2 1.1.11",
     "lz4_flex 0.14.2",
     "lzma-rust2 0.25.0",
+    "memchr 2.8.3",
     "miniz_oxide 0.9.1",
     "rawzip 0.5.2",
     "regex-automata 0.4.19",

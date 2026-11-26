@@ -131,9 +131,7 @@ fn video(data: &[u8]) -> bool {
 
 fn contains_ebml_type(data: &[u8], kind: &[u8]) -> bool {
     let limit = data.len().min(4096);
-    data[..limit]
-        .windows(kind.len())
-        .position(|window| window == kind)
+    memchr::memmem::find(&data[..limit], kind)
         .is_some_and(|index| index >= 3 && data[index - 3..index - 1] == [0x42, 0x82])
 }
 

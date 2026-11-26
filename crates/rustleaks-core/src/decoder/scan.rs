@@ -349,15 +349,14 @@ fn percent_at(data: &[u8], start: usize) -> Option<usize> {
         return None;
     }
     let first_end = start + 3;
-    let line_end = data[first_end..]
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(data.len(), |offset| first_end + offset);
+    let line_end =
+        memchr::memchr(b'\n', &data[first_end..]).map_or(data.len(), |offset| first_end + offset);
     // `.*` is greedy, so the optional group takes the last `%hh` that ends
     // before the newline.
-    let last = (first_end..line_end.saturating_sub(2))
-        .rev()
-        .find(|&index| data[index] == b'%' && hex_pair_at(data, index + 1));
+    let limit = line_end.saturating_sub(2).max(first_end);
+    let last = memchr::memrchr_iter(b'%', &data[first_end..limit])
+        .map(|offset| first_end + offset)
+        .find(|&index| hex_pair_at(data, index + 1));
     Some(last.map_or(first_end, |index| index + 3))
 }
 
@@ -491,11 +490,9 @@ mod tests {
                 }
                 // Fewer than 16 run bytes remain from any start in this run,
                 // so only `U+hhhh` can start a match here.
-                if let Some(offset) = run.iter().position(|byte| *byte == b'U') {
+                if let Some(offset) = memchr::memchr(b'U', run) {
                     let mut start = index + offset;
-                    while let Some(offset) =
-                        data[start..run_end].iter().position(|byte| *byte == b'U')
-                    {
+                    while let Some(offset) = memchr::memchr(b'U', &data[start..run_end]) {
                         start += offset;
                         if let Some(end) = plus_unicode_at(data, start) {
                             return Some((start, end));

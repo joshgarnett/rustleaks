@@ -88,9 +88,7 @@ pub(crate) fn extract(
     let mut prefix = vec![0_u8; MAX_SFX_BYTES.saturating_add(RAR_PREFIX.len() + 2)];
     let read = read_full(input, &mut prefix)?;
     prefix.truncate(read);
-    let signature = prefix
-        .windows(RAR_PREFIX.len())
-        .position(|window| window == RAR_PREFIX)
+    let signature = memchr::memmem::find(&prefix, RAR_PREFIX)
         .ok_or_else(|| corrupt("RAR signature not found"))?;
     let version_offset = signature
         .checked_add(RAR_PREFIX.len())

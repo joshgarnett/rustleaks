@@ -158,41 +158,17 @@ pub(super) fn split_inclusive_lines<'a>(
     let mut start = 0;
     for (block_index, block) in input.chunks(LINE_POLL_BYTES).enumerate() {
         poll_patch_cancellation(cancellation)?;
-        let mut offset = block_index * LINE_POLL_BYTES;
-        let mut words = block.chunks_exact(8);
-        for word in &mut words {
-            let word = u64::from_le_bytes(word.try_into().expect("eight-byte chunk"));
-            let mut newlines = newline_bytes(word);
-            while newlines != 0 {
-                let index = offset + newlines.trailing_zeros() as usize / 8;
-                push_line(&mut lines, &input[start..=index], max_lines)?;
-                start = index + 1;
-                newlines &= newlines - 1;
-            }
-            offset += 8;
-        }
-        for (index, byte) in words.remainder().iter().enumerate() {
-            if *byte == b'\n' {
-                let index = offset + index;
-                push_line(&mut lines, &input[start..=index], max_lines)?;
-                start = index + 1;
-            }
+        let offset = block_index * LINE_POLL_BYTES;
+        for index in memchr::memchr_iter(b'\n', block) {
+            let index = offset + index;
+            push_line(&mut lines, &input[start..=index], max_lines)?;
+            start = index + 1;
         }
     }
     if start < input.len() {
         push_line(&mut lines, &input[start..], max_lines)?;
     }
     Ok(lines)
-}
-
-/// Returns a word with the high bit set in each byte of `word` that is a
-/// line feed, and no other bit set.
-const fn newline_bytes(word: u64) -> u64 {
-    const LOW: u64 = 0x7f7f_7f7f_7f7f_7f7f;
-    let zeroed = word ^ 0x0a0a_0a0a_0a0a_0a0a;
-    // Each byte of the sum has its high bit set unless that byte of `zeroed`
-    // is zero. No sum carries into the next byte.
-    !(((zeroed & LOW) + LOW) | zeroed | LOW)
 }
 
 fn push_line<'a>(lines: &mut Vec<&'a [u8]>, line: &'a [u8], max_lines: usize) -> PatchResult<()> {
@@ -210,7 +186,7 @@ fn push_line<'a>(lines: &mut Vec<&'a [u8]>, line: &'a [u8], max_lines: usize) ->
 
 /// Counts the lines that [`split_inclusive_lines`] returns for `input`.
 fn inclusive_line_count(input: &[u8]) -> usize {
-    let newlines = input.iter().filter(|byte| **byte == b'\n').count();
+    let newlines = memchr::memchr_iter(b'\n', input).count();
     newlines + usize::from(input.last().is_some_and(|byte| *byte != b'\n'))
 }
 

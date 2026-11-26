@@ -308,6 +308,7 @@ version = "0.2.0"
 dependencies = [
  "aho-corasick",
  "base64",
+ "memchr",
  "regex-automata",
  "regex-syntax",
  "semver",
@@ -363,6 +364,7 @@ dependencies = [
  "compcol",
  "lz4_flex",
  "lzma-rust2",
+ "memchr",
  "miniz_oxide",
  "rawzip",
  "rustix",

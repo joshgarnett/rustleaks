@@ -1241,30 +1241,8 @@ impl<'de> Deserialize<'de> for ValidatedRemoteInfo {
 }
 
 fn normalize_go_json(bytes: &[u8]) -> String {
-    let utf8 = go_utf8_lossy(bytes);
+    let utf8 = crate::go_unicode::utf8_lossy(bytes);
     replace_lone_surrogates(&utf8)
-}
-
-fn go_utf8_lossy(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len());
-    let mut remaining = bytes;
-    while !remaining.is_empty() {
-        match std::str::from_utf8(remaining) {
-            Ok(valid) => {
-                output.push_str(valid);
-                break;
-            }
-            Err(error) => {
-                let valid = error.valid_up_to();
-                if let Ok(prefix) = std::str::from_utf8(&remaining[..valid]) {
-                    output.push_str(prefix);
-                }
-                output.push('\u{fffd}');
-                remaining = &remaining[valid + 1..];
-            }
-        }
-    }
-    output
 }
 
 fn replace_lone_surrogates(input: &str) -> String {

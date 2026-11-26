@@ -214,39 +214,8 @@ impl Serialize for ByteText {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&go_utf8_lossy(self.as_bytes()))
+        serializer.serialize_str(&crate::go_unicode::utf8_lossy(self.as_bytes()))
     }
-}
-
-fn go_utf8_lossy(bytes: &[u8]) -> Cow<'_, str> {
-    if let Ok(valid) = std::str::from_utf8(bytes) {
-        return Cow::Borrowed(valid);
-    }
-
-    // Go's JSON encoder replaces each invalid UTF-8 byte with U+FFFD. Process
-    // one offending byte at a time instead of inheriting another library's
-    // grouping of malformed sequences.
-    let mut output = String::with_capacity(bytes.len());
-    let mut remaining = bytes;
-    while !remaining.is_empty() {
-        match std::str::from_utf8(remaining) {
-            Ok(valid) => {
-                output.push_str(valid);
-                break;
-            }
-            Err(error) => {
-                let valid_up_to = error.valid_up_to();
-                // SAFETY is unnecessary: `valid_up_to` is guaranteed to end a
-                // valid UTF-8 prefix, so use the checked conversion.
-                if let Ok(valid) = std::str::from_utf8(&remaining[..valid_up_to]) {
-                    output.push_str(valid);
-                }
-                output.push('\u{fffd}');
-                remaining = &remaining[valid_up_to + 1..];
-            }
-        }
-    }
-    Cow::Owned(output)
 }
 
 struct ByteTextSlice<'a>(&'a [ByteText]);
@@ -1377,11 +1346,7 @@ fn remove_detected_secrets(value: &mut ByteText, secrets: &[Vec<u8>]) {
     }
     if value.len() == original_len
         || !secrets.iter().any(|secret| {
-            !secret.is_empty()
-                && value
-                    .as_bytes()
-                    .windows(secret.len())
-                    .any(|window| window == secret)
+            !secret.is_empty() && memchr::memmem::find(value.as_bytes(), secret).is_some()
         })
     {
         return;
@@ -1452,11 +1417,9 @@ fn replace_all_bytes(haystack: &[u8], needle: &[u8], replacement: &[u8]) -> Byte
     }
     let mut output = Vec::with_capacity(haystack.len());
     let mut offset = 0;
-    while let Some(relative) = haystack[offset..]
-        .windows(needle.len())
-        .position(|window| window == needle)
-    {
-        let start = offset + relative;
+    // `find_iter` returns occurrences left to right without overlap, as
+    // replacement needs.
+    for start in memchr::memmem::find_iter(haystack, needle) {
         output.extend_from_slice(&haystack[offset..start]);
         output.extend_from_slice(replacement);
         offset = start + needle.len();

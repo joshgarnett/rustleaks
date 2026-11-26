@@ -895,13 +895,7 @@ const fn is_boundary_whitespace(byte: u8) -> bool {
 }
 
 fn count_lf(bytes: &[u8]) -> usize {
-    let mut count = 0;
-    for byte in bytes {
-        if *byte == b'\n' {
-            count += 1;
-        }
-    }
-    count
+    memchr::memchr_iter(b'\n', bytes).count()
 }
 
 #[cfg(test)]
