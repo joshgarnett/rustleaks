@@ -86,8 +86,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The value above is synthetic test data. The engine is synchronous and starts
-no threads. It reads files only through two helpers that you call yourself.
+The value above is synthetic test data. The engine is synchronous and starts a
+thread only to compile a pattern with more than 200 groups. It reads files
+only through two helpers that you call yourself.
 See [Using
 rustleaks-core](docs/user/library.md) and the [API
 documentation](https://docs.rs/rustleaks-core).

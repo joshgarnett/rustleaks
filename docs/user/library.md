@@ -31,11 +31,14 @@ report writers and the command-line program are not published crates.
 ## What the library does and does not do
 
 The engine takes bytes that you give it and returns findings. It does not read
-files, run Git, read environment variables, write logs, start threads or need
-an async runtime. Only two helpers read files, and only when you call them:
-`Baseline::load_go_json` and `FileSystemResolver`. An `Engine` can be shared
-between threads (`Send + Sync`). Build it once and reuse it, because building
-it compiles every rule.
+files, run Git, read environment variables, write logs or need an async
+runtime. It starts a thread only to compile a pattern with more than 200
+groups, with a 32 MiB stack, and waits for it. Other patterns compile on the
+thread that loads the configuration or runs the first search, so do not
+scan on a thread with a very small stack. Only two helpers read files, and
+only when you call them: `Baseline::load_go_json` and `FileSystemResolver`.
+An `Engine` can be shared between threads (`Send + Sync`). Build it once and
+reuse it, because building it compiles every rule.
 
 ## A first scan
 

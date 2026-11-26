@@ -8,9 +8,10 @@ for Gitleaks 8.30.0. Its findings can differ from Gitleaks. See [Moving from
 Gitleaks](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/moving-from-gitleaks.md).
 
 The engine is synchronous. It does not read files, run Git, read environment
-variables, write logs, start threads or need an async runtime. Only
-`Baseline::load_go_json` and `FileSystemResolver` read files, when you call
-them. An `Engine` can be shared between threads.
+variables, write logs or need an async runtime. It starts a thread only to
+compile a pattern with more than 200 groups. Only `Baseline::load_go_json`
+and `FileSystemResolver` read files, when you call them. An `Engine` can be
+shared between threads.
 
 Before 1.0, a minor release, such as 0.3.0, can change the API. A patch
 release, such as 0.2.1, does not.
