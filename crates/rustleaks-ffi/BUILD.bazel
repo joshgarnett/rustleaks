@@ -35,10 +35,14 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-# Static library (`librustleaks_ffi.a` or `rustleaks_ffi.lib`) for cgo.
+# Static library (`librustleaks_ffi_static.a` or `rustleaks_ffi_static.lib`)
+# for cgo. On Windows, Bazel runs actions in the shared output folder without
+# a sandbox, and two rustc actions with one crate name in one package write
+# the same object file names there. So the static library has its own crate
+# name.
 rust_static_library(
     name = "rustleaks_ffi_static",
-    crate_name = "rustleaks_ffi",
+    crate_name = "rustleaks_ffi_static",
     crate_root = "src/lib.rs",
     deps = _DEPS,
     edition = "2024",
@@ -49,11 +53,27 @@ rust_static_library(
 
 # Shared library (`librustleaks_ffi.so`, `.dylib` or `rustleaks_ffi.dll`) for
 # ctypes and for Go on Windows.
+#
+# - Windows links the C runtime statically, so the DLL needs only system DLLs.
+# - musl turns off crt-static and links the shared musl libc.so, so the library
+#   uses the C library of the process that loads it. Binding tests build it
+#   for //platforms:linux_<cpu>_musl_c through //bazel:musl_c.bzl.
+# - GNU Linux links the LLVM unwinder, because the hermetic toolchain stubs out
+#   libgcc_s and the library must not depend on the host process for it.
 rust_shared_library(
     name = "rustleaks_ffi_shared",
     crate_name = "rustleaks_ffi",
     crate_root = "src/lib.rs",
-    deps = _DEPS,
+    deps = _DEPS + select({
+        "//platforms:gnu": ["//bazel:llvm_unwind"],
+        "//platforms:musl": ["//bazel:musl_libc_shared"],
+        "//conditions:default": [],
+    }),
+    rustc_flags = select({
+        "//platforms:musl": ["-Ctarget-feature=-crt-static"],
+        "@platforms//os:windows": ["-Ctarget-feature=+crt-static"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     rustc_env = _RUSTC_ENV,
     srcs = _SRCS,
