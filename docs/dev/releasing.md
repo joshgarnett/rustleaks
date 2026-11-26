@@ -523,6 +523,21 @@ The wheel platform tags are `manylinux_2_28` on glibc (the hermetic
 toolchain's glibc floor), `musllinux_1_2` on musl, `macosx_14_0` on macOS
 (the toolchain's deployment target), `win_amd64` and `win_arm64`.
 
+Sizes in bytes, measured by `Binding Packages` on 2026-11-26 before the
+first binding release. The Go archive includes the Rust standard library,
+and the Go linker keeps only the parts a program uses.
+
+| Platform | Go archive or DLL | Wheel |
+| --- | --- | --- |
+| `linux-amd64` | 15,841,474 | 1,704,510 |
+| `linux-arm64` | 15,873,956 | 1,620,086 |
+| `linux-amd64-musl` | 16,003,546 | 1,717,040 |
+| `linux-arm64-musl` | 16,048,248 | 1,632,872 |
+| `darwin-amd64` | 9,117,240 | 1,608,973 |
+| `darwin-arm64` | 9,186,008 | 1,518,032 |
+| `windows-amd64` | 5,439,488 (DLL) | 1,721,596 |
+| `windows-arm64` | 4,913,664 (DLL) | 1,615,858 |
+
 ### Publishing the Go and Python packages
 
 Dispatch `Publish Go Module` and `Publish Python Package` from `main` with
