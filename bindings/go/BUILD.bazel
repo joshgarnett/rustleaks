@@ -1,6 +1,9 @@
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("//bazel:musl_c.bzl", "musl_c_test")
 
+# The release version check reads the package version.
+exports_files(["library.go"])
+
 # The package. On Linux and macOS cgo links the Rust static library. On
 # Windows the tests build it without cgo, and it loads the Rust DLL.
 go_library(

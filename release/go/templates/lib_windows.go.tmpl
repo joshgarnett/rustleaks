@@ -1,0 +1,24 @@
+//go:build {{build}}
+
+// Package lib holds the Rustleaks DLL for {{description}}.
+//
+// It is part of github.com/joshgarnett/rustleaks-go, which imports it on
+// this platform and writes the DLL to the user cache folder on first use.
+// Release {{version}} of Rustleaks built rustleaks_ffi.dll.
+package lib
+
+import _ "embed"
+
+// DLLGzip is rustleaks_ffi.dll, compressed with gzip.
+//
+//go:embed rustleaks_ffi.dll.gz
+var DLLGzip []byte
+
+const (
+	// Version is the Rustleaks version of the DLL.
+	Version = "{{version}}"
+	// DLLSHA256 is the SHA-256 of the uncompressed DLL, in lowercase hex.
+	DLLSHA256 = "{{dll_sha256}}"
+	// DLLGzipSHA256 is the SHA-256 of DLLGzip, in lowercase hex.
+	DLLGzipSHA256 = "{{gzip_sha256}}"
+)

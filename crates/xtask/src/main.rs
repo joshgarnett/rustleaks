@@ -5,6 +5,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod bindings;
 mod build_system;
 mod comparison;
 mod comparison_quality;
@@ -64,6 +65,9 @@ fn run(args: &[String]) -> Result<(), String> {
         [command] if command == "build-system-check" => build_system::check(&workspace_root()?),
         [command] if command == "package-check" => package::package_check(),
         [command] if command == "release-dry-run" => package::release_dry_run(),
+        [command, arguments @ ..] if command == "bindings" => {
+            bindings::run(&workspace_root()?, arguments)
+        }
         [command, arguments @ ..] if command == "release-artifact" => {
             release_artifact::run(&workspace_root()?, arguments)
         }
@@ -121,6 +125,7 @@ const XTASK_COMMANDS: &[&str] = &[
     "package-check",
     "release-dry-run",
     "release-artifact",
+    "bindings",
     "security-check",
     "security-deep",
     "docs-check",
@@ -149,8 +154,8 @@ fn usage() -> String {
     let commands = XTASK_COMMANDS
         .iter()
         .map(|command| match *command {
-            "release-artifact" | "security-deep" | "fuzz" | "generate" | "compare-quality"
-            | "compare-workloads" => {
+            "release-artifact" | "bindings" | "security-deep" | "fuzz" | "generate"
+            | "compare-quality" | "compare-workloads" => {
                 format!("{command} [ARGS]")
             }
             "perf" => format!("perf <{}> [ARGS]", PERF_SUBCOMMANDS.join("|")),

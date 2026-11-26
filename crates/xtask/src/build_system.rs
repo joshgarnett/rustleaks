@@ -363,7 +363,15 @@ fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
         .map_err(|error| format!("cannot read bazel/rust_crate.bzl: {error}"))?;
     let module = fs::read_to_string(root.join("MODULE.bazel"))
         .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
-    check_version_text(cargo, &rules, &module)
+    check_version_text(cargo, &rules, &module)?;
+    for (path, version) in crate::bindings::binding_versions(root)? {
+        if version != cargo {
+            return Err(format!(
+                "{path} names version {version}, not the Cargo workspace version {cargo}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn check_version_text(cargo: &str, rules: &str, module: &str) -> Result<(), String> {

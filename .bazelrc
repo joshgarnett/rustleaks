@@ -55,3 +55,16 @@ build:release-macos-x86_64 --config=macos-x86_64 --config=release-opt --config=r
 build:release-macos-aarch64 --config=macos-aarch64 --config=release-opt --config=release-lto --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
 build:release-windows-x86_64-msvc --config=windows-x86_64-msvc --config=release-opt
 build:release-windows-aarch64-msvc --config=windows-aarch64-msvc --config=release-opt
+
+# Binding release libraries and wheels use the release settings of their
+# lane, with two differences: musl lanes build for the musl C platform, so
+# the shared library links the shared musl libc, and macOS libraries keep
+# their Mach-O UUID, because dyld does not load a dylib without one.
+build:release-bindings-linux-x86_64-gnu --config=release-linux-x86_64-gnu
+build:release-bindings-linux-aarch64-gnu --config=release-linux-aarch64-gnu
+build:release-bindings-linux-x86_64-musl --config=release-linux-x86_64-musl --platforms=//platforms:linux_x86_64_musl_c
+build:release-bindings-linux-aarch64-musl --config=release-linux-aarch64-musl --platforms=//platforms:linux_aarch64_musl_c
+build:release-bindings-macos-x86_64 --config=macos-x86_64 --config=release-opt --config=release-lto
+build:release-bindings-macos-aarch64 --config=macos-aarch64 --config=release-opt --config=release-lto
+build:release-bindings-windows-x86_64-msvc --config=release-windows-x86_64-msvc
+build:release-bindings-windows-aarch64-msvc --config=release-windows-aarch64-msvc
