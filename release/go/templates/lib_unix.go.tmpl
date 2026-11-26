@@ -7,5 +7,5 @@
 // native/librustleaks_ffi.a.
 package lib
 
-// #cgo LDFLAGS: -L${SRCDIR}/native -lrustleaks_ffi {{system_libraries}}
-import "C"
+// The native package holds the archive and links it with cgo.
+import _ "github.com/joshgarnett/rustleaks-go/lib/{{platform}}/native"

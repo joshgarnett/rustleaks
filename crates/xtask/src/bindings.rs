@@ -149,10 +149,11 @@ const PLATFORMS: &[Platform] = &[
 const STATIC_LIBRARY: &str = "librustleaks_ffi_static.a";
 /// The static library's name in a platform module, for `-lrustleaks_ffi`.
 const MODULE_STATIC_LIBRARY: &str = "librustleaks_ffi.a";
-/// The folder of a Unix `lib` module that holds the static library. cgo
-/// links with `-L` on this folder, and Go 1.27 checks every file in a `-L`
-/// tree whose name looks like a library, so `licenses/glibc-2.28/COPYING.LIB`
-/// must stay outside it.
+/// The Go package of a Unix `lib` module that holds the static library and
+/// links it with cgo. Go 1.27 checks every file in a `-L` tree whose name
+/// looks like a library, so `licenses/glibc-2.28/COPYING.LIB` must stay
+/// outside the `-L` folder. The folder is a Go package, not a plain folder,
+/// so that `go mod vendor` copies the archive.
 const MODULE_NATIVE_DIRECTORY: &str = "native";
 /// The DLL's name, which the Go package also uses for the extracted file.
 const DLL: &str = "rustleaks_ffi.dll";
@@ -511,6 +512,11 @@ fn go_layout_from(
             )?;
             let mut values = values_build.to_vec();
             values.push(("system_libraries", platform.system_libraries));
+            let native_go = render(&read_text(&templates.join("native_unix.go.tmpl"))?, &values)?;
+            write(
+                &directory.join(MODULE_NATIVE_DIRECTORY).join("native.go"),
+                native_go.as_bytes(),
+            )?;
             render(&read_text(&templates.join("lib_unix.go.tmpl"))?, &values)?
         };
         write(&directory.join("lib.go"), lib_go.as_bytes())?;
@@ -819,7 +825,70 @@ fn go_dry_run(
     if platform.musl {
         check_static(&program)?;
     }
+
+    // A consumer that vendors its dependencies must build from vendor/
+    // alone, with no module proxy.
+    command_output(&mut go_command(&["mod", "vendor"]))?;
+    if !platform.windows {
+        let archive = consumer
+            .join("vendor")
+            .join(format!("{GO_MODULE}/lib/{}", platform.name))
+            .join(MODULE_NATIVE_DIRECTORY)
+            .join(MODULE_STATIC_LIBRARY);
+        if !archive.is_file() {
+            return Err(format!("go mod vendor did not copy {}", archive.display()));
+        }
+        if !platform.config.starts_with("macos") {
+            check_one_unwinder(&archive)?;
+        }
+    }
+    let vendored_output = if platform.windows {
+        "dryrun-vendored.exe"
+    } else {
+        "dryrun-vendored"
+    };
+    let mut vendored = build.clone();
+    vendored[3] = vendored_output;
+    vendored.insert(1, "-mod=vendor");
+    let mut vendored_build = go_command(&vendored);
+    vendored_build.env("GOPROXY", "off");
+    command_output(&mut vendored_build)?;
+    let mut run = Command::new(consumer.join(vendored_output));
+    configure(&mut run);
+    let vendored_result = command_output(&mut run)?;
+    if vendored_result != result {
+        return Err(format!(
+            "the vendored Go program printed {vendored_result:?}, not {result:?}"
+        ));
+    }
+    println!("vendored Go program: {vendored_result}");
     Ok(())
+}
+
+/// A Linux archive must define the unwinder once. Two copies, as when the
+/// toolchain and a Bazel dependency both bundle one, make a consumer's link
+/// depend on which member the linker pulls first.
+fn check_one_unwinder(archive: &Path) -> Result<(), String> {
+    let symbols = command_output(Command::new("nm").arg("--defined-only").arg(archive))?;
+    let definitions = unwinder_definitions(&symbols);
+    if definitions != 1 {
+        return Err(format!(
+            "{} defines _Unwind_Resume {definitions} times, not once",
+            archive.display()
+        ));
+    }
+    Ok(())
+}
+
+fn unwinder_definitions(symbols: &str) -> usize {
+    symbols
+        .lines()
+        .filter(|line| {
+            let mut fields = line.split_whitespace().rev();
+            fields.next() == Some("_Unwind_Resume")
+                && fields.next().is_some_and(|kind| kind == "T" || kind == "W")
+        })
+        .count()
 }
 
 fn check_static(program: &Path) -> Result<(), String> {
@@ -1175,6 +1244,19 @@ mod tests {
     }
 
     #[test]
+    fn counts_unwinder_definitions() {
+        let one = "\nUnwindLevel1.pic.o:\n0000000000000000 T _Unwind_Resume\n0000000000000010 T _Unwind_ResumeOrRethrow\n";
+        assert_eq!(unwinder_definitions(one), 1);
+        let two =
+            format!("{one}\n84445457d4afd1cb-UnwindLevel1.o:\n0000000000000000 T _Unwind_Resume\n");
+        assert_eq!(unwinder_definitions(&two), 2);
+        assert_eq!(
+            unwinder_definitions("                 U _Unwind_Resume\n"),
+            0
+        );
+    }
+
+    #[test]
     fn layout_and_proxy_agree_on_hashes() {
         let root = crate::workspace_root().unwrap();
         let temp = ScopedTempDir::new("bindings-layout").unwrap();
@@ -1231,12 +1313,22 @@ mod tests {
                 .join("lib/linux-amd64-musl/native/librustleaks_ffi.a")
                 .is_file()
         );
-        assert!(linux.contains("-L${SRCDIR}/native -lrustleaks_ffi"));
-        let native = fs::read_dir(layout.join("lib/linux-amd64/native"))
+        assert!(linux.contains(&format!("import _ \"{GO_MODULE}/lib/linux-amd64/native\"")));
+        assert!(!linux.contains("LDFLAGS"));
+        let native_go = read_text(&layout.join("lib/linux-amd64/native/native.go")).unwrap();
+        assert!(native_go.starts_with("//go:build linux && amd64 && !musl\n"));
+        assert!(native_go.contains("package native\n"));
+        assert!(native_go.contains("#cgo LDFLAGS: -L${SRCDIR} -lrustleaks_ffi "));
+        // Go checks every library-named file under the -L folder, and
+        // go mod vendor copies only the files of a package folder. So the
+        // folder holds exactly the archive and its Go file.
+        let mut native = fs::read_dir(layout.join("lib/linux-amd64/native"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect::<Vec<_>>();
-        assert_eq!(native, ["librustleaks_ffi.a"]);
+        native.sort();
+        assert_eq!(native, ["librustleaks_ffi.a", "native.go"]);
+        assert!(!layout.join("lib/windows-amd64/native").exists());
         assert!(
             layout
                 .join("lib/windows-amd64/rustleaks_ffi.dll.gz")

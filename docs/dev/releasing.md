@@ -523,9 +523,11 @@ the checksums.
    libraries: the main module, one module per platform under `lib/`, and
    the main module's `go.sum`. Each `lib/<platform>` module holds
    `LICENSE`, `NOTICE` and the target's `licenses/` tree. A Unix module
-   keeps its static library in `native/`, the only folder that cgo
-   searches, because Go checks every library-named file under a `-L`
-   folder and the glibc notice `COPYING.LIB` is not a library.
+   keeps its static library in the Go package `native/`, which links it
+   with cgo and holds nothing else. Go checks every library-named file
+   under a `-L` folder, and the glibc notice `COPYING.LIB` is not a
+   library. The folder is a package so that `go mod vendor` copies the
+   archive.
    `cargo xtask bindings go-proxy` writes a file-based Go module proxy of
    the nine modules and their `go.sum` lines in `hashes.txt`.
 4. The job keeps the layout (`rustleaks-go/`), the proxy (`proxy/`), the
@@ -533,14 +535,18 @@ the checksums.
    `rustleaks-bindings-<version>-packages`. `SHA256SUMS` lists every other
    file of the artifact. When `attest` is set, the job attests `SHA256SUMS`
    with `actions/attest-build-provenance` and keeps the bundle as
-   `SHA256SUMS.attestation.jsonl`. Every later user of the artifact checks
-   the attestation, every checksum, and that the artifact holds no file
-   that `SHA256SUMS` does not list.
+   `SHA256SUMS.attestation.jsonl`. The dry run jobs below check every
+   checksum and that the artifact holds no file that `SHA256SUMS` does not
+   list. The publish workflows also check the attestation. Weekly and
+   manual runs make no attestation.
 5. On each native lane, `cargo xtask bindings dry-run` builds a Go program
    from that proxy with the Bazel-pinned Go SDK and the lane's C compiler
    (`musl-gcc` with `-tags musl` and static linking on musl, no cgo on
    Windows) and runs a scan. Every `go.sum` line Go records must equal one
-   that xtask computed. Then `release/python/upload.py check` builds the
+   that xtask computed. It then runs `go mod vendor`, builds the program
+   again with `-mod=vendor` and no module proxy, and requires the same
+   output. On Linux the vendored archive must define `_Unwind_Resume`
+   exactly once. Then `release/python/upload.py check` builds the
    PyPI upload form from the wheel and requires every field to be present
    and to match `bindings/python/pyproject.toml`. The dry run installs the
    wheel into a new virtual environment of each of CPython 3.12, 3.13, 3.14
