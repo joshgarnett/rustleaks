@@ -24,6 +24,9 @@ rust_shared_library(
     crate_root = "spike.rs",
     edition = "2024",
     deps = select({
+        # The GNU link stubs out libgcc_s, so the library carries the LLVM
+        # unwinder itself instead of depending on the host process for it.
+        "//platforms:gnu": ["//bazel:llvm_unwind"],
         "//platforms:musl": ["//bazel:musl_libc_shared"],
         "//conditions:default": [],
     }),
