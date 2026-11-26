@@ -71,6 +71,14 @@ a private visitor that matches Go field handling, null and duplicate fields,
 invalid UTF-8 and lone surrogate replacement. No JSON type appears in the
 public session API.
 
+### Byte search
+
+`rustleaks-core` and `rustleaks-sources` require `memchr ^2.7` to find
+bytes and substrings, such as line ends, Git patch lines, allow comments
+and redacted secrets. `aho-corasick` and `regex-automata` already depend on
+it, so the locked graph gains no package. Its unsafe code is the
+architecture-specific search described under [Core](#core).
+
 ## Unsafe code in dependencies
 
 All owned crate roots use `#![forbid(unsafe_code)]`, and the release check

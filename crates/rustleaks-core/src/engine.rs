@@ -2633,20 +2633,11 @@ impl Engine {
                     (0, 1)
                 };
                 context.work_many(whole.end - from)?;
-                // No byte-counting dependency is admitted; the scan is already
-                // charged above as bounded work.
-                #[allow(clippy::naive_bytecount)]
-                let start_line = line_at
-                    + input.bytes[from..whole.start]
-                        .iter()
-                        .filter(|&&byte| byte == b'\n')
-                        .count();
-                #[allow(clippy::naive_bytecount)]
+                // The scan is already charged above as bounded work.
+                let start_line =
+                    line_at + memchr::memchr_iter(b'\n', &input.bytes[from..whole.start]).count();
                 let end_line = start_line
-                    + input.bytes[whole.start..whole.end]
-                        .iter()
-                        .filter(|&&byte| byte == b'\n')
-                        .count();
+                    + memchr::memchr_iter(b'\n', &input.bytes[whole.start..whole.end]).count();
                 line_cursor = (whole.end, end_line);
                 candidates.push(NativeCandidate {
                     finding,
@@ -4141,28 +4132,7 @@ struct SourceLocation {
 }
 
 fn newline_indices(raw: &[u8]) -> Vec<usize> {
-    let mut newlines = Vec::new();
-    let (chunks, remainder) = raw.as_chunks::<8>();
-    for (index, chunk) in chunks.iter().enumerate() {
-        let compared = u64::from_ne_bytes(*chunk) ^ 0x0a0a_0a0a_0a0a_0a0a;
-        if compared.wrapping_sub(0x0101_0101_0101_0101) & !compared & 0x8080_8080_8080_8080 == 0 {
-            continue;
-        }
-        // The zero-byte test is endian-independent, but its individual bits
-        // can include adjacent bytes due to borrowing. Check exact bytes.
-        for (offset, byte) in chunk.iter().enumerate() {
-            if *byte == b'\n' {
-                newlines.push(index * 8 + offset);
-            }
-        }
-    }
-    let remainder_start = raw.len() - remainder.len();
-    for (offset, byte) in remainder.iter().enumerate() {
-        if *byte == b'\n' {
-            newlines.push(remainder_start + offset);
-        }
-    }
-    newlines
+    memchr::memchr_iter(b'\n', raw).collect()
 }
 
 fn source_location(
@@ -4226,10 +4196,8 @@ fn next_line_break(raw: &[u8], from: usize, cache: &Cell<Option<(usize, usize)>>
     {
         return next_break;
     }
-    let next_break = raw[from..]
-        .iter()
-        .position(|byte| matches!(byte, b'\n' | b'\r'))
-        .map_or(raw.len(), |distance| from + distance);
+    let next_break =
+        memchr::memchr2(b'\n', b'\r', &raw[from..]).map_or(raw.len(), |distance| from + distance);
     // The interval is inclusive: starting at the break must return that break.
     // Earlier or later queries rescan, so reordered rules and decoded spans
     // cannot reuse a result from outside the covered original-source suffix.
@@ -4533,10 +4501,7 @@ fn entropy_to_f32(value: f64) -> f32 {
 }
 
 fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    needle.is_empty()
-        || haystack
-            .windows(needle.len())
-            .any(|window| window == needle)
+    memchr::memmem::find(haystack, needle).is_some()
 }
 
 fn finding_base_payload<'a>(

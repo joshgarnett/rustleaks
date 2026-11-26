@@ -21,10 +21,14 @@
   less often. The decoder skips bytes that cannot start an encoded value.
   Git history scans keep one copy of each commit's metadata for all of its
   fragments, hand Git output to the parser in larger pieces, and allocate
-  each hunk once. These numbers compare with 0.2.0 on an Apple M5 Ultra
-  with 12 detection threads. A folder scan of the gitlab tree peaked at
-  211 MB instead of 317 MB and used 10 percent less CPU time. A folder scan
-  of the Linux tree used 22 percent less CPU time. Git history scans of
+  each hunk once. Lowercasing text that is not all ASCII copies each run of
+  ASCII bytes at once, and searches for line ends and substrings use
+  `memchr`. `rustleaks-core` and `rustleaks-sources` now depend on `memchr`
+  directly; it was already in their dependency graph. These numbers compare
+  with 0.2.0 on an Apple M5 Ultra with 12 detection threads. A folder scan
+  of the gitlab tree peaked at 208 MB instead of 318 MB and used 14 percent
+  less CPU time. A folder scan of the Linux tree used 24 percent less CPU
+  time. Git history scans of
   rails and django used 15 and 19 percent less CPU time and up to 7 percent
   more memory. Findings, reports and exit codes do not change.
 - In `rustleaks-core`, `ScanScratch` and `Engine::scan_fragment_with_scratch`

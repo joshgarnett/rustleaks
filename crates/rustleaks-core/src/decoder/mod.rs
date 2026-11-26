@@ -597,10 +597,7 @@ fn record_line_bounds(segments: &mut [EncodedSegment], output: &[u8]) {
         let decoded_start = usize::try_from(segment.decoded.start).unwrap();
         let decoded_end = usize::try_from(segment.decoded.end).unwrap();
 
-        if let Some(found) = output[scanned_up_to..=decoded_start]
-            .iter()
-            .rposition(|byte| *byte == b'\n')
-        {
+        if let Some(found) = memchr::memrchr(b'\n', &output[scanned_up_to..=decoded_start]) {
             previous_newline = scanned_up_to + found;
         }
         scanned_up_to = decoded_start + 1;
@@ -609,9 +606,7 @@ fn record_line_bounds(segments: &mut [EncodedSegment], output: &[u8]) {
         // end while it is not behind that end. It starts at zero, which is
         // behind every non-empty span's end, so the first segment scans.
         if next_newline < decoded_end {
-            next_newline = output[decoded_end..]
-                .iter()
-                .position(|byte| *byte == b'\n')
+            next_newline = memchr::memchr(b'\n', &output[decoded_end..])
                 .map_or(output.len(), |offset| decoded_end + offset);
         }
 

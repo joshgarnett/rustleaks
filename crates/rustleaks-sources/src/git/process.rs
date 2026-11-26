@@ -524,7 +524,7 @@ pub(super) fn first_non_ignored_stderr(stderr: &[u8]) -> Option<&[u8]> {
             b"Auto packing the repository in background for optimum performance".as_slice(),
         ]
         .iter()
-        .any(|needle| line.windows(needle.len()).any(|window| window == *needle));
+        .any(|needle| memchr::memmem::find(line, needle).is_some());
         if !ignored {
             return Some(line);
         }

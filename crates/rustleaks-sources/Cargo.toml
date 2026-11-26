@@ -26,6 +26,7 @@ archives = [
 [dependencies]
 brotli-decompressor = { version = "=6.3.2", default-features = false, features = ["std"], optional = true }
 compcol = { version = "=0.8.0", default-features = false, features = ["rar2"], optional = true }
+memchr = "2.7"
 rustleaks-rar-codec = { path = "../rustleaks-rar-codec", version = "=0.9.3-rustleaks.1", optional = true }
 rustleaks-core = { path = "../rustleaks-core", version = "=0.2.0" }
 lz4_flex = { version = "=0.14.2", default-features = false, features = ["checked-decode", "frame", "safe-decode", "safe-encode", "std"], optional = true }

@@ -235,10 +235,8 @@ impl PatchStream {
                 }
                 return Ok(None);
             }
-            let newline = self.buffer[self.search..]
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .map(|at| self.search + at + 1);
+            let newline =
+                memchr::memchr(b'\n', &self.buffer[self.search..]).map(|at| self.search + at + 1);
             if newline.is_none() {
                 self.search = self.buffer.len();
             }
