@@ -86,6 +86,15 @@ jobs:
         with:
           rust-components: ""
           install-just: "false"
+      # The musl configs select the musl CPython, and Bazel also uses that
+      # interpreter for the Python tools that write the wheel. It needs the
+      # musl loader, which the Ubuntu host lacks.
+      - name: Install the musl loader
+        if: endsWith(matrix.config, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl
+          ls -l /lib/ld-musl-*.so.1
       - name: Build the native library and the wheel
         working-directory: rustleaks
         env:
