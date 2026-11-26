@@ -219,7 +219,9 @@ Rules for the crate:
 - Unsafe code only checks and reads caller pointers, writes out parameters,
   turns handles into boxes and back, and marks the lists of views that a
   handle owns as safe to share between threads. `src/harness.rs` is a safe
-  Rust client of the ABI for the tests and the fuzz target.
+  Rust client of the ABI for the tests and the fuzz target; it marks its
+  engine and cancel handle wrappers as safe to share between threads, as the
+  ABI allows.
 - It has `publish = false` and adds no dependency: no `libc` and no
   cbindgen. `include/rustleaks.h` is written by hand, and a unit test checks
   its function names, parameter types, constants and struct layouts against
