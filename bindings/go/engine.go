@@ -412,12 +412,12 @@ func (e *Engine) scanNative(ctx context.Context, input unsafe.Pointer, n int, se
 		callResultFree(handle)
 	}()
 
-	var status2 statusView
-	if status := callResultStatus(result, &status2); status != statusOK {
+	var scanStatus statusView
+	if status := callResultStatus(result, &scanStatus); status != statusOK {
 		return nil, statusError("read the scan status", status)
 	}
-	if status2.termination != terminationComplete {
-		return nil, incompleteError(ctx, &status2)
+	if scanStatus.termination != terminationComplete {
+		return nil, incompleteError(ctx, &scanStatus)
 	}
 	return e.readFindings(result, settings.path)
 }
