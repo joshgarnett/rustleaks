@@ -109,13 +109,6 @@ class HeaderTest(unittest.TestCase):
                 expected = _native.UNLIMITED if value == "UINT64_MAX" else int(value)
                 self.assertEqual(getattr(_native, name), expected)
 
-    def test_default_input_limit_matches_the_header_comment(self) -> None:
-        with open(support.header_path(), encoding="utf-8") as file:
-            text = file.read()
-        match = re.search(r"RUSTLEAKS_OPTION_MAX_INPUT_BYTES 4\s+/\* default (\d+) \*/", text)
-        assert match
-        self.assertEqual(int(match.group(1)), _native.DEFAULT_MAX_INPUT_BYTES)
-
     def test_structs_match_the_header(self) -> None:
         found = re.findall(
             r"typedef struct (\w+) \{(.*?)\} \1;", self.header, flags=re.S
@@ -234,42 +227,6 @@ class LibraryTest(unittest.TestCase):
         status = library.rustleaks_options_new(_native.ABI_VERSION + 1, byref(options))
         self.assertEqual(status, _native.ERROR_ABI_MISMATCH)
         self.assertFalse(options)
-
-    def test_default_input_limit_matches_the_library(self) -> None:
-        # The package checks sizes before the native call with its copy of
-        # the default; the library must use the same value.
-        library = _native.library()
-        options = POINTER(_native.Options)()
-        engine = POINTER(_native.Engine)()
-        error = POINTER(_native.Error)()
-        config = support.MARKER_CONFIG.encode()
-        self.assertEqual(
-            library.rustleaks_options_new(_native.ABI_VERSION, byref(options)), _native.OK
-        )
-        try:
-            self.assertEqual(
-                library.rustleaks_options_set_config(options, config, len(config)), _native.OK
-            )
-            self.assertEqual(
-                library.rustleaks_engine_new(options, byref(engine), byref(error)), _native.OK
-            )
-        finally:
-            library.rustleaks_options_free(options)
-        try:
-            limit = _native.DEFAULT_MAX_INPUT_BYTES
-            for size, expected in ((limit, _native.OK), (limit + 1, _native.ERROR_INPUT_TOO_LARGE)):
-                with self.subTest(size=size):
-                    data = bytes(size)
-                    result = POINTER(_native.Result)()
-                    status = library.rustleaks_scan(
-                        engine, data, len(data), None, None, byref(result), byref(error)
-                    )
-                    self.assertEqual(status, expected)
-                    library.rustleaks_result_free(result)
-                    library.rustleaks_error_free(error)
-                    error = POINTER(_native.Error)()
-        finally:
-            library.rustleaks_engine_free(engine)
 
 
 if __name__ == "__main__":

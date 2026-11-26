@@ -133,7 +133,7 @@ fn rust_functions(source: &str) -> BTreeMap<String, Vec<String>> {
 fn header_declares_every_export_with_its_parameter_types() {
     let header = header_functions(&strip_comments(HEADER));
     let exports = rust_functions(EXPORTS);
-    assert_eq!(exports.len(), 24, "{:?}", exports.keys());
+    assert_eq!(exports.len(), 25, "{:?}", exports.keys());
     assert_eq!(header, exports);
     for name in exports.keys() {
         assert_eq!(

@@ -14,13 +14,13 @@ use crate::abi::{
 };
 use crate::exports::{
     rustleaks_abi_version, rustleaks_cancel_free, rustleaks_cancel_new, rustleaks_cancel_set,
-    rustleaks_engine_free, rustleaks_engine_new, rustleaks_engine_rule,
-    rustleaks_engine_rule_count, rustleaks_engine_workers, rustleaks_error_free,
-    rustleaks_error_kind, rustleaks_error_message, rustleaks_options_add_rule_id,
-    rustleaks_options_free, rustleaks_options_new, rustleaks_options_set_bool,
-    rustleaks_options_set_config, rustleaks_options_set_u64, rustleaks_result_count,
-    rustleaks_result_finding, rustleaks_result_free, rustleaks_result_status, rustleaks_scan,
-    rustleaks_version,
+    rustleaks_engine_free, rustleaks_engine_max_input_bytes, rustleaks_engine_new,
+    rustleaks_engine_rule, rustleaks_engine_rule_count, rustleaks_engine_workers,
+    rustleaks_error_free, rustleaks_error_kind, rustleaks_error_message,
+    rustleaks_options_add_rule_id, rustleaks_options_free, rustleaks_options_new,
+    rustleaks_options_set_bool, rustleaks_options_set_config, rustleaks_options_set_u64,
+    rustleaks_result_count, rustleaks_result_finding, rustleaks_result_free,
+    rustleaks_result_status, rustleaks_scan, rustleaks_version,
 };
 use crate::handles::EngineHandle;
 use crate::harness::{
@@ -122,6 +122,15 @@ fn null_handles_and_out_pointers_are_invalid_arguments() {
         );
         assert_eq!(
             rustleaks_engine_workers(engine.raw(), ptr::null_mut()),
+            invalid
+        );
+        let mut limit = 0_u64;
+        assert_eq!(
+            rustleaks_engine_max_input_bytes(ptr::null(), &raw mut limit),
+            invalid
+        );
+        assert_eq!(
+            rustleaks_engine_max_input_bytes(engine.raw(), ptr::null_mut()),
             invalid
         );
         assert_eq!(
@@ -439,6 +448,12 @@ fn input_limit_is_inclusive_and_checked_before_reading() {
         options.set_u64(OPTION_MAX_INPUT_BYTES, 5).unwrap();
     })
     .unwrap();
+    assert_eq!(engine.max_input_bytes(), 5);
+    assert_eq!(
+        token_engine().max_input_bytes(),
+        crate::handles::DEFAULT_MAX_INPUT_BYTES
+    );
+    assert_eq!(crate::handles::DEFAULT_MAX_INPUT_BYTES, 10_000_000);
     assert_eq!(engine.scan(b"TOKEN", None, None).unwrap().findings.len(), 1);
     let error = engine.scan(b"TOKEN!", None, None).unwrap_err();
     assert_eq!(error.kind, ERROR_INPUT_TOO_LARGE);
@@ -454,6 +469,7 @@ fn input_limit_is_inclusive_and_checked_before_reading() {
         options.set_u64(OPTION_MAX_INPUT_BYTES, UNLIMITED).unwrap();
     })
     .unwrap();
+    assert_eq!(unlimited.max_input_bytes(), UNLIMITED);
     assert!(unlimited.scan(b"TOKEN!", None, None).is_ok());
 }
 
