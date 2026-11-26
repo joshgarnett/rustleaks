@@ -87,7 +87,7 @@ Build and relink with the supplied module and the changed library source:
 
 ```sh
 cd /tmp/rustleaks-relink/application
-bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-x86_64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_x86_64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-x86_64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --help
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --version
 ```
@@ -97,7 +97,7 @@ the native AArch64 build command:
 
 ```sh
 cd /tmp/rustleaks-relink/application
-bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-aarch64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_aarch64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-aarch64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --help
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --version
 ```

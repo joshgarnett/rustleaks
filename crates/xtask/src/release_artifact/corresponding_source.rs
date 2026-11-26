@@ -19,6 +19,11 @@ use super::{
 const README: &str = "release/corresponding-source/README.md";
 const GLIBC_COMMIT: &str = "92d25389c255b0da9b56bc05694f0702cd22921a";
 const LLVM_PREFIX: &str = "hermetic-llvm-0.8.27/";
+const LLVM_MODULE_PIN: &str = "bazel_dep(name = \"llvm\", version = \"0.8.27\")";
+/// SHA-256 of the BCR `modules/llvm/0.8.27/source.json` that the lockfile
+/// records.
+const LLVM_REGISTRY_SOURCE_SHA256: &str =
+    "9172db076ba2be8df939e98adbe9624a46f4b6dc31171e87e4d1e3ef6a8d3e9f";
 const MAX_BUNDLE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const SOURCE_MEMBER_COUNT: usize = 8;
@@ -96,6 +101,8 @@ const RECIPES: &[&str] = &[
     "3rd_party/libc/glibc/csu/elf-init-2.31.c",
     "runtimes/glibc/extension/glibc.bzl",
     "runtimes/glibc/extension/glibc_headers_index.json",
+    "runtimes/glibc/extension/trampoline.BUILD.bazel",
+    "runtimes/glibc/extension/make_select_glibc_repository_target.bzl",
     "runtimes/glibc/BUILD.bazel",
     "runtimes/BUILD.bazel",
     "toolchain/runtimes/cc_stage0_object.bzl",
@@ -243,9 +250,11 @@ fn validate_candidate(root: &Path, commit: &str) -> Result<(), String> {
     let lock = committed_file_bytes(root, commit, "MODULE.bazel.lock")?;
     let module = std::str::from_utf8(&module).map_err(|error| error.to_string())?;
     let lock = std::str::from_utf8(&lock).map_err(|error| error.to_string())?;
-    if !module.contains("bazel_dep(name = \"llvm\", version = \"0.8.27\")")
-        || !lock.contains("b40edb2bb2ed271bf613b396d245cb473c42fb057a2b26a3bc7d7e8bfcf6aa71")
-    {
+    validate_llvm_pins(module, lock)
+}
+
+fn validate_llvm_pins(module: &str, lock: &str) -> Result<(), String> {
+    if !module.contains(LLVM_MODULE_PIN) || !lock.contains(LLVM_REGISTRY_SOURCE_SHA256) {
         return Err("corresponding-source pins do not match the candidate LLVM module".into());
     }
     Ok(())
@@ -663,13 +672,13 @@ pub(super) fn relink(
     let startup_path = format!("sysdeps/{architecture}/start.S");
     let startup = glibc.join(&startup_path);
     let original = fs::read(&startup).map_err(|error| error.to_string())?;
-    let baseline = build_from_source(&application, &work, &inputs, &glibc, architecture, config)?;
+    let baseline = build_from_source(&application, &work, &inputs, &glibc, config)?;
     let baseline_sha256 = sha256_file(&baseline)?;
     let baseline_bytes = fs::read(&baseline).map_err(|error| error.to_string())?;
     smoke(&baseline)?;
     let modified = modified_startup(&original, architecture)?;
     fs::write(&startup, &modified).map_err(|error| error.to_string())?;
-    let binary = build_from_source(&application, &work, &inputs, &glibc, architecture, config)?;
+    let binary = build_from_source(&application, &work, &inputs, &glibc, config)?;
     let modified_bytes = fs::read(&binary).map_err(|error| error.to_string())?;
     let marker = entry_marker(architecture);
     if entry_has_marker(&baseline_bytes, &marker)?
@@ -706,14 +715,15 @@ fn build_from_source(
     work: &Path,
     inputs: &Path,
     glibc: &Path,
-    architecture: &str,
     config: &str,
 ) -> Result<PathBuf, String> {
     let output_root = format!("--output_user_root={}", work.join("bazel").display());
     let config = format!("--config={config}");
     let distdir = format!("--distdir={}", inputs.display());
+    // llvm 0.8.27 fetches one glibc source repository per version and
+    // selects it for each architecture through the `@glibc` trampoline.
     let replacement = format!(
-        "--override_repository=llvm++glibc+glibc_{architecture}-linux-gnu.2.28={}",
+        "--override_repository=llvm++glibc+glibc_2.28={}",
         glibc.display()
     );
     let module = format!(
@@ -909,6 +919,23 @@ pub(super) fn validate_relink_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn llvm_pins_match_the_workspace_module_and_lock() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let module = fs::read_to_string(root.join("MODULE.bazel")).unwrap();
+        let lock = fs::read_to_string(root.join("MODULE.bazel.lock")).unwrap();
+        validate_llvm_pins(&module, &lock).unwrap();
+        assert!(lock.contains(&format!(
+            "\"https://bcr.bazel.build/modules/llvm/0.8.27/source.json\": \"{LLVM_REGISTRY_SOURCE_SHA256}\""
+        )));
+        let older = module.replace(
+            LLVM_MODULE_PIN,
+            "bazel_dep(name = \"llvm\", version = \"0.8.11\")",
+        );
+        assert!(validate_llvm_pins(&older, &lock).is_err());
+        assert!(validate_llvm_pins(&module, "{}").is_err());
+    }
 
     fn parser_members() -> BTreeMap<String, ExpectedMember> {
         [
