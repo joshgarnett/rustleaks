@@ -40,13 +40,16 @@ go_sdk.download(
 )
 use_repo(go_sdk, "go_sdk")
 
-# The Python binding tests run on two CPython versions on every pull request.
-# rules_python downloads python-build-standalone interpreters. It declares no
-# aarch64 musl platform, so the two aarch64 musl interpreters are added here
-# with the hashes from the rules_python runtime manifest.
+# The Python binding supports CPython 3.12 to 3.15. Pull requests test 3.12
+# and 3.15, and the binding release dry run tests all four. rules_python
+# downloads python-build-standalone interpreters. It declares no aarch64 musl
+# platform, so the aarch64 musl interpreters are added here with the hashes
+# from the rules_python runtime manifest.
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = "3.12")
 python.toolchain(python_version = "3.12")
+python.toolchain(python_version = "3.13")
+python.toolchain(python_version = "3.14")
 python.toolchain(python_version = "3.15")
 [
     python.single_version_platform_override(
@@ -67,6 +70,8 @@ python.toolchain(python_version = "3.15")
     )
     for version, sha256 in [
         ("3.12.16", "4ae0f7e999d6823852a60baad66c4c2fd2e9e45c7c1d3e6b6efc305ad867c29c"),
+        ("3.13.18", "2ee36197b4a57926ed6052ce1c54eae1e34a2d75c8fdaf8a52c5e7ffda00f8d4"),
+        ("3.14.10", "2220e769dfae157c16cd387705bf6b9a934955d93e0b818112c2f296cc3ae50f"),
         ("3.15.2", "2bdc94b8155ee7aff6a4c4d24d23e26cf98adbee71734273865f4d8e2c41b77c"),
     ]
 ]

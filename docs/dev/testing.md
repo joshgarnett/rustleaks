@@ -139,7 +139,7 @@ natively:
   link the FFI static library through cgo. On Windows they build without cgo
   and load the FFI DLL.
 - Python uses the CPython builds that `MODULE.bazel` pins: 3.12 and 3.15 on
-  every lane. The tests load the FFI shared library with `ctypes`.
+  every lane. The release dry run also installs the wheels on 3.13 and 3.14. The tests load the FFI shared library with `ctypes`.
 - On musl, the binding tests build for `//platforms:linux_<cpu>_musl_c`,
   which selects the LLVM toolchain's musl C library (see
   `bazel/musl_c.bzl`). The Go test programs are static musl executables.

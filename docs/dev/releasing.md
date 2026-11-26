@@ -512,7 +512,8 @@ it publishes nothing and uses no credential.
    (`musl-gcc` with `-tags musl` and static linking on musl, no cgo on
    Windows) and runs a scan. Every `go.sum` line Go records must equal one
    that xtask computed. Then it installs the lane's wheel into a new virtual
-   environment of CPython 3.12 and of 3.15 with `pip --no-index`. It
+   environment of each of CPython 3.12, 3.13, 3.14 and 3.15 with
+   `pip --no-index`. It
    compares the installed metadata with `bindings/python/pyproject.toml` and
    runs a scan. Last, it checks the library's dynamic dependencies: no glibc
    symbol newer than 2.28 on GNU, only `libc.so` on musl, and only system

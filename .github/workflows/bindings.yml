@@ -10,7 +10,7 @@ name: Binding Packages
 #    from the eight libraries.
 # 3. Each lane builds and runs a Go program from that proxy, and installs
 #    the wheel into new virtual environments without network access, with
-#    CPython 3.12 and 3.15, and runs a scan.
+#    CPython 3.12, 3.13, 3.14 and 3.15, and runs a scan.
 
 on:
   workflow_call:
@@ -288,7 +288,7 @@ jobs:
           (cd "${work}" && sha256sum --check --quiet SHA256SUMS 2>/dev/null || shasum -a 256 --check --quiet SHA256SUMS)
           goroot="$(bazelisk run @rules_go//go -- env GOROOT | tail -n 1)"
           pythons=()
-          for version in 3.12 3.15; do
+          for version in 3.12 3.13 3.14 3.15; do
             pythons+=("$(bazelisk run --config="${BAZEL_CONFIG}" --@rules_python//python/config_settings:python_version="${version}" @rules_python//python/bin:python -- -I -c 'import sys; print(sys.executable)' | tail -n 1)")
           done
           wheel="${work}/wheels/rustleaks-${EXPECTED_VERSION}-py3-none-${WHEEL_TAG}.whl"
@@ -348,7 +348,7 @@ jobs:
           $goroot = (bazelisk --output_user_root=C:/b --windows_enable_symlinks run @flags @rules_go//go -- env GOROOT | Select-Object -Last 1)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $pythons = @()
-          foreach ($version in @('3.12', '3.15')) {
+          foreach ($version in @('3.12', '3.13', '3.14', '3.15')) {
             $python = (bazelisk --output_user_root=C:/b --windows_enable_symlinks run --config=$env:BAZEL_CONFIG @flags "--@rules_python//python/config_settings:python_version=$version" @rules_python//python/bin:python -- -I -c 'import sys; print(sys.executable)' | Select-Object -Last 1)
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $pythons += $python
