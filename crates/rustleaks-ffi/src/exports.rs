@@ -12,13 +12,17 @@
 //! - A byte pointer with a length of 0 can be null. Otherwise it points to
 //!   that many readable bytes that do not change during the call.
 //! - An out pointer is null or valid and aligned for one write of its type.
-//!   A null out pointer gives `ERROR_INVALID_ARGUMENT`.
+//!   A null out pointer gives `ERROR_INVALID_ARGUMENT`, except the error out
+//!   pointer of `rustleaks_engine_new` and `rustleaks_scan`: null there means
+//!   that the caller wants only the status. Every out pointer is checked
+//!   once, by `Out::new`, and then written only through that `Out`.
 //!
 //! The library checks for null and misaligned pointers. It cannot check the
 //! other rules.
 
+use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use crate::abi::{
     ABI_VERSION, Bytes, ERROR_ABI_MISMATCH, ERROR_INVALID_ARGUMENT, ERROR_PANIC, FindingView,
@@ -39,14 +43,121 @@ fn guarded(body: impl FnOnce() -> Result<(), i32>) -> i32 {
     }
 }
 
-/// Runs `body` and returns its error, or the error for a panic, through
-/// `error`, which the caller has checked and set to null.
+/// A checked out parameter: a pointer that is not null, is aligned, and that
+/// the caller of the export promised is valid for writes of `T` during the
+/// call. It can only be made through the unsafe [`Out::new`], so every write
+/// through it relies on that one check and that one promise.
+struct Out<'a, T> {
+    target: NonNull<T>,
+    call: PhantomData<&'a mut T>,
+}
+
+impl<T> Out<'_, T> {
+    /// Checks `pointer` and keeps it for writes during the call.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ERROR_INVALID_ARGUMENT` for a null or misaligned pointer.
+    ///
+    /// # Safety
+    ///
+    /// `pointer` must be null or valid for writes of `T` until the export
+    /// returns, and nothing else may access it meanwhile.
+    unsafe fn new(pointer: *mut T) -> Result<Self, i32> {
+        let target = NonNull::new(pointer).ok_or(ERROR_INVALID_ARGUMENT)?;
+        if !pointer.is_aligned() {
+            return Err(ERROR_INVALID_ARGUMENT);
+        }
+        Ok(Self {
+            target,
+            call: PhantomData,
+        })
+    }
+
+    /// Like [`Out::new`], but a null pointer means that the caller does not
+    /// want the value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ERROR_INVALID_ARGUMENT` for a misaligned pointer.
+    ///
+    /// # Safety
+    ///
+    /// As for [`Out::new`].
+    unsafe fn optional(pointer: *mut T) -> Result<Option<Self>, i32> {
+        if pointer.is_null() {
+            return Ok(None);
+        }
+        // SAFETY: forwarded from the caller.
+        unsafe { Self::new(pointer) }.map(Some)
+    }
+
+    /// Writes `value`, without reading or dropping the old contents.
+    fn write(&mut self, value: T) {
+        // SAFETY: `Out::new` checked that the pointer is not null and is
+        // aligned, and its caller promised that it is valid for writes with
+        // no other access until the export returns, which `'_` bounds.
+        unsafe { self.target.as_ptr().write(value) };
+    }
+}
+
+/// Checks a handle out parameter and sets it to null, so that it is null
+/// unless the export later writes a handle.
+///
+/// # Errors
+///
+/// Returns `ERROR_INVALID_ARGUMENT` for a null or misaligned pointer.
 ///
 /// # Safety
 ///
-/// `error` must be valid and aligned for one write.
-unsafe fn guarded_with_error(
-    error: *mut *mut FfiError,
+/// As for [`Out::new`].
+unsafe fn handle_out<'a, T>(pointer: *mut *mut T) -> Result<Out<'a, *mut T>, i32> {
+    // SAFETY: forwarded from the caller.
+    let mut out = unsafe { Out::new(pointer) }?;
+    out.write(ptr::null_mut());
+    Ok(out)
+}
+
+/// Checks an optional error out parameter and sets it to null.
+///
+/// # Errors
+///
+/// Returns `ERROR_INVALID_ARGUMENT` for a misaligned pointer.
+///
+/// # Safety
+///
+/// As for [`Out::new`].
+unsafe fn error_out<'a>(
+    pointer: *mut *mut FfiError,
+) -> Result<Option<Out<'a, *mut FfiError>>, i32> {
+    // SAFETY: forwarded from the caller.
+    let mut out = unsafe { Out::optional(pointer) }?;
+    if let Some(out) = out.as_mut() {
+        out.write(ptr::null_mut());
+    }
+    Ok(out)
+}
+
+/// Writes one value through a checked out parameter.
+///
+/// # Errors
+///
+/// Returns `ERROR_INVALID_ARGUMENT` for a null or misaligned pointer.
+///
+/// # Safety
+///
+/// As for [`Out::new`].
+unsafe fn write_out<T>(pointer: *mut T, value: T) -> Result<(), i32> {
+    // SAFETY: forwarded from the caller.
+    unsafe { Out::new(pointer) }?.write(value);
+    Ok(())
+}
+
+/// Runs `body` and returns its error, or the error for a panic, as a new
+/// error handle through `error` when the caller asked for one. Without an
+/// error out parameter the error is dropped and only its kind is returned.
+fn guarded_with_error(
+    error: Option<&mut Out<'_, *mut FfiError>>,
     body: impl FnOnce() -> Result<(), FfiError>,
 ) -> i32 {
     let outcome = catch_unwind(AssertUnwindSafe(body)).unwrap_or_else(|_| Err(FfiError::panic()));
@@ -54,36 +165,12 @@ unsafe fn guarded_with_error(
         Ok(()) => STATUS_OK,
         Err(failure) => {
             let kind = failure.kind();
-            // SAFETY: the caller guarantees that `error` is valid for a write.
-            unsafe { error.write(Box::into_raw(Box::new(failure))) };
+            if let Some(error) = error {
+                error.write(Box::into_raw(Box::new(failure)));
+            }
             kind
         }
     }
-}
-
-/// Writes `value` through `out`.
-///
-/// # Safety
-///
-/// `out` must be null or valid for one write of `T`.
-unsafe fn write_out<T>(out: *mut T, value: T) -> Result<(), i32> {
-    if out.is_null() || !out.is_aligned() {
-        return Err(ERROR_INVALID_ARGUMENT);
-    }
-    // SAFETY: `out` is not null, is aligned, and the caller guarantees that
-    // it is valid for a write.
-    unsafe { out.write(value) };
-    Ok(())
-}
-
-/// Checks a handle out parameter and sets it to null.
-///
-/// # Safety
-///
-/// `out` must be null or valid for one write of a pointer.
-unsafe fn clear_out<T>(out: *mut *mut T) -> Result<(), i32> {
-    // SAFETY: forwarded from the caller.
-    unsafe { write_out(out, ptr::null_mut()) }
 }
 
 /// Borrows a handle.
@@ -194,13 +281,11 @@ pub unsafe extern "C" fn rustleaks_version(out_ptr: *mut *const u8, out_len: *mu
 pub unsafe extern "C" fn rustleaks_options_new(abi_version: u32, out: *mut *mut Options) -> i32 {
     guarded(|| {
         // SAFETY: forwarded from the caller.
-        unsafe { clear_out(out)? };
+        let mut out = unsafe { handle_out(out) }?;
         if abi_version != ABI_VERSION {
             return Err(ERROR_ABI_MISMATCH);
         }
-        let handle = Box::into_raw(Box::new(Options::default()));
-        // SAFETY: `out` was checked by `clear_out`.
-        unsafe { out.write(handle) };
+        out.write(Box::into_raw(Box::new(Options::default())));
         Ok(())
     })
 }
@@ -312,7 +397,7 @@ pub unsafe extern "C" fn rustleaks_options_free(options: *mut Options) -> i32 {
 ///
 /// `options` must be null or a live options handle that no other thread
 /// changes during the call. `out` and `error` must be null or valid for one
-/// write.
+/// write. A null `error` means that the caller wants only the status.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rustleaks_engine_new(
     options: *const Options,
@@ -321,22 +406,16 @@ pub unsafe extern "C" fn rustleaks_engine_new(
 ) -> i32 {
     guarded(|| {
         // SAFETY: forwarded from the caller.
-        unsafe {
-            clear_out(error)?;
-            clear_out(out)?;
-        }
-        // SAFETY: `error` was checked by `clear_out`; the other pointers are
-        // forwarded from the caller.
-        let status = unsafe {
-            guarded_with_error(error, || {
-                let options = borrow(options).map_err(|status| {
-                    FfiError::new(status, "the options handle is null or misaligned")
-                })?;
-                let engine = EngineHandle::build(options)?;
-                out.write(Box::into_raw(Box::new(engine)));
-                Ok(())
-            })
-        };
+        let (mut error, mut out) = unsafe { (error_out(error)?, handle_out(out)?) };
+        let status = guarded_with_error(error.as_mut(), || {
+            // SAFETY: forwarded from the caller.
+            let options = unsafe { borrow(options) }.map_err(|status| {
+                FfiError::new(status, "the options handle is null or misaligned")
+            })?;
+            let engine = EngineHandle::build(options)?;
+            out.write(Box::into_raw(Box::new(engine)));
+            Ok(())
+        });
         if status == STATUS_OK {
             Ok(())
         } else {
@@ -452,10 +531,8 @@ pub unsafe extern "C" fn rustleaks_engine_rule(
 pub unsafe extern "C" fn rustleaks_cancel_new(out: *mut *mut CancelHandle) -> i32 {
     guarded(|| {
         // SAFETY: forwarded from the caller.
-        unsafe {
-            clear_out(out)?;
-            out.write(Box::into_raw(Box::default()));
-        }
+        let mut out = unsafe { handle_out(out) }?;
+        out.write(Box::into_raw(Box::default()));
         Ok(())
     })
 }
@@ -551,7 +628,8 @@ unsafe fn scan_request<'a>(args: *const ScanArgs) -> Result<ScanRequest<'a>, Ffi
 /// live cancel handle; neither may be freed during the call. `input`
 /// follows the byte pointer rule. `args` must be null or point to one
 /// readable `ScanArgs`, whose `path` follows the byte pointer rule. `out`
-/// and `error` must be null or valid for one write.
+/// and `error` must be null or valid for one write. A null `error` means that
+/// the caller wants only the status.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rustleaks_scan(
     engine: *const EngineHandle,
@@ -564,15 +642,12 @@ pub unsafe extern "C" fn rustleaks_scan(
 ) -> i32 {
     guarded(|| {
         // SAFETY: forwarded from the caller.
-        unsafe {
-            clear_out(error)?;
-            clear_out(out)?;
-        }
-        // SAFETY: `error` was checked by `clear_out`; the other pointers are
-        // forwarded from the caller.
-        let status = unsafe {
-            guarded_with_error(error, || {
-                let invalid = |message: &str| FfiError::new(ERROR_INVALID_ARGUMENT, message);
+        let (mut error, mut out) = unsafe { (error_out(error)?, handle_out(out)?) };
+        let status = guarded_with_error(error.as_mut(), || {
+            let invalid = |message: &str| FfiError::new(ERROR_INVALID_ARGUMENT, message);
+            // SAFETY: the engine and cancel handles, the scan arguments and the
+            // input follow the rules that the caller guarantees.
+            let (engine, cancel, request) = unsafe {
                 let engine = borrow(engine)
                     .map_err(|_| invalid("the engine handle is null or misaligned"))?;
                 let cancel = if cancel.is_null() {
@@ -582,16 +657,17 @@ pub unsafe extern "C" fn rustleaks_scan(
                         borrow(cancel).map_err(|_| invalid("the cancel handle is misaligned"))?;
                     Some(handle.flag())
                 };
-                let request = scan_request(args)?;
-                // Check the length before touching the input.
-                engine.check_input_size(input_len)?;
-                let input = borrow_bytes(input, input_len)
-                    .map_err(|_| invalid("the input pointer is null"))?;
-                let result = engine.scan(input, &request, cancel)?;
-                out.write(Box::into_raw(Box::new(result)));
-                Ok(())
-            })
-        };
+                (engine, cancel, scan_request(args)?)
+            };
+            // Check the length before touching the input.
+            engine.check_input_size(input_len)?;
+            // SAFETY: the caller guarantees the byte pointer rule for the input.
+            let input = unsafe { borrow_bytes(input, input_len) }
+                .map_err(|_| invalid("the input pointer is null"))?;
+            let result = engine.scan(input, &request, cancel)?;
+            out.write(Box::into_raw(Box::new(result)));
+            Ok(())
+        });
         if status == STATUS_OK {
             Ok(())
         } else {

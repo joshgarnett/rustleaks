@@ -10,7 +10,8 @@
  * kind. A panic inside the library returns RUSTLEAKS_ERROR_PANIC.
  * rustleaks_engine_new and rustleaks_scan also return an error handle when
  * they fail and their error pointer is not null. Free it with
- * rustleaks_error_free.
+ * rustleaks_error_free. Their error pointer can be NULL: the call then
+ * returns only the status, and no error handle is made.
  *
  * Pointers:
  * - A function that returns a handle first writes NULL to its out
@@ -19,7 +20,8 @@
  *   that many readable bytes that do not change during the call. The
  *   library copies every input before the call returns.
  * - A NULL or misaligned handle or out pointer gives
- *   RUSTLEAKS_ERROR_INVALID_ARGUMENT. The library cannot detect a freed or
+ *   RUSTLEAKS_ERROR_INVALID_ARGUMENT, except a NULL error pointer, which
+ *   is allowed. A misaligned error pointer is invalid. The library cannot detect a freed or
  *   wrong handle; passing one is undefined behavior.
  * - Views (rustleaks_bytes, rule, finding and status views) point into the
  *   handle that produced them and are valid until that handle is freed. A

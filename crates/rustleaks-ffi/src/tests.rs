@@ -561,8 +561,7 @@ fn a_panicking_scan_drops_its_scratch_and_returns_an_internal_error() {
                 .unwrap();
         })
         .unwrap();
-        // SAFETY: the harness engine owns a live handle.
-        let handle = unsafe { &*engine.raw() };
+        let handle = engine.handle();
         assert_eq!(handle.has_scan_threads(), caller_thread == 0);
         assert_eq!(handle.pooled_scratch(), 0);
         engine.scan(b"TOKEN", None, None).unwrap();
@@ -623,8 +622,7 @@ fn concurrent_scans_share_one_engine_and_keep_at_most_one_scratch_per_worker() {
             });
         }
     });
-    // SAFETY: the harness engine owns a live handle.
-    let handle: &EngineHandle = unsafe { &*engine.raw() };
+    let handle: &EngineHandle = engine.handle();
     assert!(handle.pooled_scratch() <= 2);
 }
 
@@ -840,4 +838,65 @@ fn rule_count_and_workers_match_the_harness_views() {
         assert_eq!(rustleaks_options_free(options), STATUS_OK);
         assert_eq!(rustleaks_engine_free(out), STATUS_OK);
     }
+}
+
+#[test]
+fn a_null_error_pointer_returns_only_the_status() {
+    let mut options = Options::new().unwrap();
+    options.set_config(TOKEN_CONFIG).unwrap();
+    let mut bad = Options::new().unwrap();
+    bad.set_config(b"[extend]\npath = \"base.toml\"\n").unwrap();
+    let mut engine = ptr::null_mut();
+    let mut result = ptr::null_mut();
+    // SAFETY: the options handles are live, the out pointers are valid
+    // locals, the error pointers are null, and every handle made here is
+    // freed once.
+    unsafe {
+        // Success without an error pointer.
+        let status = rustleaks_engine_new(options.raw(), &raw mut engine, ptr::null_mut());
+        assert_eq!(status, STATUS_OK);
+        assert!(!engine.is_null());
+        let status = rustleaks_scan(
+            engine,
+            b"TOKEN".as_ptr(),
+            5,
+            ptr::null(),
+            ptr::null(),
+            &raw mut result,
+            ptr::null_mut(),
+        );
+        assert_eq!(status, STATUS_OK);
+        assert!(!result.is_null());
+        assert_eq!(rustleaks_result_free(result), STATUS_OK);
+
+        // Failures without an error pointer: only the status comes back.
+        let status = rustleaks_scan(
+            engine,
+            ptr::null(),
+            5,
+            ptr::null(),
+            ptr::null(),
+            &raw mut result,
+            ptr::null_mut(),
+        );
+        assert_eq!(status, ERROR_INVALID_ARGUMENT);
+        assert!(result.is_null());
+        assert_eq!(rustleaks_engine_free(engine), STATUS_OK);
+
+        let status = rustleaks_engine_new(bad.raw(), &raw mut engine, ptr::null_mut());
+        assert_eq!(status, ERROR_CONFIG);
+        assert!(engine.is_null());
+    }
+}
+
+#[test]
+fn a_misaligned_error_pointer_is_invalid() {
+    let options = Options::new().unwrap();
+    let mut engine = ptr::null_mut();
+    let misaligned = ptr::without_provenance_mut::<*mut crate::handles::FfiError>(1);
+    // SAFETY: the library rejects the misaligned error pointer before it
+    // writes through it; the other pointers are valid.
+    let status = unsafe { rustleaks_engine_new(options.raw(), &raw mut engine, misaligned) };
+    assert_eq!(status, ERROR_INVALID_ARGUMENT);
+    assert!(engine.is_null());
 }

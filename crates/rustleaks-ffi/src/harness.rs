@@ -378,6 +378,16 @@ impl Engine {
         self.0
     }
 
+    /// The engine behind the handle, borrowed for as long as `self`.
+    #[must_use]
+    pub fn handle(&self) -> &EngineHandle {
+        // SAFETY: `Engine::new` checked that the handle is not null, the
+        // library made it with `Box::into_raw`, and this value frees it only
+        // when it drops, so it stays live and unchanged while `self` is
+        // borrowed.
+        unsafe { &*self.0 }
+    }
+
     /// The worker count.
     #[must_use]
     pub fn workers(&self) -> usize {
