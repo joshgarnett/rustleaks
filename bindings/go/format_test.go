@@ -3,6 +3,7 @@ package rustleaks
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -76,6 +77,62 @@ func TestFormattingLeavesOutTheSecret(t *testing.T) {
 		checkNoMarker(t, "slog "+name, out.String())
 		if !strings.Contains(out.String(), "synthetic-format") {
 			t.Errorf("slog %s output has no rule ID: %s", name, out.String())
+		}
+	}
+}
+
+// TestCollectionsLeaveOutTheSecret logs and encodes findings the way a
+// program logs a scan result: the slice that a scan returns, a map value
+// and a struct field.
+func TestCollectionsLeaveOutTheSecret(t *testing.T) {
+	findings := formatFindings(t)
+	type report struct {
+		Name     string
+		Findings []Finding
+		First    Finding
+		Pointer  *Finding
+	}
+	values := map[string]any{
+		"slice":  findings,
+		"map":    map[string]Finding{"first": findings[0]},
+		"struct": report{Name: "scan", Findings: findings, First: findings[0], Pointer: &findings[0]},
+		"nested": map[string][]Finding{"app.env": findings},
+	}
+	for name, value := range values {
+		for handlerName, handler := range map[string]func(*bytes.Buffer) slog.Handler{
+			"text": func(b *bytes.Buffer) slog.Handler { return slog.NewTextHandler(b, nil) },
+			"json": func(b *bytes.Buffer) slog.Handler { return slog.NewJSONHandler(b, nil) },
+		} {
+			var out bytes.Buffer
+			slog.New(handler(&out)).Info("found", "findings", value)
+			checkNoMarker(t, "slog "+handlerName+" "+name, out.String())
+			if !strings.Contains(out.String(), "synthetic-format") {
+				t.Errorf("slog %s %s has no rule ID: %s", handlerName, name, out.String())
+			}
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkNoMarker(t, "json.Marshal "+name, string(encoded))
+	}
+
+	encoded, err := json.Marshal(findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"Secret", "Match", "Line"} {
+		if _, ok := decoded[0][field]; ok {
+			t.Errorf("JSON has %s", field)
+		}
+	}
+	for _, field := range []string{"RuleID", "Description", "Tags", "StartLine", "EndLine", "StartColumn", "EndColumn", "SecretRange", "MatchRange", "Entropy", "Path"} {
+		if _, ok := decoded[0][field]; !ok {
+			t.Errorf("JSON has no %s: %s", field, encoded)
 		}
 	}
 }

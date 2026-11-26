@@ -2,6 +2,7 @@ package rustleaks
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -53,6 +54,25 @@ func TestLibraryMatchesThePackage(t *testing.T) {
 	}
 	if err := checkLibraryIdentity(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLibraryErrorKinds(t *testing.T) {
+	for status, want := range map[int32]LibraryErrorKind{
+		errorEngine:          LibraryEngine,
+		errorPanic:           LibraryPanic,
+		errorABIMismatch:     LibraryVersion,
+		errorInvalidArgument: LibraryEngine,
+	} {
+		err := statusError("test", status)
+		var libErr *LibraryError
+		if !errors.As(err, &libErr) || libErr.Kind != want {
+			t.Errorf("status %d: %v, want kind %v", status, err, want)
+		}
+	}
+	names := []string{LibraryLoad.String(), LibraryVersion.String(), LibraryEngine.String(), LibraryPanic.String()}
+	if got := fmt.Sprint(names); got != "[load version engine panic]" {
+		t.Errorf("kind names %s", got)
 	}
 }
 

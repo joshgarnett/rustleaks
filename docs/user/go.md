@@ -16,17 +16,24 @@ Unreleased in the [changelog](../../CHANGELOG.md) and is not in a release yet.
 
 ## Install
 
-The package needs Go 1.27 or later.
+The package is not published yet. Its code is in `bindings/go/` of this
+repository, where Bazel builds the Rust library and links it into the
+package tests:
 
 ```sh
-go get github.com/joshgarnett/rustleaks-go
+just test-go
 ```
 
-| System | What you need |
+A later release is planned to publish the module
+`github.com/joshgarnett/rustleaks-go` with prebuilt libraries for each
+system. Until then there is no `go get` command for it.
+
+The package needs Go 1.27 or later.
+
+| System | What the package needs |
 | --- | --- |
-| Linux and macOS | cgo: a C compiler and `CGO_ENABLED=1`. The package links a prebuilt Rust static library. |
-| Linux with musl libc | The same, and build with `-tags musl`, for example `go build -tags musl ./...`. |
-| Windows x86_64 and ARM64 | Nothing more. The package loads a Rust DLL with the `syscall` package, so it builds with or without cgo. |
+| Linux and macOS | cgo: a C compiler and `CGO_ENABLED=1`. The package links the Rust static library. |
+| Windows x86_64 and ARM64 | No cgo and no C compiler. The package loads the Rust DLL with the `syscall` package, so it builds with or without cgo. See [Windows library](#windows-library). |
 
 On Linux and macOS a build with `CGO_ENABLED=0` fails at compile time with
 the error `undefined: rustleaks_needs_cgo_on_linux_and_macos_set_CGO_ENABLED_1`.
@@ -87,7 +94,8 @@ same rules as the `rustleaks` command.
 | `WithConfig(toml)` with `[extend] useDefault = true` | Keeps every built-in rule and adds yours. |
 
 A configuration with `[extend] path = "..."` fails with a `*ConfigError`,
-because the package reads no files. `WithRules` also works with
+because the package reads no files. An empty configuration builds an engine
+with no rules, which finds nothing. `WithRules` also works with
 `WithConfig`. `Engine.Rules()` lists the rules that can report findings, in
 report order, with their ID, description, tags and keywords.
 
@@ -121,7 +129,7 @@ default, and on a scan they change that scan only.
 | `WithBase64Mode(mode)` | Both | `Base64Compatible` | `Base64Extended` also decodes padded URL-safe and unpadded standard base64. See [Decoding](configuration.md#decoding). |
 | `WithAllowComments(honor)` | Both | `true` | Whether a `rustleaks:allow` or `gitleaks:allow` comment hides the findings on its line. |
 | `WithRedaction(percent)` | Both | 0, no masking | Masks part of each secret in `Secret`, `Match` and `Line`. 100 gives `REDACTED`. |
-| `WithBudget(kind, limit)` | Both | Only `BudgetFindingRecords`, 100,000 | Limits one kind of scan work. See [Budgets](#budgets). |
+| `WithBudget(kind, limit)` | Both | Only `BudgetFindingRecords`, 100,000 finding records | Limits one kind of scan work. See [Budgets](#budgets). |
 
 Two defaults differ from the `rustleaks` command:
 
@@ -141,9 +149,9 @@ return an error before the library runs.
 | --- | --- |
 | `BudgetDecodedBytes` | Bytes that the decoder produces. |
 | `BudgetWorkUnits` | Detection steps. A work unit has no fixed time cost, and the count for one input can change between releases. |
-| `BudgetFindingRecords` | Findings. The default is 100,000. |
+| `BudgetFindingRecords` | Finding records. The engine counts a record for each candidate finding before its final filters, so a scan can stop with fewer findings than the limit. The default is 100,000. |
 | `BudgetFindingPayloadBytes` | Bytes that findings hold. |
-| `BudgetCollectedSpans` | Candidate matches collected. |
+| `BudgetCollectedSpans` | Candidate matches collected. A finite limit turns off a faster search path for some rules. |
 | `BudgetNormalizationBytes` | Bytes produced when text is normalized for matching. |
 
 Each limit includes its value. `rustleaks.Unlimited` turns a budget off. A
@@ -156,11 +164,11 @@ behave in the engine.
 
 | Error | When |
 | --- | --- |
-| `*ConfigError` | `New` could not load the configuration (`KindConfig`), a rule ID does not exist (`KindRuleSelection`), or the engine could not be built or start its threads (`KindEngine`). `Message` is the full message from the engine and can quote configuration text. |
+| `*ConfigError` | `New` could not load the configuration (`KindConfig`), or a rule ID does not exist (`KindRuleSelection`). `Message` is the full message from the engine and can quote configuration text. |
 | `*IncompleteError` | A scan stopped early. `Termination` says why: `TerminationCancelled`, `TerminationDeadline`, `TerminationBudget` or `TerminationOther`. For a budget, `Budget`, `Limit`, `Consumed` and `Requested` say which budget ran out, its limit, what the scan used and what the next step asked for. `Usage` is what the scan used. |
 | `ErrInputTooLarge` | The input is longer than the input limit. The error wraps it with the sizes. |
 | `ErrClosed` | The engine is closed. |
-| `*LibraryError` | The native library could not be loaded, has a different version or ABI number than the package, or failed in a way that a correct call does not cause. |
+| `*LibraryError` | The native library failed. `Kind` says how: `LibraryLoad` (it could not be found, extracted or loaded, or lacks an export), `LibraryVersion` (its version or ABI number differs from the package), `LibraryEngine` (it could not build or use an engine, for example because a thread could not start) or `LibraryPanic` (it caught an internal panic). |
 
 A scan stopped by its context gives an error where
 `errors.Is(err, context.Canceled)` or
@@ -186,7 +194,7 @@ collector frees it eventually, but call `Close` to free it at a known time.
 The library builds each engine on a thread of its own and runs scans on one
 thread per worker, each with an 8 MiB stack, so goroutines with small stacks
 can call it. In a process that limits threads, starting them can fail, and
-`New` returns a `*ConfigError` of kind `KindEngine`.
+`New` returns a `*LibraryError` of kind `LibraryEngine`.
 
 ## Deadlines and cancellation
 
@@ -236,23 +244,23 @@ findings on one long line do not copy it many times.
 
 ## Safe logging
 
-Findings hold secret bytes. The `String`, `GoString`, `Format` and `LogValue`
-methods of `Finding` print the rule ID, path and position, and never
-`Secret`, `Match` or `Line`. So `fmt.Println(f)`, `%v`, `%+v`, `%#v` and
-`slog` text and JSON output do not show the secret. Error messages do not
+Findings hold secret bytes. The `String`, `GoString`, `Format`, `LogValue`
+and `MarshalJSON` methods of `Finding` leave out `Secret`, `Match` and
+`Line`. So `fmt` (`%v`, `%+v`, `%#v`, `%s`), `slog` with the text or JSON
+handler, and `json.Marshal` never write the secret. That holds for one
+finding, a pointer to one, the `[]Finding` that a scan returns, and
+findings in maps and in exported struct fields. Error messages do not
 include the scanned input.
 
-Other code can still read the fields:
+The JSON form has every other field, under the Go field names. To store or
+send the secret, match or line, copy them into a type of your own.
 
-- `encoding/json` and other encoders write every exported field, including
-  the secret.
-- `fmt` cannot call the methods of a `Finding` stored in an unexported field
-  of your own struct, and prints its fields.
+`fmt` cannot call the methods of a `Finding` stored in an unexported field
+of your own struct, and prints its fields, including the secret.
 
 `f.Redacted(percent)` returns a copy with the secret masked in `Secret`,
-`Match` and `Line`, the same way as `WithRedaction`. Use it, or copy only
-the fields you need, before you send findings elsewhere. The package does
-not erase inputs or findings from memory.
+`Match` and `Line`, the same way as `WithRedaction`. The package does not
+erase inputs or findings from memory.
 
 ## Windows library
 
@@ -261,19 +269,26 @@ On Windows the package needs the Rust DLL. It looks for it in this order:
 1. The absolute path given to `rustleaks.SetLibraryPath`, called before the
    first `New`.
 2. The absolute path in the `RUSTLEAKS_LIBRARY_PATH` environment variable.
-3. The DLL embedded in the published Windows platform module.
+3. A DLL embedded in the program. The planned published module embeds one
+   for each Windows platform; this repository does not.
 
-The package writes the embedded DLL once to
+The package writes an embedded DLL once to
 `<user cache folder>/rustleaks/<version>-<hash>/rustleaks_ffi.dll`, where the
-user cache folder is the one `os.UserCacheDir` returns, such as
-`%LocalAppData%`. The folder is private to the user and the file is
-read-only. The package checks the SHA-256 of the compressed and the written
-bytes, and checks it again before it reuses a file that is already there.
-A lock file keeps two processes from writing it at once.
+user cache folder is the one `os.UserCacheDir` returns, `%LocalAppData%`.
+The new folder inherits the access rules of that folder, which by default
+only the user and administrators can change. The file is read-only. The
+package checks the SHA-256 of the compressed bytes before it writes them,
+and of the written file. A lock that the system releases when its process
+ends keeps two processes from writing the file at once.
 
-The DLL is loaded by absolute path, with only its own folder and System32
-searched for the DLLs it needs, and is never unloaded. Load failures,
-including a DLL of another version, return a `*LibraryError`.
+Before it loads the DLL, the package opens the file so that other handles
+can only read it, checks the SHA-256 of an embedded DLL again, and keeps
+the file open until the load returns. No other process can change the file
+between the check and the load.
+
+The DLL is loaded by absolute path, with only System32 searched for the
+DLLs it needs, and is never unloaded. Load failures, including a DLL of
+another version, return a `*LibraryError`.
 
 On Linux and macOS the library is linked into the program, and
 `SetLibraryPath` and `RUSTLEAKS_LIBRARY_PATH` are not used.

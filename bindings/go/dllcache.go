@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,25 +20,27 @@ import (
 const (
 	// maxLibraryBytes bounds the decompressed library.
 	maxLibraryBytes = 256 << 20
-	// lockWait is how long extraction waits for another process's lock.
+	// lockWait is how long extraction waits for another process that holds
+	// the lock. The system releases a lock when its process ends, so a lock
+	// is never left behind.
 	lockWait = 2 * time.Minute
-	// staleLock is the age after which a lock file is treated as left
-	// behind by a process that stopped.
-	staleLock = 5 * time.Minute
-	lockPoll  = 50 * time.Millisecond
+	lockPoll = 50 * time.Millisecond
 )
 
-// extractLibrary writes lib to root/<version>-<hash prefix>/rustleaks_ffi.dll unless a
-// file with the expected hash is already there, and returns the file path.
+// extractLibrary writes lib to root/<version>-<hash prefix>/rustleaks_ffi.dll
+// unless a file with the expected hash is already there, and returns the
+// file path.
 //
-// The folder has mode 0700 and the file is read-only. The compressed bytes
-// are checked before decompression and the result before it is written. A
-// lock file keeps two processes from writing at once, and the file appears
-// only by rename from a temporary file in the same folder. An existing file
-// is used only after its hash is checked again.
+// The file is read-only. On Linux and macOS, where only the tests use this
+// code, the folder has mode 0700; on Windows it inherits the access rules
+// of the user cache folder. The compressed bytes are checked before
+// decompression and the result before it is written. A lock that the
+// system holds for the process keeps two processes from writing at once,
+// and the file appears only by rename from a temporary file in the same
+// folder. An existing file is used only after its hash is checked again.
 func extractLibrary(root string, lib *embeddedDLL) (string, error) {
 	fail := func(message string, err error) (string, error) {
-		return "", &LibraryError{Op: "extract library", Path: root, Message: message, Err: err}
+		return "", &LibraryError{Kind: LibraryLoad, Op: "extract library", Path: root, Message: message, Err: err}
 	}
 	if !validVersion(lib.version) {
 		return fail("the embedded library has no valid version", nil)
@@ -53,7 +54,7 @@ func extractLibrary(root string, lib *embeddedDLL) (string, error) {
 	}
 
 	dir := filepath.Join(root, lib.version+"-"+want[:16])
-	if err := makePrivateDir(dir); err != nil {
+	if err := makeCacheDir(dir); err != nil {
 		return fail("cannot create the cache folder", err)
 	}
 	target := filepath.Join(dir, embeddedLibraryName)
@@ -61,8 +62,13 @@ func extractLibrary(root string, lib *embeddedDLL) (string, error) {
 		return target, nil
 	}
 
-	unlock, err := lockDir(dir)
+	unlock, err := lockFile(filepath.Join(dir, ".lock"), lockWait)
 	if err != nil {
+		// The holder may have finished the file without releasing the lock
+		// yet.
+		if fileHashMatches(target, want) {
+			return target, nil
+		}
 		return fail("cannot lock the cache folder", err)
 	}
 	defer unlock()
@@ -125,9 +131,10 @@ func fileHashMatches(path, want string) bool {
 	return strings.EqualFold(hex.EncodeToString(h.Sum(nil)), want)
 }
 
-// makePrivateDir creates dir with mode 0700 and checks that it is a folder,
-// not a link.
-func makePrivateDir(dir string) error {
+// makeCacheDir creates dir with mode 0700 and checks that it is a folder,
+// not a link. Windows ignores the mode, and the folder inherits the access
+// rules of its parent.
+func makeCacheDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -142,31 +149,6 @@ func makePrivateDir(dir string) error {
 		return os.Chmod(dir, 0o700)
 	}
 	return nil
-}
-
-// lockDir takes the folder lock: a file created only if it does not exist.
-// A lock older than staleLock is removed.
-func lockDir(dir string) (func(), error) {
-	lock := filepath.Join(dir, ".lock")
-	deadline := time.Now().Add(lockWait)
-	for {
-		f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err == nil {
-			_ = f.Close()
-			return func() { _ = os.Remove(lock) }, nil
-		}
-		if !errors.Is(err, fs.ErrExist) {
-			return nil, err
-		}
-		if info, statErr := os.Lstat(lock); statErr == nil && time.Since(info.ModTime()) > staleLock {
-			_ = os.Remove(lock)
-			continue
-		}
-		if time.Now().After(deadline) {
-			return nil, errors.New("another process holds " + lock)
-		}
-		time.Sleep(lockPoll)
-	}
 }
 
 func gunzip(compressed []byte) ([]byte, error) {

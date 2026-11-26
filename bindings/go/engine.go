@@ -42,9 +42,9 @@ type Engine struct {
 // depth 0, allow comments honored, an input limit of 10,000,000 bytes and a
 // limit of 100,000 findings.
 //
-// New returns a *ConfigError when the configuration, the rule selection or
-// the build fails, and a *LibraryError when the native library cannot be
-// loaded or does not match this package.
+// New returns a *ConfigError when the configuration or the rule selection
+// fails, and a *LibraryError when the native library cannot be loaded, does
+// not match this package or cannot build the engine.
 func New(opts ...Option) (*Engine, error) {
 	var settings engineSettings
 	for _, opt := range opts {
@@ -99,7 +99,7 @@ func buildEngine(s *engineSettings) (unsafe.Pointer, error) {
 	var options unsafe.Pointer
 	if status := callOptionsNew(abiVersion, &options); status != statusOK {
 		if status == errorABIMismatch {
-			return nil, &LibraryError{Op: "create engine", Message: "the library has a different ABI number than this package"}
+			return nil, &LibraryError{Kind: LibraryVersion, Op: "create engine", Message: "the library has a different ABI number than this package"}
 		}
 		return nil, statusError("create engine options", status)
 	}
@@ -174,10 +174,8 @@ func buildEngine(s *engineSettings) (unsafe.Pointer, error) {
 		return nil, &ConfigError{Kind: KindConfig, Message: message}
 	case errorRuleSelection:
 		return nil, &ConfigError{Kind: KindRuleSelection, Message: message}
-	case errorEngine:
-		return nil, &ConfigError{Kind: KindEngine, Message: message}
 	default:
-		return nil, &LibraryError{Op: "create engine", Message: message}
+		return nil, &LibraryError{Kind: libraryKind(kind), Op: "create engine", Message: message}
 	}
 }
 
@@ -406,7 +404,7 @@ func (e *Engine) scanNative(ctx context.Context, input unsafe.Pointer, n int, se
 		if kind == errorInputTooLarge {
 			return nil, &inputSizeError{message: message}
 		}
-		return nil, &LibraryError{Op: "scan", Message: message}
+		return nil, &LibraryError{Kind: libraryKind(kind), Op: "scan", Message: message}
 	}
 	defer func() {
 		handle := result
