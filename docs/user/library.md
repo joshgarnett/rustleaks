@@ -6,6 +6,7 @@ engine, scanning, limits, findings, ignore files and baselines, choosing
 rule files and review records.
 
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
+To scan from Go, see [Using the Go package](go.md).
 
 ## Add the library
 

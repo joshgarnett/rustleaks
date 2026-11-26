@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- A Go package, `github.com/joshgarnett/rustleaks-go`, scans bytes for
+  secrets in process with every built-in rule, a selection of them, or your
+  own configuration. It has engine and scan options, budgets, context
+  deadlines and cancellation, and findings whose printed and logged forms
+  leave out the secret. It uses cgo on Linux and macOS and loads a DLL
+  without cgo on Windows. Its defaults are those of `rustleaks-core`: decode
+  depth 0 and allow comments honored. See [Using the Go
+  package](docs/user/go.md).
 - In `rustleaks-core`, a `Fragment` starts at line 1 unless you set
   another start line, so findings from direct scans number lines like the
   `rustleaks` command. Before, the default was 0. `Fragment::new`,
