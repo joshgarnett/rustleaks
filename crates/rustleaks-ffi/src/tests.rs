@@ -892,7 +892,9 @@ fn a_null_error_pointer_returns_only_the_status() {
 #[test]
 fn a_misaligned_error_pointer_is_invalid() {
     let options = Options::new().unwrap();
-    let mut engine = ptr::null_mut();
+    // A dangling non-null value, so the assertion below proves that the
+    // library wrote NULL to `out`.
+    let mut engine = ptr::NonNull::dangling().as_ptr();
     let misaligned = ptr::without_provenance_mut::<*mut crate::handles::FfiError>(1);
     // SAFETY: the library rejects the misaligned error pointer before it
     // writes through it; the other pointers are valid.

@@ -405,8 +405,11 @@ pub unsafe extern "C" fn rustleaks_engine_new(
     error: *mut *mut FfiError,
 ) -> i32 {
     guarded(|| {
-        // SAFETY: forwarded from the caller.
-        let (mut error, mut out) = unsafe { (error_out(error)?, handle_out(out)?) };
+        // SAFETY: forwarded from the caller. Both pointers are checked and
+        // set to null before either error returns, so a valid `out` is null
+        // even when `error` is misaligned.
+        let (out, error) = unsafe { (handle_out(out), error_out(error)) };
+        let (mut error, mut out) = (error?, out?);
         let status = guarded_with_error(error.as_mut(), || {
             // SAFETY: forwarded from the caller.
             let options = unsafe { borrow(options) }.map_err(|status| {
@@ -641,8 +644,11 @@ pub unsafe extern "C" fn rustleaks_scan(
     error: *mut *mut FfiError,
 ) -> i32 {
     guarded(|| {
-        // SAFETY: forwarded from the caller.
-        let (mut error, mut out) = unsafe { (error_out(error)?, handle_out(out)?) };
+        // SAFETY: forwarded from the caller. Both pointers are checked and
+        // set to null before either error returns, so a valid `out` is null
+        // even when `error` is misaligned.
+        let (out, error) = unsafe { (handle_out(out), error_out(error)) };
+        let (mut error, mut out) = (error?, out?);
         let status = guarded_with_error(error.as_mut(), || {
             let invalid = |message: &str| FfiError::new(ERROR_INVALID_ARGUMENT, message);
             // SAFETY: the engine and cancel handles, the scan arguments and the
