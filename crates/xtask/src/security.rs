@@ -686,7 +686,9 @@ fn validate_unsafe_crate_root(source: &str) -> Result<(), String> {
 /// for Cargo builds.
 fn validate_unsafe_crate_manifest(manifest: &str) -> Result<(), String> {
     if manifest.contains("[lints]\nworkspace = true") {
-        return Err(format!("{UNSAFE_CRATE} cannot inherit the workspace forbid"));
+        return Err(format!(
+            "{UNSAFE_CRATE} cannot inherit the workspace forbid"
+        ));
     }
     for line in [
         "unsafe_op_in_unsafe_fn = \"deny\"",
@@ -708,7 +710,10 @@ fn owned_safety_check() -> Result<(), String> {
         return Err("workspace must forbid unsafe code for inheriting owned crates".into());
     }
     let crate_roots = owned_crate_roots(&root)?;
-    if !crate_roots.iter().any(|relative| relative == UNSAFE_CRATE_ROOT) {
+    if !crate_roots
+        .iter()
+        .any(|relative| relative == UNSAFE_CRATE_ROOT)
+    {
         return Err(format!("{UNSAFE_CRATE_ROOT} is missing"));
     }
     for relative in &crate_roots {
@@ -852,8 +857,9 @@ mod tests {
     use super::{
         COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, owned_crate_roots, parse_civil_day,
         reviewed_unsafe_packages, validate_compcol_exemption_scope, validate_dependency_boundaries,
-        validate_owned_unsafe_package, validate_supply_chain_exceptions, validate_unsafe_crate_manifest,
-        validate_unsafe_crate_root, validate_unsafe_package_set, validate_vet_exemption,
+        validate_owned_unsafe_package, validate_supply_chain_exceptions,
+        validate_unsafe_crate_manifest, validate_unsafe_crate_root, validate_unsafe_package_set,
+        validate_vet_exemption,
     };
 
     #[test]
@@ -941,7 +947,10 @@ mod tests {
             std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml")).unwrap();
         assert!(validate_unsafe_crate_manifest(&manifest).is_ok());
         assert!(validate_unsafe_crate_manifest("[lints]\nworkspace = true\n").is_err());
-        let weaker = manifest.replace("missing_safety_doc = \"deny\"", "missing_safety_doc = \"warn\"");
+        let weaker = manifest.replace(
+            "missing_safety_doc = \"deny\"",
+            "missing_safety_doc = \"warn\"",
+        );
         assert!(validate_unsafe_crate_manifest(&weaker).is_err());
     }
 
