@@ -32,8 +32,10 @@ type Range struct {
 //
 // Secret, Match and Line hold the secret. The String, GoString, Format,
 // LogValue and MarshalJSON methods leave them out, so fmt, log/slog and
-// encoding/json never write them, also for findings in slices, maps and
-// struct fields. To store or send those values, copy them into a type of
+// encoding/json do not write them for a Finding, a *Finding, or findings in
+// slices, maps and exported struct fields. fmt cannot call these methods
+// for a Finding in an unexported struct field, and prints its fields,
+// including the secret. To store or send the secret, copy it into a type of
 // your own. Use Redacted for a copy with the secret masked.
 type Finding struct {
 	// RuleID and Description name the rule that matched.

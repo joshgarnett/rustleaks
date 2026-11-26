@@ -15,8 +15,8 @@
 // so it needs a C compiler and CGO_ENABLED=1. On Windows it loads the Rust
 // DLL with the syscall package and needs neither.
 //
-// Findings hold secret bytes. Their String, GoString, Format and LogValue
-// methods leave the secret out. The package does not erase inputs or
+// Findings hold secret bytes. Their String, GoString, Format, LogValue and
+// MarshalJSON methods leave the secret out. The package does not erase inputs or
 // findings from memory.
 //
 // The user guide is at
