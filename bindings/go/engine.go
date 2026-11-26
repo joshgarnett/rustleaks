@@ -22,10 +22,9 @@ type Engine struct {
 	workers int
 	rules   []Rule
 	byID    map[string]int
-	// maxInput is the input limit when the caller set one. Otherwise the
-	// library checks its own default.
-	maxInput    uint64
-	maxInputSet bool
+	// maxInput is the engine's inclusive input limit, read from the
+	// library, or Unlimited.
+	maxInput uint64
 
 	slots   chan struct{} // one value for each running scan
 	closing chan struct{} // closed when Close starts
@@ -64,10 +63,8 @@ func New(opts ...Option) (*Engine, error) {
 		return nil, err
 	}
 	e := &Engine{
-		native:      native,
-		maxInput:    settings.maxInputBytes.value,
-		maxInputSet: settings.maxInputBytes.set,
-		closing:     make(chan struct{}),
+		native:  native,
+		closing: make(chan struct{}),
 	}
 	if err := e.readEngine(); err != nil {
 		callEngineFree(native)
@@ -191,6 +188,9 @@ func (e *Engine) readEngine() error {
 		return statusError("read the worker count", status)
 	}
 	e.workers = max(int(workers), 1)
+	if status := callEngineMaxInputBytes(e.native, &e.maxInput); status != statusOK {
+		return statusError("read the input limit", status)
+	}
 	var count uintptr
 	if status := callEngineRuleCount(e.native, &count); status != statusOK {
 		return statusError("read the rule count", status)
@@ -303,7 +303,9 @@ func (e *Engine) scan(ctx context.Context, input unsafe.Pointer, n int, opts []S
 	if e == nil {
 		return nil, ErrClosed
 	}
-	if e.maxInputSet && e.maxInput != Unlimited && uint64(n) > e.maxInput {
+	// The library checks the size too. Checking here first skips the wait
+	// for a worker.
+	if e.maxInput != Unlimited && uint64(n) > e.maxInput {
 		return nil, inputTooLarge(n, e.maxInput)
 	}
 	if err := ctx.Err(); err != nil {

@@ -256,19 +256,40 @@ func TestInputLimit(t *testing.T) {
 	if findings, err := e.ScanBytes(ctx, at); err != nil || len(findings) != 1 {
 		t.Fatalf("input at the default limit: %d findings, %v", len(findings), err)
 	}
+	// The package reads the limit from the library and rejects a longer
+	// input before it waits for a worker or calls the library.
+	if e.maxInput != 10_000_000 {
+		t.Errorf("the engine reports an input limit of %d", e.maxInput)
+	}
+	called := false
+	setHook(t, &testHookBeforeNativeScan, func() { called = true })
 	over := append(at, '\n')
-	if _, err := e.ScanBytes(ctx, over); !errors.Is(err, ErrInputTooLarge) {
-		t.Fatalf("input over the default limit: %v", err)
+	if _, err := e.ScanBytes(ctx, over); !errors.Is(err, ErrInputTooLarge) || called {
+		t.Fatalf("input over the default limit: %v, native call %t", err, called)
+	}
+	small := markerEngine(t, WithMaxInputBytes(4))
+	if _, err := small.ScanString(ctx, "12345"); !errors.Is(err, ErrInputTooLarge) || called {
+		t.Fatalf("input over a set limit: %v, native call %t", err, called)
+	}
+	if findings, err := small.ScanString(ctx, "1234"); err != nil || findings != nil || !called {
+		t.Fatalf("input at a set limit: %v, %v, native call %t", findings, err, called)
 	}
 	unlimited := markerEngine(t, WithMaxInputBytes(Unlimited))
+	if unlimited.maxInput != Unlimited {
+		t.Errorf("Unlimited engine reports an input limit of %d", unlimited.maxInput)
+	}
 	if findings, err := unlimited.ScanBytes(ctx, over); err != nil || len(findings) != 1 {
 		t.Fatalf("Unlimited input: %d findings, %v", len(findings), err)
 	}
-	small := markerEngine(t, WithMaxInputBytes(4))
-	called := false
-	setHook(t, &testHookBeforeNativeScan, func() { called = true })
-	if _, err := small.ScanString(ctx, "12345"); !errors.Is(err, ErrInputTooLarge) || called {
-		t.Fatalf("input over a set limit: %v, native call %t", err, called)
+}
+
+// TestLibraryInputLimitCheck calls the library with an input over the limit
+// directly, past the package's own check, to cover the library's error.
+func TestLibraryInputLimitCheck(t *testing.T) {
+	e := markerEngine(t, WithMaxInputBytes(4))
+	e.maxInput = Unlimited
+	if _, err := e.ScanString(context.Background(), "12345"); !errors.Is(err, ErrInputTooLarge) {
+		t.Fatalf("library input check: %v", err)
 	}
 }
 
