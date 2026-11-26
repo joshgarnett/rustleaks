@@ -131,14 +131,21 @@ default, and on a scan they change that scan only.
 | `WithRedaction(percent)` | Both | 0, no masking | Masks part of each secret in `Secret`, `Match` and `Line`. 100 gives `REDACTED`. |
 | `WithBudget(kind, limit)` | Both | Only `BudgetFindingRecords`, 100,000 finding records | Limits one kind of scan work. See [Budgets](#budgets). |
 
-Two defaults differ from the `rustleaks` command:
+Three defaults differ from the `rustleaks` command:
 
 - The decode depth is 0. The command decodes 5 levels. Use
   `WithDecodeDepth(5)` to decode as the command does.
-- Allow comments are honored, as in the command. Anyone who can write the
-  scanned content can add an allow comment to hide a secret. When you scan
-  content that other people write, such as uploads or pull requests, use
-  `WithAllowComments(false)`.
+- An input longer than 10,000,000 bytes is an error that wraps
+  `ErrInputTooLarge`. The command has no such limit; it reads files in
+  parts. Use `WithMaxInputBytes` to change it.
+- A scan stops with an `*IncompleteError` after 100,000 finding records. The
+  command sets no finding record limit. Use
+  `WithBudget(rustleaks.BudgetFindingRecords, n)` to change it.
+
+Allow comments are honored, as in the command. Anyone who can write the
+scanned content can add an allow comment to hide a secret. When you scan
+content that other people write, such as uploads or pull requests, use
+`WithAllowComments(false)`.
 
 A bad option value, such as a negative decode depth, makes `New` or the scan
 return an error before the library runs.
@@ -223,7 +230,7 @@ scan.
 | --- | --- |
 | `RuleID`, `Description`, `Tags` | The rule that matched. Tags include decoding tags, such as `decoded:base64`, for findings in decoded text. |
 | `Secret`, `Match` | The secret, and the full text the rule matched. |
-| `Line` | The source line that holds the match. |
+| `Line` | The source line that holds the match. See the exception below. |
 | `StartLine`, `EndLine`, `StartColumn`, `EndColumn` | The position of the match, with the same values as the `rustleaks` report fields. |
 | `SecretRange`, `MatchRange` | Byte offsets into the input, from `Start` up to `End`. `OK` is false when no exact range exists, for example for decoded text. |
 | `Entropy` | Shannon entropy of the secret. |
@@ -235,6 +242,12 @@ count bytes from 1 on the first line and from 2 on every later line. A rule
 that matches only a path, such as `pkcs12-file`, reports line and column 0,
 and reports a finding even for empty content. On every line after the
 first, `Line` starts with the line break that ends the line before it.
+
+When a match starts on, or runs to, a last line that has no line break,
+`Line` currently holds the text from the start of the input, not the last
+line alone. It can then hold other secrets of the input, and redaction masks
+only the finding's own secret. End the input with a line break, or do not
+use `Line`, when this matters.
 
 Use `SecretRange` and `MatchRange`, not lines and columns, if you change the
 scanned bytes. Do not guess a range whose `OK` is false.

@@ -68,6 +68,9 @@ pub const OPTION_ALLOW_COMMENTS: u32 = 1;
 /// instead of the engine's scan threads, default false. A scan can compile a
 /// pattern with up to 200 groups on the thread that runs it, so set it only
 /// when every calling thread has a large stack, such as 8 MiB.
+/// Core can then also wait on the calling thread, for example when two scans
+/// compile the same pattern at once, and on Apple platforms such a wait can
+/// make a child forked from that thread crash in its first scan there.
 pub const OPTION_SCAN_ON_CALLER_THREAD: u32 = 2;
 
 /// Base64 mode `compatible`.

@@ -40,7 +40,7 @@ type Engine struct {
 // New builds an engine. With no options it uses every built-in rule, the
 // same rules as the rustleaks command, and the library defaults: decode
 // depth 0, allow comments honored, an input limit of 10,000,000 bytes and a
-// limit of 100,000 findings.
+// limit of 100,000 finding records.
 //
 // New returns a *ConfigError when the configuration or the rule selection
 // fails, and a *LibraryError when the native library cannot be loaded, does
@@ -82,6 +82,10 @@ var (
 	// testHookBeforeNativeScan runs after a scan has a worker and its
 	// cancel handle, right before the native call.
 	testHookBeforeNativeScan func()
+	// testHookNativeArgs runs right before the native call with the scan
+	// arguments and the cancel handle, which is nil without one. Tests use
+	// it to reach the library past the package's own checks.
+	testHookNativeArgs func(args *scanArgs, cancel unsafe.Pointer)
 	// testHookLeakFreed runs after the cleanup of a leaked engine.
 	testHookLeakFreed func()
 )
@@ -395,6 +399,9 @@ func (e *Engine) scanNative(ctx context.Context, input unsafe.Pointer, n int, se
 
 	if hook := testHookBeforeNativeScan; hook != nil {
 		hook()
+	}
+	if hook := testHookNativeArgs; hook != nil {
+		hook(&args, cancel)
 	}
 	var result, failure unsafe.Pointer
 	status := callScan(e.native, input, uintptr(n), &args, cancel, &result, &failure)

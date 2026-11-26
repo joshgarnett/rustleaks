@@ -10,7 +10,7 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 use crate::abi::{ERROR_ENGINE, ERROR_PANIC};
@@ -42,11 +42,71 @@ pub(crate) fn on_scan_stack<T: Send + 'static>(
         .stack_size(SCAN_STACK_BYTES)
         .spawn(work)
         .map_err(|error| thread_error(&error))?
+        // `join` waits with `pthread_join` on Unix, not with the thread parker.
         .join()
         .map_err(|_| FfiError::panic())
 }
 
 type Task = Box<dyn FnOnce() + Send + 'static>;
+
+/// The result of one scan task, which the calling thread waits for.
+///
+/// The wait uses a `Mutex` and a `Condvar`, which are pthread objects on
+/// Apple platforms. It must not use a channel, `thread::park` or a contended
+/// `Once`: those park the thread through the standard library's parker,
+/// which on Apple creates a libdispatch semaphore for the thread the first
+/// time it parks. A child forked from that thread inherits the semaphore
+/// but cannot use it, and its first scan on that thread would crash.
+#[derive(Default)]
+struct Reply {
+    slot: Mutex<Option<Result<ResultHandle, FfiError>>>,
+    ready: Condvar,
+}
+
+impl Reply {
+    fn put(&self, outcome: Result<ResultHandle, FfiError>) {
+        *self.slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(outcome);
+        self.ready.notify_one();
+    }
+
+    /// Waits until the task sent its outcome, or was dropped without one.
+    fn wait(&self) -> Result<ResultHandle, FfiError> {
+        let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some(outcome) = slot.take() {
+                return outcome;
+            }
+            slot = self
+                .ready
+                .wait(slot)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+}
+
+/// The scan thread's side of a [`Reply`]. If the task is dropped before it
+/// runs, for example because the queue closed, the reply gets an error, so
+/// the caller never waits forever.
+struct ReplySender {
+    reply: Option<Arc<Reply>>,
+}
+
+impl ReplySender {
+    fn send(&mut self, outcome: Result<ResultHandle, FfiError>) {
+        if let Some(reply) = self.reply.take() {
+            reply.put(outcome);
+        }
+    }
+}
+
+impl Drop for ReplySender {
+    fn drop(&mut self) {
+        self.send(Err(FfiError::new(
+            ERROR_PANIC,
+            "a rustleaks scan thread stopped",
+        )));
+    }
+}
 
 /// The scan threads of one engine. Dropping it closes the queue and joins
 /// every thread, which finish the task they run first.
@@ -82,7 +142,8 @@ impl ScanThreads {
         Ok(threads)
     }
 
-    /// Runs `job` on a scan thread and waits for its result.
+    /// Runs `job` on a scan thread and waits for its result on a [`Reply`],
+    /// never through the thread parker.
     ///
     /// # Errors
     ///
@@ -92,20 +153,23 @@ impl ScanThreads {
         engine: Arc<EngineInner>,
         job: ScanJob,
     ) -> Result<ResultHandle, FfiError> {
-        let stopped = || FfiError::new(ERROR_PANIC, "a rustleaks scan thread stopped");
-        let (reply, result) = mpsc::sync_channel(1);
+        let reply = Arc::new(Reply::default());
+        let mut sender = ReplySender {
+            reply: Some(Arc::clone(&reply)),
+        };
         let task: Task = Box::new(move || {
             let outcome =
                 catch_unwind(AssertUnwindSafe(|| engine.run(job))).map_err(|_| FfiError::panic());
-            // The caller waits for this reply; it cannot have gone away.
-            let _ = reply.send(outcome);
+            sender.send(outcome);
         });
-        self.queue
-            .as_ref()
-            .ok_or_else(stopped)?
-            .send(task)
-            .map_err(|_| stopped())?;
-        result.recv().map_err(|_| stopped())?
+        // A task that cannot be queued is dropped here, and its sender then
+        // fills the reply with an error, so the wait below returns.
+        if let Some(queue) = self.queue.as_ref() {
+            let _ = queue.send(task);
+        } else {
+            drop(task);
+        }
+        reply.wait()
     }
 
     #[cfg(test)]
@@ -149,6 +213,30 @@ mod tests {
         assert_eq!(name.as_deref(), Some("rustleaks-build"));
         let error = on_scan_stack(|| panic!("synthetic")).unwrap_err();
         assert_eq!(error.kind(), ERROR_PANIC);
+    }
+
+    #[test]
+    fn a_reply_returns_what_was_sent_or_an_error_when_the_task_is_dropped() {
+        let reply = Arc::new(Reply::default());
+        let mut sender = ReplySender {
+            reply: Some(Arc::clone(&reply)),
+        };
+        let waiter = {
+            let reply = Arc::clone(&reply);
+            std::thread::spawn(move || reply.wait().unwrap_err())
+        };
+        sender.send(Err(FfiError::new(ERROR_ENGINE, "sent")));
+        drop(sender);
+        let error = waiter.join().unwrap();
+        assert_eq!((error.kind(), error.message()), (ERROR_ENGINE, "sent"));
+
+        let reply = Arc::new(Reply::default());
+        drop(ReplySender {
+            reply: Some(Arc::clone(&reply)),
+        });
+        let error = reply.wait().unwrap_err();
+        assert_eq!(error.kind(), ERROR_PANIC);
+        assert_eq!(error.message(), "a rustleaks scan thread stopped");
     }
 
     #[test]

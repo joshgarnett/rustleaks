@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // The extraction tests use fake library bytes. Loading a real DLL is tested
@@ -104,14 +103,20 @@ func TestExtractLibraryReusesAFileWithTheRightHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, _ := os.Stat(path)
-	time.Sleep(10 * time.Millisecond)
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	again, err := extractLibrary(root, lib)
 	if err != nil || again != path {
 		t.Fatalf("second extraction %s, %v", again, err)
 	}
-	after, _ := os.Stat(path)
-	if !after.ModTime().Equal(before.ModTime()) {
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A rewrite renames a new file into place, which is a different file.
+	if !os.SameFile(before, after) {
 		t.Error("a valid file was written again")
 	}
 }
@@ -191,42 +196,51 @@ func lockPath(t *testing.T, root string, lib *embeddedDLL) string {
 	return filepath.Join(dir, ".lock")
 }
 
-func TestExtractLibraryWaitsForTheLock(t *testing.T) {
+func TestExtractLibraryNeedsTheLock(t *testing.T) {
 	root := cacheRoot(t)
 	lib := fakeLibrary(t, []byte("locked library"))
-	unlock, err := lockFile(lockPath(t, root, lib), time.Second)
+	unlock, err := lockFile(lockPath(t, root, lib), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := extractLibrary(root, lib)
-		done <- err
-	}()
-	select {
-	case err := <-done:
+	// While another holder has the lock, extraction cannot write the file.
+	if path, err := extractLibraryWait(root, lib, 0); err == nil {
 		unlock()
-		t.Fatalf("extraction did not wait for the lock: %v", err)
-	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("extraction wrote %s while the lock was held", path)
 	}
 	unlock()
-	if err := <-done; err != nil {
+	if _, err := extractLibraryWait(root, lib, 0); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestLockFileTimesOut(t *testing.T) {
-	root := cacheRoot(t)
-	path := lockPath(t, root, fakeLibrary(t, []byte("x")))
-	unlock, err := lockFile(path, time.Second)
+	// With the file in place, a held lock does not matter.
+	unlock, err = lockFile(lockPath(t, root, lib), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unlock()
-	if second, err := lockFile(path, 100*time.Millisecond); err == nil {
+	if _, err := extractLibraryWait(root, lib, 0); err != nil {
+		t.Fatalf("extraction of a valid file needed the lock: %v", err)
+	}
+}
+
+func TestLockFileIsExclusive(t *testing.T) {
+	root := cacheRoot(t)
+	path := lockPath(t, root, fakeLibrary(t, []byte("x")))
+	unlock, err := lockFile(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second, err := lockFile(path, 0); err == nil {
 		second()
+		unlock()
 		t.Fatal("a held lock was taken twice")
 	}
+	unlock()
+	again, err := lockFile(path, 0)
+	if err != nil {
+		t.Fatalf("a released lock cannot be taken: %v", err)
+	}
+	again()
 }
 
 // A lock file that a stopped process left behind is not held, because the
@@ -237,12 +251,8 @@ func TestExtractLibraryIgnoresALeftoverLockFile(t *testing.T) {
 	if err := os.WriteFile(lockPath(t, root, lib), []byte("left behind"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
-	if _, err := extractLibrary(root, lib); err != nil {
+	if _, err := extractLibraryWait(root, lib, 0); err != nil {
 		t.Fatal(err)
-	}
-	if elapsed := time.Since(start); elapsed > lockWait/2 {
-		t.Fatalf("extraction waited %v for a lock no one held", elapsed)
 	}
 }
 
