@@ -256,6 +256,7 @@ test_suite(
     name = "test",
     tests = [
         "//bindings/go:all_tests",
+        "//bindings/linktest:all_tests",
         "//bindings/python:all_tests",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_doc_test",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
