@@ -31,6 +31,7 @@ go_test(
 musl_c_test(
     name = "go_cgo_musl_test",
     size = "small",
+    args = ["-test.v"],
     target_compatible_with = ["//platforms:musl"],
     test = ":go_cgo_test",
 )
