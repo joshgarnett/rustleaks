@@ -799,50 +799,127 @@ fn rust_files_outside_crates(root: &Path) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
-/// Returns the code of Rust source with comments, string literals and
+/// Returns the code of Rust source with comments (nested block comments
+/// included), string literals (raw, byte and C strings included) and
 /// character literals blanked, so that a search for a keyword sees only
-/// code.
+/// code. Lifetimes and labels stay code.
 fn code_only(source: &str) -> String {
+    let characters = source.chars().collect::<Vec<_>>();
+    let identifier = |character: char| character.is_alphanumeric() || character == '_';
     let mut code = String::with_capacity(source.len());
-    let mut characters = source.chars().peekable();
-    while let Some(character) = characters.next() {
-        match character {
-            '/' if characters.peek() == Some(&'/') => {
-                for next in characters.by_ref() {
-                    if next == '\n' {
-                        code.push('\n');
-                        break;
-                    }
-                }
+    let mut index = 0;
+    while let Some(&character) = characters.get(index) {
+        let next = characters.get(index + 1).copied();
+        if character == '/' && next == Some('/') {
+            while index < characters.len() && characters[index] != '\n' {
+                index += 1;
             }
-            '/' if characters.peek() == Some(&'*') => {
-                characters.next();
-                let mut previous = ' ';
-                for next in characters.by_ref() {
-                    if previous == '*' && next == '/' {
-                        break;
-                    }
-                    previous = next;
-                }
-                code.push(' ');
-            }
-            '"' => {
-                let mut escaped = false;
-                for next in characters.by_ref() {
-                    if escaped {
-                        escaped = false;
-                    } else if next == '\\' {
-                        escaped = true;
-                    } else if next == '"' {
-                        break;
-                    }
-                }
-                code.push(' ');
-            }
-            other => code.push(other),
+            continue;
         }
+        if character == '/' && next == Some('*') {
+            let mut depth = 0_usize;
+            while index < characters.len() {
+                match (characters[index], characters.get(index + 1)) {
+                    ('/', Some('*')) => {
+                        depth += 1;
+                        index += 2;
+                    }
+                    ('*', Some('/')) => {
+                        depth -= 1;
+                        index += 2;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => index += 1,
+                }
+            }
+            code.push(' ');
+            continue;
+        }
+        if let Some(end) = raw_string_end(&characters, index, identifier) {
+            index = end;
+            code.push(' ');
+            continue;
+        }
+        if character == '"' {
+            index += 1;
+            while let Some(&next) = characters.get(index) {
+                index += if next == '\\' { 2 } else { 1 };
+                if next == '"' {
+                    break;
+                }
+            }
+            code.push(' ');
+            continue;
+        }
+        if character == '\'' {
+            // A character literal is an escape, or one character and a
+            // closing quote. Anything else starts a lifetime or a label.
+            let end = if next == Some('\\') {
+                // The escaped character itself may be a quote.
+                characters
+                    .get(index + 3..)
+                    .and_then(|rest| rest.iter().position(|&next| next == '\''))
+                    .map(|offset| index + 4 + offset)
+            } else if characters.get(index + 2) == Some(&'\'') {
+                Some(index + 3)
+            } else {
+                None
+            };
+            if let Some(end) = end {
+                index = end;
+                code.push(' ');
+                continue;
+            }
+        }
+        code.push(character);
+        index += 1;
     }
     code
+}
+
+/// If a raw string literal (`r"…"`, `r#"…"#`, `br#"…"#` or `cr"…"`)
+/// starts at `index`, returns the index just past it.
+fn raw_string_end(
+    characters: &[char],
+    index: usize,
+    identifier: impl Fn(char) -> bool,
+) -> Option<usize> {
+    let mut start = index;
+    if matches!(characters.get(start), Some('b' | 'c')) {
+        start += 1;
+    }
+    if characters.get(start) != Some(&'r')
+        || index
+            .checked_sub(1)
+            .is_some_and(|before| identifier(characters[before]))
+    {
+        return None;
+    }
+    let hashes = characters[start + 1..]
+        .iter()
+        .take_while(|&&next| next == '#')
+        .count();
+    let open = start + 1 + hashes;
+    if characters.get(open) != Some(&'"') {
+        return None;
+    }
+    let mut cursor = open + 1;
+    while cursor < characters.len() {
+        if characters[cursor] == '"'
+            && characters[cursor + 1..]
+                .iter()
+                .take(hashes)
+                .filter(|&&next| next == '#')
+                .count()
+                == hashes
+        {
+            return Some(cursor + 1 + hashes);
+        }
+        cursor += 1;
+    }
+    Some(characters.len())
 }
 
 /// Reports whether Rust source uses the `unsafe` keyword in code: an unsafe
@@ -1054,6 +1131,27 @@ mod tests {
             "#[unsafe(no_mangle)]\npub extern \"C\" fn f() {}\n"
         ));
         assert!(mentions_unsafe("fn f() { unsafe { g() } }\n"));
+        // A quote inside a character literal does not open a string.
+        assert!(mentions_unsafe("const Q: char = '\"'; unsafe fn f() {}\n"));
+        assert!(mentions_unsafe("const Q: u8 = b'\"'; unsafe fn f() {}\n"));
+        assert!(mentions_unsafe("const Q: char = '\\''; unsafe fn f() {}\n"));
+        // A quote inside a raw string does not end it early.
+        assert!(mentions_unsafe(
+            "const S: &str = r#\"a \" b\"#; unsafe fn f() {}\n"
+        ));
+        assert!(!mentions_unsafe("const S: &str = r#\"a \" unsafe\"#;\n"));
+        assert!(!mentions_unsafe("const S: &[u8] = br\"unsafe\";\n"));
+        assert!(!mentions_unsafe(
+            "const C: char = 'u'; /* /* unsafe */ unsafe */\n"
+        ));
+        // Lifetimes and labels are code, not character literals.
+        assert!(mentions_unsafe(
+            "fn f<'a>(x: &'a u8) { 'outer: loop { unsafe { g() } } }\n"
+        ));
+        // An identifier that ends in r is not a raw string prefix.
+        assert!(mentions_unsafe(
+            "fn f() { let r = 1; let br = \"x\"; unsafe { g() } }\n"
+        ));
         assert!(mentions_unsafe("pub unsafe extern \"C\" fn f() {}\n"));
         assert!(!mentions_unsafe(
             "#![forbid(unsafe_code)]\n// unsafe in a comment\n"
