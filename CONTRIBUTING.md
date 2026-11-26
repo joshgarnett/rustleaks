@@ -188,10 +188,10 @@ Choose the narrowest type:
 | `chore` | Narrow maintenance that fits no other type. |
 
 When useful, choose the narrowest stable lowercase scope: `core`, `sources`,
-`report`, `cli`, `eval`, `xtask`, `bazel`, `deps`, `docs`, `ci`,
-`security` (the security policy and checks) or `release`. Omit the scope for
-a change that crosses many areas. Never use a goal, agent, review round,
-ticket or temporary task as a scope.
+`report`, `cli`, `ffi` (the C ABI crate), `eval`, `xtask`, `bazel`, `deps`,
+`docs`, `ci`, `security` (the security policy and checks) or `release`.
+Omit the scope for a change that crosses many areas. Never use a goal,
+agent, review round, ticket or temporary task as a scope.
 
 Add a body, after a blank line, when the reason, compatibility effect,
 security constraint or a non-obvious decision will matter later. Add only

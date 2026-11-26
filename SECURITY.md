@@ -27,8 +27,11 @@ date.
 - Scans can be stopped and given limits. A stop happens between steps, not
   at once, and running out of memory can still end the process. See
   [Resource limits](docs/user/resource-limits.md).
-- Rustleaks code uses no unsafe Rust. Some dependencies do; see
-  [Dependencies](docs/dev/dependencies.md).
+- Rustleaks code uses no unsafe Rust, except the C ABI crate
+  `rustleaks-ffi` that the Go and Python bindings call. Its unsafe code
+  reads and writes only through the pointers that callers pass and frees
+  the handles it made. Detection stays in safe code. Some dependencies use
+  unsafe Rust; see [Dependencies](docs/dev/dependencies.md).
 
 Findings and reports hold secrets:
 

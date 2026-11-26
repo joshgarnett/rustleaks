@@ -21,7 +21,8 @@ The security goals are to:
   approval (see [Approval boundaries](../../AGENTS.md#approval-boundaries)),
   and record every finding change in the changelog;
 - return a structured error or a bounded partial result for hostile input;
-- keep first-party code free of unsafe Rust;
+- keep first-party code free of unsafe Rust, except the reviewed C ABI in
+  `rustleaks-ffi` and the binding code that calls it;
 - avoid hidden network or process-wide activity in the engine; and
 - prevent accidental disclosure of finding values.
 
@@ -42,6 +43,7 @@ and fail when that boundary changes.
 | Archives | `rustleaks-sources/src/archive.rs`, `archive/`, codec forks, selected decoders | Streamed members, no member extraction to disk, no link following, checked coder graphs, depth 8, 1,000,000 entries, 4 GiB member, 16 GiB total, 1 GiB spool, 64 MiB parts in memory, anonymous owner-only temporary spool files | Format fixtures, traversal, link, bomb, nesting, streaming equivalence and spool cleanup tests, panic policy example, `archive` fuzz |
 | Git and links | `rustleaks-sources/src/git.rs`, `git/`, `scm.rs` | No shell, commit names checked before `--stdin`, no network commands, repository textconv, external diff, fsmonitor and signature programs turned off, streamed output with limits for each commit, child killed and reaped | Hostile revision and path tests, command vector properties, temporary repositories, Git corpus, `git_patch` fuzz |
 | Reports and CLI | `rustleaks-report/src/`, `rustleaks-cli/src/args.rs`, `config.rs`, `output.rs`, `report_file.rs`, `run.rs` | JSON and XML escaping, bounded templates, `--redact` before output, escaped terminal control characters, counts instead of values in diagnostics, new report files with mode `0600` on Unix, no symbolic link followed at the report path, 256 MiB baseline file | Report and CLI corpora, invalid byte, terminal control and redaction tests, report file and baseline limit tests, template properties and fuzz |
+| C ABI and bindings | `rustleaks-ffi/src/`, `rustleaks-ffi/include/rustleaks.h`, and the Go `unsafe`, cgo and `syscall` code and Python ctypes code under `bindings/` | Exact ABI number check, null and alignment checks, null accepted only with length 0, inputs copied before a call returns, out parameters cleared first, `catch_unwind` on every export, scratch dropped after a panic, an inclusive 10,000,000-byte input limit and 100,000 finding records by default, engines built and scans run on threads with an 8 MiB stack, no file access so `[extend] path` fails | FFI unit tests, header test, binding contract cases, selected Miri cases, 128 KiB caller stack test, `exports` fuzz |
 | Dependencies | `Cargo.lock`, `deny.toml`, `supply-chain/`, `supply-chain-exceptions.toml` | Locked versions and sources, vet inventory, license, advisory, ban, build script, native code and unsafe policy | `just security`, cargo-deny, RustSec, cargo-vet, cargo-geiger, Miri |
 | Bazel and local tools | `MODULE.bazel`, lockfiles, `BUILD.bazel`, `justfile`, `crates/xtask` | Pinned toolchains and lockfiles, declared inputs, exact tool versions, private bounded output, verified process cleanup | `just ci`, build system checks, package consumers, target compile matrix |
 | Hosted CI | `.github/workflows/`, `.github/actions/setup/` | Read-only default permissions, minimal job grants, actions pinned by full SHA, no secrets in pull request and dry-run jobs | Pull request, nightly, weekly, CodeQL, native and dry-run workflows |
@@ -260,6 +262,23 @@ See [Using rustleaks-core](../user/library.md#review-records).
 - A baseline file can be up to 256 MiB. The parsed entries can take more
   memory than the file. The user chooses the path.
 - `--verbose` output and report files are an explicit disclosure.
+
+### C ABI and bindings
+
+- The library checks for null and misaligned pointers only. A freed,
+  foreign or wrong handle, a wrong length or freeing an engine while it
+  scans is undefined behavior. The wrappers own every handle, clear their
+  field before they free it, and wait for running scans before they free an
+  engine.
+- A caught panic returns `RUSTLEAKS_ERROR_PANIC` with a fixed message, but
+  the process panic hook still runs; by default it prints the panic message
+  to standard error.
+- Allow comments are honored by default, as in `rustleaks-core`, so text
+  that someone else writes can hide its own findings. The binding docs tell
+  callers to turn them off for such text.
+- Starting a thread can fail in a restricted process. Engine creation then
+  fails with `RUSTLEAKS_ERROR_ENGINE`.
+- Inputs and findings are copied into wrapper memory and are not erased.
 
 ### Dependencies
 

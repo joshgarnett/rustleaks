@@ -566,6 +566,36 @@ at 12 threads and used about half the memory of 36 threads. A folder of
 detection thread, a second reader thread made scans at most a few percent
 faster for much more CPU time.
 
+## C ABI threads and limits
+
+The C ABI in `crates/rustleaks-ffi` sets these defaults for the Go and
+Python bindings:
+
+| Item | Value | Code |
+| --- | --- | --- |
+| Input size | 10,000,000 bytes, inclusive. A longer input is an error before any byte is read, never a skipped scan. | `DEFAULT_MAX_INPUT_BYTES` in `src/handles.rs` |
+| Finding records | 100,000. No other budget is set by default. | `DEFAULT_MAX_FINDING_RECORDS` |
+| Workers | `RUSTLEAKS_OPTION_WORKERS`, or one per available CPU up to 12, or 1 when that fails | `default_workers` |
+| Search caches | 128 MiB divided by the workers, at least 8 MiB, for each pooled scratch value. The pool keeps one value for each worker. | `cache_limit` |
+| Threads | One thread for each engine build, and one scan thread for each worker unless `RUSTLEAKS_OPTION_SCAN_ON_CALLER_THREAD` is set, each with an 8 MiB stack | `SCAN_STACK_BYTES` in `src/threads.rs` |
+| Deadline | The clock is read at the first poll and at every 16th poll after it | `CLOCK_POLL_INTERVAL` in `src/cancel.rs` |
+
+Core compiles a pattern with at most 200 groups on the thread that loads the
+configuration or runs the first search. A Go program on musl calls C on
+threads with a 128 KiB stack. That is why the library uses its own threads.
+On an Apple Silicon Mac, an unoptimized build needed 512 to 768 KiB of stack
+to build an engine and scan with a rule of 200 nested groups. It needed 128
+to 192 KiB to scan with every built-in rule. An optimized build needed 48 to
+64 KiB and 16 to 24 KiB. The test
+`a_rule_with_200_nested_groups_builds_and_scans_on_a_128_kib_stack` checks
+the first case from a 128 KiB thread.
+
+On the same host, in an optimized build, a scan of 1 KiB of ordinary text
+with every built-in rule took about 3 microseconds, and handing a scan to a
+scan thread and back took about 3 microseconds more. A wrapper whose calling
+threads have large stacks can set `RUSTLEAKS_OPTION_SCAN_ON_CALLER_THREAD`
+to save the hand-off.
+
 ## Startup memory of the built-in rules
 
 In the measurements for pull request #194 (Apple M5 Ultra, macOS 27.2.1,
@@ -886,6 +916,7 @@ the example profile in both modes and needed less than 250,000 work units.
 An 8 MiB source limit is not an 8 MiB memory limit. Record an exhausted
 budget as incomplete coverage, not as a fast clean scan.
 
-Owned code forbids unsafe Rust. CI runs the resource-limit tests natively on
-all eight required targets. These tests do not measure time or memory. See
-[Testing](testing.md#platforms).
+Owned code forbids unsafe Rust, except the C ABI in `rustleaks-ffi`; see
+[Dependencies](dependencies.md#unsafe-code-in-rustleaks-ffi). CI runs the
+resource-limit tests natively on all eight required targets. These tests do
+not measure time or memory. See [Testing](testing.md#platforms).

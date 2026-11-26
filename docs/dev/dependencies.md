@@ -19,8 +19,11 @@ that enforce this policy are in [Security checks](security-checks.md).
   regex type.
 - `rustleaks-sources` and `rustleaks-report` depend only on the core. The CLI
   may use all three. `rustleaks-eval` and `xtask` are unpublished leaves.
-- Owned crates forbid unsafe code. A dependency with necessary unsafe code
-  needs isolation, a written reason, license review and adversarial tests.
+- Owned crates forbid unsafe code, except `rustleaks-ffi`, the C ABI of the
+  bindings. See [Unsafe code in
+  rustleaks-ffi](#unsafe-code-in-rustleaks-ffi). A dependency with necessary
+  unsafe code needs isolation, a written reason, license review and
+  adversarial tests.
 - License and advisory checks must pass before a release. `just security`
   rejects any entry in `supply-chain-exceptions.toml`. Accepting an
   exception needs maintainer approval and a change to that check, and the
@@ -81,9 +84,9 @@ architecture-specific search described under [Core](#core).
 
 ## Unsafe code in dependencies
 
-All owned crate roots use `#![forbid(unsafe_code)]`, and the release check
-rejects owned unsafe code. Some registry dependencies contain unsafe code
-inside.
+All owned crate roots except the root of `rustleaks-ffi` use
+`#![forbid(unsafe_code)]`, and the security check rejects unsafe code in any
+other owned crate. Some registry dependencies contain unsafe code inside.
 
 Dependency review uses the locked Cargo and Bazel resolutions, cargo-deny,
 cargo-vet, RustSec and the unsafe inventory. Written audits of exact package
@@ -193,6 +196,44 @@ the platform tests natively on all eight targets (see
 [Testing](testing.md#platforms)). The tests reach
 dependency code only with the inputs they pass to it. Compiling for a target
 does not test its architecture-specific unsafe paths.
+
+## Unsafe code in rustleaks-ffi
+
+`crates/rustleaks-ffi` is the C ABI that the Go and Python bindings call. A
+C ABI must read caller memory through raw pointers, so this crate is the one
+owned crate that allows unsafe Rust. Detection stays in safe
+`rustleaks-core` code. Allowing unsafe Rust in any other crate needs
+maintainer approval.
+
+Rules for the crate:
+
+- It cannot inherit the workspace lints, because a `forbid` cannot be
+  relaxed. Its own lint table and its crate root deny
+  `unsafe_op_in_unsafe_fn`, `clippy::undocumented_unsafe_blocks` and
+  `clippy::missing_safety_doc`. Every unsafe block has a `SAFETY:` comment,
+  and every exported function documents its pointer rules.
+- Exports use edition 2024 `#[unsafe(no_mangle)]`. Every body runs inside
+  `catch_unwind`, which keeps a panic from aborting the host process, and the
+  crate does not compile without `panic = "unwind"`.
+- Unsafe code only checks and reads caller pointers, writes out parameters,
+  turns handles into boxes and back, and marks the lists of views that a
+  handle owns as safe to share between threads. `src/harness.rs` is a safe
+  Rust client of the ABI for the tests and the fuzz target.
+- It has `publish = false` and adds no dependency: no `libc` and no
+  cbindgen. `include/rustleaks.h` is written by hand, and a unit test checks
+  its function names, parameter types, constants and struct layouts against
+  the Rust code.
+- Its fuzz target and test roots still forbid unsafe code.
+
+The Go `unsafe`, cgo and `syscall` code and the Python ctypes code under
+`bindings/` are part of the same reviewed boundary. Review them with the
+crate when the ABI changes.
+
+The checks: `just security` requires every other owned crate root to forbid
+unsafe code, checks the lints of this crate's root and manifest, and runs
+selected tests of the crate under Miri. The `exports` fuzz target drives
+every export with valid pointers and arbitrary bytes, lengths, keys and
+values. See [Security checks](security-checks.md).
 
 ## Archive codec decision
 
