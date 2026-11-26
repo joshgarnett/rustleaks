@@ -8,7 +8,7 @@ import os
 import threading
 import time
 import weakref
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from ctypes import POINTER, byref, c_int32, c_size_t, c_uint64, c_void_p
 from typing import Literal, NoReturn
 
@@ -235,6 +235,11 @@ class CancelToken:
 
 
 _live_engines: weakref.WeakSet[Engine] = weakref.WeakSet()
+
+# For the package's tests only: called with the engine after a scan holds a
+# worker and before the native call, so a test can hold a scan in flight or
+# cancel it after the checks in Python.
+_test_hook_before_native: Callable[[Engine], None] | None = None
 
 
 class Engine:
@@ -555,6 +560,9 @@ class Engine:
         key = object()
         try:
             self._acquire(key, deadline, request.cancel)
+            hook = _test_hook_before_native
+            if hook is not None:
+                hook(self)
             # close() frees the handle only when no scan is registered.
             handle = self._handle
             return self._scan_native(handle, payload, request, deadline)
