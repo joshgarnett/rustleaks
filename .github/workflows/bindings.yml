@@ -2,8 +2,10 @@ name: Binding Packages
 
 # Builds the Go and Python binding packages of one commit and checks them as
 # a user would, on each of the eight native lanes. It publishes nothing and
-# uses no credential. The release dry run calls it; it can also run on any
-# branch by hand.
+# uses no credential. The release dry run calls it with `attest` set, so the
+# checksums of its packages carry a build provenance attestation that the
+# publish workflows check. The weekly workflow and a run by hand do not
+# attest.
 #
 # 1. Each lane builds its optimized native library and its wheel.
 # 2. One job writes the rustleaks-go layout and a file-based Go module proxy
@@ -23,6 +25,11 @@ on:
         description: Release version that the commit names.
         required: true
         type: string
+      attest:
+        description: Attest the checksums of the packages. Only the release dry run sets it.
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       candidate:
@@ -240,11 +247,13 @@ jobs:
           cat "${work}/out/SHA256SUMS"
           cat "${work}/out/rustleaks-go/go.sum"
       - name: Attest the checksums
+        if: inputs.attest
         id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/bindings/out/SHA256SUMS
       - name: Verify and retain the checksum attestation
+        if: inputs.attest
         env:
           ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
           CANDIDATE: ${{ inputs.candidate }}

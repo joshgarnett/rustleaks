@@ -202,6 +202,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:triage_test",
     "//crates/rustleaks-ffi:contract_test",
     "//crates/rustleaks-ffi:exports_fuzz_test",
+    "//crates/rustleaks-ffi:linktest_other_static",
     "//crates/rustleaks-ffi:rustleaks_ffi",
     "//crates/rustleaks-ffi:rustleaks_ffi_unit_test",
     "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
@@ -262,6 +263,7 @@ test_suite(
     tests = [
         "//bindings/go:all_tests",
         "//bindings/python:all_tests",
+        "//release/python:upload_test",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_doc_test",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
         "//crates/rustleaks-cli:all_tests",

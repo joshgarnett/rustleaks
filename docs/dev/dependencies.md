@@ -226,7 +226,13 @@ Rules for the crate:
   cbindgen. `include/rustleaks.h` is written by hand, and a unit test checks
   its function names, parameter types, constants and struct layouts against
   the Rust code.
-- Its fuzz target and test roots still forbid unsafe code.
+- Its fuzz target and test roots forbid unsafe code, with one exception:
+  `tests/linktest/other.rs`, the second static library of the cgo link
+  test. It denies the same unsafe lints as the crate, and its only unsafe
+  Rust is `#[unsafe(no_mangle)]` under a `SAFETY:` comment. `just security`
+  checks both rules, and also rejects unsafe Rust in every test root of the
+  other crates and in the Rust files under `bazel/`, `bindings/` and
+  `release/`.
 
 The Go `unsafe`, cgo and `syscall` code and the Python ctypes code under
 `bindings/` are part of the same reviewed boundary. Review them with the

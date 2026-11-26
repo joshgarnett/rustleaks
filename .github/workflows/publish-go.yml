@@ -210,6 +210,8 @@ jobs:
           gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
             --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
           (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
           gh attestation verify "${packages}/SHA256SUMS" \
             --repo "${GITHUB_REPOSITORY}" \
             --bundle "${packages}/SHA256SUMS.attestation.jsonl" \

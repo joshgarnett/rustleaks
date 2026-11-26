@@ -114,6 +114,8 @@ rust_static_library(
     crate_name = "linktest_other_rust",
     crate_root = "tests/linktest/other.rs",
     edition = "2024",
+    # Listed in //:clippy and //:format.
+    visibility = ["//:__pkg__"],
 )
 
 go_test(

@@ -139,6 +139,14 @@ jobs:
           test "$(jq -r '.info.requires_python' "${metadata}")" = "$(expected requires-python)"
           test "$(jq -r '.info.summary' "${metadata}")" = "$(expected description)"
           test "$(jq -r '.info.license_expression' "${metadata}")" = "$(expected license)"
+          # PyPI must list the license files that every wheel names.
+          wheel_license_files="$(python3 -I -c 'import email.parser, sys, zipfile
+          archive = zipfile.ZipFile(sys.argv[1])
+          name = next(entry for entry in archive.namelist() if entry.endswith(".dist-info/METADATA"))
+          metadata = email.parser.Parser().parsestr(archive.read(name).decode())
+          print("\n".join(sorted(metadata.get_all("License-File") or [])))' "$(ls "${RUNNER_TEMP}"/packages/wheels/*.whl | head -n 1)")"
+          test -n "${wheel_license_files}"
+          test "$(jq -r '.info.license_files // [] | sort | .[]' "${metadata}")" = "${wheel_license_files}"
           for wheel in "${RUNNER_TEMP}"/packages/wheels/*.whl; do
             name="$(basename "${wheel}")"
             digest="$(sha256sum "${wheel}" | awk '{print $1}')"

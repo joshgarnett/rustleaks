@@ -491,9 +491,10 @@ replace a pre-release, and a stable release can replace either.
 ### Binding packages
 
 `Binding Packages` builds and checks the Go and Python packages of one
-commit. The release dry run and the weekly workflow call it. It publishes
-nothing and uses no credential. Its only write is a build provenance
-attestation of the checksums.
+commit. The release dry run and the weekly workflow call it, and it can run
+by hand. It publishes nothing and uses no credential. Only the release dry
+run sets its `attest` input, which adds a build provenance attestation of
+the checksums.
 
 1. On each native lane it builds `//release/native:all` and
    `//release/python:wheel` with the lane's `release-bindings-*` config from
@@ -507,7 +508,9 @@ attestation of the checksums.
    release wheel. It adds the target's third-party license texts and
    notices from the native notice catalog (the same files the CLI archive
    of that target carries under `licenses/`) to
-   `.dist-info/licenses/third-party/`. It also writes core metadata 2.4 with
+   `.dist-info/licenses/third-party/`. The catalog covers the CLI's build
+   graph, so the files are a superset of what the library links, and its
+   `index.json` describes the CLI binary of that target. It also writes core metadata 2.4 with
    `License-Expression`, `Keywords` and one `License-File` per license file.
 3. `cargo xtask bindings go-layout` writes the `rustleaks-go` repository
    from `bindings/go/`, the templates in `release/go/` and the eight
@@ -519,8 +522,8 @@ attestation of the checksums.
 4. The job keeps the layout (`rustleaks-go/`), the proxy (`proxy/`), the
    eight wheels (`wheels/`) and `SHA256SUMS` as the artifact
    `rustleaks-bindings-<version>-packages`. `SHA256SUMS` lists every other
-   file of the artifact. The job attests `SHA256SUMS` with
-   `actions/attest-build-provenance` and keeps the bundle as
+   file of the artifact. When `attest` is set, the job attests `SHA256SUMS`
+   with `actions/attest-build-provenance` and keeps the bundle as
    `SHA256SUMS.attestation.jsonl`. Every later user of the artifact checks
    the attestation, every checksum, and that the artifact holds no file
    that `SHA256SUMS` does not list.

@@ -741,6 +741,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/bindings.yml
     with:
+      attest: true
       candidate: ${{ inputs.candidate }}
       version: ${{ inputs.version }}
 

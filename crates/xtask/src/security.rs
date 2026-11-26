@@ -634,7 +634,7 @@ fn owned_crate_roots(root: &Path) -> Result<Vec<String>, String> {
                 roots.push(format!("crates/{name}/{file}"));
             }
         }
-        for directory in ["src/bin", "examples", "fuzz/fuzz_targets"] {
+        for directory in ["src/bin", "examples", "fuzz/fuzz_targets", "tests"] {
             for file in rust_files(&path.join(directory))? {
                 roots.push(format!("crates/{name}/{directory}/{file}"));
             }
@@ -736,6 +736,21 @@ fn owned_safety_check() -> Result<(), String> {
     let manifest = std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml"))
         .map_err(|error| format!("cannot read the {UNSAFE_CRATE} manifest: {error}"))?;
     validate_unsafe_crate_manifest(&manifest)?;
+    // Test crate roots forbid unsafe code like other roots. Test modules in
+    // subfolders inherit their root's forbid, and the link test library is
+    // the one named exception.
+    for relative in test_folder_rust_files(&root)? {
+        if crate_roots.contains(&relative) {
+            continue;
+        }
+        let source = std::fs::read_to_string(root.join(&relative))
+            .map_err(|error| format!("cannot read {relative}: {error}"))?;
+        if relative == LINKTEST_ROOT {
+            validate_linktest_root(&source)?;
+        } else if mentions_unsafe(&source) {
+            return Err(format!("{relative} uses unsafe Rust in a test"));
+        }
+    }
     let outside = rust_files_outside_crates(&root)?;
     for relative in &outside {
         let source = std::fs::read_to_string(root.join(relative))
@@ -784,15 +799,133 @@ fn rust_files_outside_crates(root: &Path) -> Result<Vec<String>, String> {
     Ok(files)
 }
 
-/// Reports whether Rust source contains the `unsafe` keyword outside line
-/// comments: an unsafe block, function, impl or attribute such as
-/// `#[unsafe(no_mangle)]`.
+/// Returns the code of Rust source with comments, string literals and
+/// character literals blanked, so that a search for a keyword sees only
+/// code.
+fn code_only(source: &str) -> String {
+    let mut code = String::with_capacity(source.len());
+    let mut characters = source.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '/' if characters.peek() == Some(&'/') => {
+                for next in characters.by_ref() {
+                    if next == '\n' {
+                        code.push('\n');
+                        break;
+                    }
+                }
+            }
+            '/' if characters.peek() == Some(&'*') => {
+                characters.next();
+                let mut previous = ' ';
+                for next in characters.by_ref() {
+                    if previous == '*' && next == '/' {
+                        break;
+                    }
+                    previous = next;
+                }
+                code.push(' ');
+            }
+            '"' => {
+                let mut escaped = false;
+                for next in characters.by_ref() {
+                    if escaped {
+                        escaped = false;
+                    } else if next == '\\' {
+                        escaped = true;
+                    } else if next == '"' {
+                        break;
+                    }
+                }
+                code.push(' ');
+            }
+            other => code.push(other),
+        }
+    }
+    code
+}
+
+/// Reports whether Rust source uses the `unsafe` keyword in code: an unsafe
+/// block, function, impl or attribute such as `#[unsafe(no_mangle)]`.
 fn mentions_unsafe(source: &str) -> bool {
-    source.lines().any(|line| {
-        let code = line.split("//").next().unwrap_or_default();
-        code.split(|character: char| !(character.is_alphanumeric() || character == '_'))
-            .any(|word| word == "unsafe")
-    })
+    code_only(source)
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .any(|word| word == "unsafe")
+}
+
+/// The one Rust file outside `crates/rustleaks-ffi/src` that uses unsafe Rust:
+/// the second static library of the cgo link test. It is its own crate root
+/// with the same unsafe lint denials as the FFI crate, and its only unsafe
+/// Rust is `#[unsafe(no_mangle)]` on its C exports.
+const LINKTEST_ROOT: &str = "crates/rustleaks-ffi/tests/linktest/other.rs";
+
+/// Checks the link test library: the FFI crate's deny lints, and no unsafe
+/// Rust but `#[unsafe(no_mangle)]` attributes, each under a `SAFETY:`
+/// comment.
+fn validate_linktest_root(source: &str) -> Result<(), String> {
+    let denials = "#![deny(\n    unsafe_op_in_unsafe_fn,\n    clippy::undocumented_unsafe_blocks,\n    clippy::missing_safety_doc\n)]";
+    if !source.contains(denials) {
+        return Err(format!(
+            "{LINKTEST_ROOT} must deny the unsafe lints that crates/rustleaks-ffi denies"
+        ));
+    }
+    let without_attributes = source.replace("#[unsafe(no_mangle)]", "");
+    if mentions_unsafe(&without_attributes) {
+        return Err(format!(
+            "{LINKTEST_ROOT} may use unsafe Rust only as #[unsafe(no_mangle)]"
+        ));
+    }
+    let lines = source.lines().collect::<Vec<_>>();
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim() == "#[unsafe(no_mangle)]"
+            && !lines[..index]
+                .iter()
+                .rev()
+                .take_while(|previous| previous.trim_start().starts_with("//"))
+                .any(|previous| previous.trim_start().starts_with("// SAFETY:"))
+        {
+            return Err(format!(
+                "{LINKTEST_ROOT}:{} has #[unsafe(no_mangle)] without a SAFETY comment",
+                index + 1
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Lists the Rust files under `crates/*/tests/` folders, relative to `root`.
+fn test_folder_rust_files(root: &Path) -> Result<Vec<String>, String> {
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(root.join("crates"))
+        .map_err(|error| format!("cannot list crates: {error}"))?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        let tests = path.join("tests");
+        if tests.is_dir() {
+            collect_rust_files(root, &tests, &mut files)?;
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn collect_rust_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(directory)
+        .map_err(|error| format!("cannot list {}: {error}", directory.display()))?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() {
+            collect_rust_files(root, &path, files)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            let relative = path.strip_prefix(root).map_err(|error| error.to_string())?;
+            files.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn security_check() -> Result<(), String> {
@@ -925,6 +1058,23 @@ mod tests {
         assert!(!mentions_unsafe(
             "#![forbid(unsafe_code)]\n// unsafe in a comment\n"
         ));
+        assert!(!mentions_unsafe(
+            "let url = \"https://example.com/unsafe\"; /* unsafe */\n"
+        ));
+        assert!(mentions_unsafe(
+            "let url = \"https://example.com/\"; unsafe { f() }\n"
+        ));
+    }
+
+    #[test]
+    fn the_link_test_library_keeps_its_unsafe_boundary() {
+        let root = crate::workspace_root().unwrap();
+        let source = std::fs::read_to_string(root.join(super::LINKTEST_ROOT)).unwrap();
+        super::validate_linktest_root(&source).unwrap();
+        let block = source.replacen("text.len() as u64", "unsafe { text.len() as u64 }", 1);
+        assert!(super::validate_linktest_root(&block).is_err());
+        let undocumented = source.replacen("// SAFETY:", "// Note:", 1);
+        assert!(super::validate_linktest_root(&undocumented).is_err());
     }
 
     #[test]

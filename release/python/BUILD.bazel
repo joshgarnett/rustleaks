@@ -14,6 +14,7 @@
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel:pick_file.bzl", "pick_file")
 load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION")
 
@@ -126,4 +127,17 @@ py_binary(
     name = "interpreter",
     srcs = ["interpreter.py"],
     main = "interpreter.py",
+)
+
+# Pins the PyPI upload form: the field names PyPI reads and the values taken
+# from a wheel's METADATA.
+py_test(
+    name = "upload_test",
+    size = "small",
+    srcs = [
+        "upload.py",
+        "upload_test.py",
+    ],
+    main = "upload_test.py",
+    visibility = ["//visibility:public"],
 )

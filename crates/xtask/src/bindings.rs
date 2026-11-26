@@ -410,19 +410,9 @@ fn gzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("cannot compress the DLL: {error}"))
 }
 
-/// The third-party license texts and notices for the library of `target`.
-/// Under `cfg(test)` a synthetic set stands in, so the layout test needs no
-/// generated catalog.
-fn notices(root: &Path, target: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
-    if cfg!(test) {
-        let _ = root;
-        return Ok(BTreeMap::from([(
-            "licenses/index.json".to_owned(),
-            format!("{{\"target\":\"{target}\"}}").into_bytes(),
-        )]));
-    }
-    crate::release_artifact::target_notice_files(root, target)
-}
+/// The third-party license texts and notices of `target`, keyed by their
+/// path under the module or wheel.
+type Notices<'a> = &'a dyn Fn(&str) -> Result<BTreeMap<String, Vec<u8>>, String>;
 
 /// Writes the `rustleaks-go` repository for `version` into `output`.
 ///
@@ -435,7 +425,15 @@ fn go_layout(
     libraries: &Path,
     output: &Path,
 ) -> Result<Vec<String>, String> {
-    go_layout_from(root, &root.join("bindings/go"), version, libraries, output)
+    let notices = |target: &str| crate::release_artifact::target_notice_files(root, target);
+    go_layout_from(
+        root,
+        &root.join("bindings/go"),
+        version,
+        libraries,
+        output,
+        &notices,
+    )
 }
 
 /// [`go_layout`] with the Go package read from `source`.
@@ -445,6 +443,7 @@ fn go_layout_from(
     version: &str,
     libraries: &Path,
     output: &Path,
+    notices: Notices<'_>,
 ) -> Result<Vec<String>, String> {
     check_version(version)?;
     if output.exists() {
@@ -515,7 +514,7 @@ fn go_layout_from(
         write(&directory.join("go.mod"), go_mod.as_bytes())?;
         write(&directory.join("LICENSE"), &license)?;
         write(&directory.join("NOTICE"), &notice)?;
-        for (path, bytes) in notices(root, platform.target)? {
+        for (path, bytes) in notices(platform.target)? {
             write(&directory.join(path), &bytes)?;
         }
 
@@ -1200,7 +1199,13 @@ mod tests {
         write(&source.join("library_test.go"), b"package rustleaks\n").unwrap();
         write(&source.join("BUILD.bazel"), b"# Bazel\n").unwrap();
         let layout = temp.path.join("layout");
-        let sums = go_layout_from(&root, &source, version, &libraries, &layout).unwrap();
+        let notices = |target: &str| {
+            Ok(BTreeMap::from([(
+                "licenses/index.json".to_owned(),
+                format!("{{\"target\":\"{target}\"}}").into_bytes(),
+            )]))
+        };
+        let sums = go_layout_from(&root, &source, version, &libraries, &layout, &notices).unwrap();
         assert_eq!(sums.len(), 2 * PLATFORMS.len());
         let go_mod = read_text(&layout.join("go.mod")).unwrap();
         assert!(go_mod.contains(&format!("{GO_MODULE}/lib/windows-arm64 v{version}")));

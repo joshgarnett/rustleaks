@@ -56,7 +56,7 @@ def form_fields(wheel):
         ("pyversion", "py3"),
         ("sha256_digest", digest),
     ]
-    fields += [("license_files", value) for value in metadata.get_all("License-File") or []]
+    fields += [("license_file", value) for value in metadata.get_all("License-File") or []]
     fields += [("classifiers", value) for value in metadata.get_all("Classifier") or []]
     fields += [("project_urls", value) for value in metadata.get_all("Project-URL") or []]
     return fields
@@ -101,7 +101,7 @@ def check(wheel, pyproject_path):
         actual = [value for field, value in fields if field == name]
         if sorted(actual) != sorted(values):
             sys.exit(f"upload form field {name} is {actual}, expected {values}")
-    listed = {value for field, value in fields if field == "license_files"}
+    listed = {value for field, value in fields if field == "license_file"}
     if not listed or listed != license_files:
         sys.exit(f"License-File entries {sorted(listed)} differ from the wheel's licenses folder")
     for required in ("LICENSE", "NOTICE", "third-party/index.json"):
