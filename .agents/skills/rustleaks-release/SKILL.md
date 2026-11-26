@@ -29,3 +29,13 @@ approved the exact unchanged action, do not ask a second time.
 - Do not claim an artifact, checksum, SBOM, attestation or native result that
   the release workflow does not produce.
 - Keep tokens and signing keys out of the repository and logs.
+- The Go module and the Python package use the release version. The version
+  check covers `bindings/go/library.go`, `bindings/python/pyproject.toml`
+  and `bindings/python/src/rustleaks/_version.py`.
+- `Publish Go Module` and `Publish Python Package` publish the files of the
+  dry run's `rustleaks-bindings-<version>-packages` artifact; they build
+  nothing. Each push to `joshgarnett/rustleaks-go` and each PyPI upload is a
+  separate approval.
+- A Go version or tag in `rustleaks-go` and a PyPI file name can never be
+  replaced. Fix a bad one with a new version (and a Go `retract`), never by
+  moving a tag.
