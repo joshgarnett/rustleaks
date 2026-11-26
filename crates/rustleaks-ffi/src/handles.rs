@@ -607,6 +607,12 @@ impl EngineHandle {
         self.inner.workers
     }
 
+    /// The inclusive input limit in bytes, or `UNLIMITED`.
+    #[must_use]
+    pub fn max_input_bytes(&self) -> u64 {
+        self.inner.max_input_bytes
+    }
+
     /// The number of rules that can report findings.
     #[must_use]
     pub fn rule_count(&self) -> usize {

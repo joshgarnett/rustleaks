@@ -243,6 +243,8 @@ int32_t rustleaks_options_free(rustleaks_options *options);
 int32_t rustleaks_engine_new(const rustleaks_options *options, rustleaks_engine **out, rustleaks_error **error);
 int32_t rustleaks_engine_free(rustleaks_engine *engine);
 int32_t rustleaks_engine_workers(const rustleaks_engine *engine, size_t *out);
+/* The inclusive input limit in bytes, or RUSTLEAKS_UNLIMITED. */
+int32_t rustleaks_engine_max_input_bytes(const rustleaks_engine *engine, uint64_t *out);
 int32_t rustleaks_engine_rule_count(const rustleaks_engine *engine, size_t *out);
 int32_t rustleaks_engine_rule(const rustleaks_engine *engine, size_t index, rustleaks_rule_view *out);
 

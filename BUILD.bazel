@@ -8,6 +8,8 @@ exports_files([
     "LICENSE",
     "NOTICE",
     "cargo-bazel-lock.json",
+    # The Python binding tests run the examples in its guide.
+    "docs/user/python.md",
 ])
 
 filegroup(
