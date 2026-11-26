@@ -239,7 +239,9 @@ jobs:
           TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
         run: |
           bazelisk test --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --extra_execution_platforms="${PLATFORM}" --compilation_mode="${TEST_COMPILATION_MODE}" --nocache_test_results --test_output=all //bindings/go:all_tests //bindings/python:all_tests 2>&1 | grep -E "SPIKE|PASSED|FAILED|SKIPPED|NO STATUS" || true
-          bazelisk build --config="release-${BAZEL_CONFIG}" --host_platform="${PLATFORM}" //bindings/spike:spike_static //bindings/spike:spike_shared
+          musl_c=""
+          case "${BAZEL_CONFIG}" in *-musl) musl_c="--platforms=//platforms:$(echo "${BAZEL_CONFIG}" | tr - _)_c" ;; esac
+          bazelisk build --config="release-${BAZEL_CONFIG}" ${musl_c} --host_platform="${PLATFORM}" //bindings/spike:spike_static //bindings/spike:spike_shared
           ls -l bazel-bin/bindings/spike/
           if [ "$(uname)" = Linux ]; then readelf -d bazel-bin/bindings/spike/librustleaks_spike.so | grep -E "NEEDED|RUNPATH"; else otool -L bazel-bin/bindings/spike/librustleaks_spike.dylib; fi
 
