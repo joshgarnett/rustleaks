@@ -326,10 +326,6 @@ workers, or create new ones there. Python warns about `fork` in a process
 with threads, and every engine has native threads. Prefer the `spawn` or
 `forkserver` start methods of `multiprocessing` when you can.
 
-On macOS, a forked child currently stops with `SIGTRAP` when it scans on the
-thread that called `fork`, if that thread scanned before the fork. Scans on
-other threads of the child work. A fix in the native library is pending.
-
 ## Logging findings safely
 
 Findings hold secret bytes in memory, and they are not erased when they are

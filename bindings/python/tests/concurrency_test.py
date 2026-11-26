@@ -14,7 +14,6 @@ import gc
 import json
 import os
 import signal
-import sys
 import threading
 import time
 import unittest
@@ -363,20 +362,8 @@ def fork_child_checks(engine: rustleaks.Engine, token: rustleaks.CancelToken) ->
     return report
 
 
-# On macOS, Rust's standard library makes a thread wait with a libdispatch
-# semaphore that it creates the first time the thread waits. A forked child
-# cannot use that semaphore, so a child that scans on the thread that forked,
-# after that thread waited for a scan in the parent, stops with SIGTRAP.
-# The fix belongs in rustleaks-ffi: wait for a scan thread's result with a
-# Mutex and Condvar, not a channel.
-_known_macos_fork_failure = (
-    unittest.expectedFailure if sys.platform == "darwin" else (lambda test: test)
-)
-
-
 @unittest.skipUnless(hasattr(os, "fork"), "this platform has no fork")
 class ForkTest(unittest.TestCase):
-    @_known_macos_fork_failure
     def test_fork_closes_engines_of_the_parent(self) -> None:
         # This thread waits for a scan before the fork, as a server that
         # scans and then forks workers would.
