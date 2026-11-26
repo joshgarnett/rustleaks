@@ -730,6 +730,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  bindings:
+    name: Binding packages
+    needs: candidate
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/bindings.yml
+    with:
+      candidate: ${{ inputs.candidate }}
+      version: ${{ inputs.version }}
+
   required:
     name: Release candidate required
     if: always()
@@ -744,6 +755,7 @@ jobs:
       - native-linux
       - native-macos
       - native-windows
+      - bindings
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -759,8 +771,9 @@ jobs:
           NATIVE_LINUX: ${{ needs.native-linux.result }}
           NATIVE_MACOS: ${{ needs.native-macos.result }}
           NATIVE_WINDOWS: ${{ needs.native-windows.result }}
+          BINDINGS: ${{ needs.bindings.result }}
         run: |
           set -euo pipefail
-          for result in "${CANDIDATE}" "${PACKAGE}" "${ACCEPTANCE}" "${QUALIFICATION}" "${SECURITY}" "${FUZZ}" "${SELF_SCAN}" "${NATIVE_LINUX}" "${NATIVE_MACOS}" "${NATIVE_WINDOWS}"; do
+          for result in "${CANDIDATE}" "${PACKAGE}" "${ACCEPTANCE}" "${QUALIFICATION}" "${SECURITY}" "${FUZZ}" "${SELF_SCAN}" "${NATIVE_LINUX}" "${NATIVE_MACOS}" "${NATIVE_WINDOWS}" "${BINDINGS}"; do
             test "${result}" = success
           done
