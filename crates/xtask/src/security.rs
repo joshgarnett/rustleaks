@@ -802,10 +802,11 @@ fn rust_files_outside_crates(root: &Path) -> Result<Vec<String>, String> {
 /// Returns the code of Rust source with comments (nested block comments
 /// included), string literals (raw, byte and C strings included) and
 /// character literals blanked, so that a search for a keyword sees only
-/// code. Lifetimes and labels stay code.
+/// code. Identifiers, raw identifiers, lifetimes and labels are read as whole
+/// tokens and stay code, so that the `r` at the end of `'r` or `r#r` never
+/// starts a raw string.
 fn code_only(source: &str) -> String {
     let characters = source.chars().collect::<Vec<_>>();
-    let identifier = |character: char| character.is_alphanumeric() || character == '_';
     let mut code = String::with_capacity(source.len());
     let mut index = 0;
     while let Some(&character) = characters.get(index) {
@@ -837,9 +838,20 @@ fn code_only(source: &str) -> String {
             code.push(' ');
             continue;
         }
-        if let Some(end) = raw_string_end(&characters, index, identifier) {
+        if is_identifier(character) {
+            let end = identifier_end(&characters, index);
+            let word = characters[index..end].iter().collect::<String>();
+            if matches!(word.as_str(), "r" | "br" | "cr")
+                && let Some(end) = raw_string_end(&characters, end)
+            {
+                index = end;
+                code.push(' ');
+                continue;
+            }
+            // A raw identifier, such as `r#r`, is one token.
+            let end = raw_identifier_end(&characters, &word, end).unwrap_or(end);
+            code.extend(&characters[index..end]);
             index = end;
-            code.push(' ');
             continue;
         }
         if character == '"' {
@@ -872,6 +884,14 @@ fn code_only(source: &str) -> String {
                 code.push(' ');
                 continue;
             }
+            // A lifetime or a label, such as `'r` or `'r#r`, is one token.
+            let start = index + 1;
+            let mut end = identifier_end(&characters, start);
+            let word = characters[start..end].iter().collect::<String>();
+            end = raw_identifier_end(&characters, &word, end).unwrap_or(end);
+            code.extend(&characters[index..end]);
+            index = end;
+            continue;
         }
         code.push(character);
         index += 1;
@@ -879,33 +899,42 @@ fn code_only(source: &str) -> String {
     code
 }
 
-/// If a raw string literal (`r"…"`, `r#"…"#`, `br#"…"#` or `cr"…"`)
-/// starts at `index`, returns the index just past it.
-fn raw_string_end(
-    characters: &[char],
-    index: usize,
-    identifier: impl Fn(char) -> bool,
-) -> Option<usize> {
-    let mut start = index;
-    if matches!(characters.get(start), Some('b' | 'c')) {
-        start += 1;
-    }
-    if characters.get(start) != Some(&'r')
-        || index
-            .checked_sub(1)
-            .is_some_and(|before| identifier(characters[before]))
-    {
-        return None;
-    }
-    let hashes = characters[start + 1..]
+fn is_identifier(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+/// Returns the index just past the identifier characters from `start`.
+fn identifier_end(characters: &[char], start: usize) -> usize {
+    characters.get(start..).map_or(start, |rest| {
+        start + rest.iter().take_while(|&&next| is_identifier(next)).count()
+    })
+}
+
+/// If `word`, which ends at `end`, is the `r` of a raw identifier such as
+/// `r#r`, returns the index just past the identifier.
+fn raw_identifier_end(characters: &[char], word: &str, end: usize) -> Option<usize> {
+    (word == "r"
+        && characters.get(end) == Some(&'#')
+        && characters
+            .get(end + 1)
+            .is_some_and(|&next| is_identifier(next)))
+    .then(|| identifier_end(characters, end + 1))
+}
+
+/// If the `r`, `br` or `cr` prefix that ends just before `open` starts a raw
+/// string literal (`r"…"`, `r#"…"#`, `br#"…"#` or `cr"…"`), returns the index
+/// just past the literal.
+fn raw_string_end(characters: &[char], open: usize) -> Option<usize> {
+    let hashes = characters
+        .get(open..)?
         .iter()
         .take_while(|&&next| next == '#')
         .count();
-    let open = start + 1 + hashes;
-    if characters.get(open) != Some(&'"') {
+    let quote = open + hashes;
+    if characters.get(quote) != Some(&'"') {
         return None;
     }
-    let mut cursor = open + 1;
+    let mut cursor = quote + 1;
     while cursor < characters.len() {
         if characters[cursor] == '"'
             && characters[cursor + 1..]
@@ -1148,6 +1177,24 @@ mod tests {
         assert!(mentions_unsafe(
             "fn f<'a>(x: &'a u8) { 'outer: loop { unsafe { g() } } }\n"
         ));
+        // A lifetime or a raw identifier that ends in r is not a raw
+        // string prefix.
+        let lifetime_macro =
+            "macro_rules! m { ($l:lifetime $a:literal, $e:expr, $b:literal) => { $e } }\n";
+        assert!(mentions_unsafe(&format!(
+            "{lifetime_macro}let x = m!('r\"\\\"\", unsafe {{ std::ptr::read(&7u8) }}, \"\\\"\");\n"
+        )));
+        assert!(mentions_unsafe(&format!(
+            "{lifetime_macro}let x = m!('br\"\\\"\", unsafe {{ std::ptr::read(&7u8) }}, \"\\\"\");\n"
+        )));
+        assert!(mentions_unsafe(
+            "macro_rules! m { ($l:ident $a:literal, $e:expr, $b:literal) => { $e } }\n\
+             let x = m!(r#r\"\\\"\", unsafe { std::ptr::read(&7u8) }, \"\\\"\");\n"
+        ));
+        assert!(mentions_unsafe(
+            "fn f<'a>() { let _: &'a u8; unsafe { g() } }\n"
+        ));
+        assert!(!mentions_unsafe("const S: &str = cr#\"unsafe\"#;\n"));
         // An identifier that ends in r is not a raw string prefix.
         assert!(mentions_unsafe(
             "fn f() { let r = 1; let br = \"x\"; unsafe { g() } }\n"
