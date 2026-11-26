@@ -11,6 +11,7 @@
 # check-wheel` compares its metadata with bindings/python/pyproject.toml.
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//bazel:pick_file.bzl", "pick_file")
 load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION")
 
@@ -114,4 +115,13 @@ py_wheel(
         "@platforms//os:macos": [":library_macos"],
         "@platforms//os:windows": [":library_windows"],
     }),
+)
+
+# Prints the interpreter that Bazel selected for the current
+# --@rules_python//python/config_settings:python_version, for the Windows
+# binding dry run.
+py_binary(
+    name = "interpreter",
+    srcs = ["interpreter.py"],
+    main = "interpreter.py",
 )

@@ -358,7 +358,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $pythons = @()
           foreach ($version in @('3.12', '3.13', '3.14', '3.15')) {
-            $python = (bazelisk --output_user_root=C:/b --windows_enable_symlinks run --config=$env:BAZEL_CONFIG @flags "--@rules_python//python/config_settings:python_version=$version" @rules_python//python/bin:python -- -I -c 'import sys; print(sys.executable)' | Select-Object -Last 1)
+            $python = (bazelisk --output_user_root=C:/b --windows_enable_symlinks run --enable_runfiles --config=$env:BAZEL_CONFIG @flags "--@rules_python//python/config_settings:python_version=$version" //release/python:interpreter | Select-Object -Last 1)
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $pythons += $python
           }
