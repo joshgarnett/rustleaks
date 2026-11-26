@@ -145,8 +145,9 @@ natively:
   `bazel/musl_c.bzl`). The Go test programs are static musl executables.
   The Python tests run a dynamic musl CPython, so the musl lanes install the
   Ubuntu `musl` package, which provides the musl loader.
-- `//bindings/linktest` links the FFI static library and a second Rust static
-  library into one cgo program, on every lane but Windows.
+- `//crates/rustleaks-ffi:linktest_test` links the FFI static library and a
+  second Rust static library into one cgo program, on every lane but
+  Windows.
 
 The release dry run also runs `Binding Packages` on all eight lanes: it builds
 a Go program from the packed `rustleaks-go` modules with the host C compiler

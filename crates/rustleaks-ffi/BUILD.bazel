@@ -1,4 +1,6 @@
+load("@rules_go//go:def.bzl", "go_test")
 load("@rules_rust//rust:defs.bzl", "rust_shared_library", "rust_static_library")
+load("//bazel:musl_c.bzl", "musl_c_test")
 load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
 
 exports_files([
@@ -100,11 +102,53 @@ rustleaks_integration_test(
     deps = [":rustleaks_ffi"],
 )
 
+# Links the static library and a second Rust static library into one cgo
+# program. Each Rust static library carries a copy of the Rust standard
+# library, so this checks that the release archive does not cause duplicate
+# symbol errors in a Go program that already uses Rust. The second library
+# exports a C function, so it lives in this crate, the only place where
+# unsafe Rust is allowed.
+rust_static_library(
+    name = "linktest_other_static",
+    srcs = ["tests/linktest/other.rs"],
+    crate_name = "linktest_other_rust",
+    crate_root = "tests/linktest/other.rs",
+    edition = "2024",
+)
+
+go_test(
+    name = "linktest_test",
+    size = "small",
+    srcs = ["tests/linktest/link_test.go"],
+    cdeps = [
+        ":linktest_other_static",
+        ":rustleaks_ffi_static",
+    ],
+    cgo = True,
+    importpath = "github.com/joshgarnett/rustleaks/crates/rustleaks-ffi/tests/linktest",
+    pure = "off",
+    target_compatible_with = select({
+        "//platforms:musl_c_libc": [],
+        "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+musl_c_test(
+    name = "linktest_musl_test",
+    size = "small",
+    target_compatible_with = ["//platforms:musl"],
+    test = ":linktest_test",
+)
+
 test_suite(
     name = "all_tests",
     tests = [
         ":contract_test",
         ":exports_fuzz_test",
+        ":linktest_musl_test",
+        ":linktest_test",
         ":rustleaks_ffi_doc_test",
         ":rustleaks_ffi_unit_test",
     ],

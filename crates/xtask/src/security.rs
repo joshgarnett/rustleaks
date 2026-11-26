@@ -736,10 +736,63 @@ fn owned_safety_check() -> Result<(), String> {
     let manifest = std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml"))
         .map_err(|error| format!("cannot read the {UNSAFE_CRATE} manifest: {error}"))?;
     validate_unsafe_crate_manifest(&manifest)?;
+    let outside = rust_files_outside_crates(&root)?;
+    for relative in &outside {
+        let source = std::fs::read_to_string(root.join(relative))
+            .map_err(|error| format!("cannot read {relative}: {error}"))?;
+        if mentions_unsafe(&source) {
+            return Err(format!(
+                "{relative} uses unsafe Rust outside {UNSAFE_CRATE}; move it into crates/rustleaks-ffi"
+            ));
+        }
+    }
     println!(
-        "every owned crate root forbids unsafe code except {UNSAFE_CRATE_ROOT}, which denies undocumented unsafe code"
+        "every owned crate root forbids unsafe code except {UNSAFE_CRATE_ROOT}, which denies undocumented unsafe code; {} Rust files under {} use no unsafe Rust",
+        outside.len(),
+        RUST_OUTSIDE_CRATES.join(" and ")
     );
     Ok(())
+}
+
+/// Folders outside `crates/` that Bazel builds Rust from. Rust there is
+/// never in the unsafe inventory, so it must not use unsafe Rust at all.
+const RUST_OUTSIDE_CRATES: &[&str] = &["bazel", "bindings", "release"];
+
+/// Lists the Rust files under [`RUST_OUTSIDE_CRATES`], relative to `root`.
+fn rust_files_outside_crates(root: &Path) -> Result<Vec<String>, String> {
+    fn walk(root: &Path, directory: &Path, files: &mut Vec<String>) -> Result<(), String> {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return Ok(());
+        };
+        for entry in entries {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk(root, &path, files)?;
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let relative = path.strip_prefix(root).map_err(|error| error.to_string())?;
+                files.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    for directory in RUST_OUTSIDE_CRATES {
+        walk(root, &root.join(directory), &mut files)?;
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Reports whether Rust source contains the `unsafe` keyword outside line
+/// comments: an unsafe block, function, impl or attribute such as
+/// `#[unsafe(no_mangle)]`.
+fn mentions_unsafe(source: &str) -> bool {
+    source.lines().any(|line| {
+        let code = line.split("//").next().unwrap_or_default();
+        code.split(|character: char| !(character.is_alphanumeric() || character == '_'))
+            .any(|word| word == "unsafe")
+    })
 }
 
 pub(crate) fn security_check() -> Result<(), String> {
@@ -855,12 +908,24 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, owned_crate_roots, parse_civil_day,
-        reviewed_unsafe_packages, validate_compcol_exemption_scope, validate_dependency_boundaries,
-        validate_owned_unsafe_package, validate_supply_chain_exceptions,
-        validate_unsafe_crate_manifest, validate_unsafe_crate_root, validate_unsafe_package_set,
-        validate_vet_exemption,
+        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, mentions_unsafe, owned_crate_roots,
+        parse_civil_day, reviewed_unsafe_packages, validate_compcol_exemption_scope,
+        validate_dependency_boundaries, validate_owned_unsafe_package,
+        validate_supply_chain_exceptions, validate_unsafe_crate_manifest,
+        validate_unsafe_crate_root, validate_unsafe_package_set, validate_vet_exemption,
     };
+
+    #[test]
+    fn unsafe_rust_is_found_in_code_but_not_in_comments_or_lint_names() {
+        assert!(mentions_unsafe(
+            "#[unsafe(no_mangle)]\npub extern \"C\" fn f() {}\n"
+        ));
+        assert!(mentions_unsafe("fn f() { unsafe { g() } }\n"));
+        assert!(mentions_unsafe("pub unsafe extern \"C\" fn f() {}\n"));
+        assert!(!mentions_unsafe(
+            "#![forbid(unsafe_code)]\n// unsafe in a comment\n"
+        ));
+    }
 
     #[test]
     fn owned_crate_roots_include_every_binary_example_and_fuzz_target() {
