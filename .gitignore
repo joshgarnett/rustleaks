@@ -6,6 +6,9 @@
 **/fuzz/artifacts/
 **/fuzz/corpus/
 
+# Python bytecode from running the binding outside Bazel
+__pycache__/
+
 # Coverage and profiling output
 *.profraw
 *.profdata
