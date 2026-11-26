@@ -44,7 +44,13 @@ rust_static_library(
     name = "rustleaks_ffi_static",
     crate_name = "rustleaks_ffi_static",
     crate_root = "src/lib.rs",
-    deps = _DEPS,
+    # Rust's musl standard library expects the program to link libunwind.a,
+    # which musl C toolchains do not ship. The archive carries the LLVM
+    # unwinder, so a musl Go program needs only the C library.
+    deps = _DEPS + select({
+        "//platforms:musl": ["//bazel:llvm_unwind"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     rustc_env = _RUSTC_ENV,
     srcs = _SRCS,
