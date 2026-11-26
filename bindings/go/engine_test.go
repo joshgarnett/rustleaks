@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -54,10 +55,13 @@ func markerEngine(t testing.TB, opts ...Option) *Engine {
 	return newEngine(t, append([]Option{WithConfig([]byte(markerConfig))}, opts...)...)
 }
 
-func setHook(t *testing.T, target *func(), hook func()) {
+func setHook[F any](t *testing.T, target *F, hook F) {
 	t.Helper()
 	*target = hook
-	t.Cleanup(func() { *target = nil })
+	t.Cleanup(func() {
+		var zero F
+		*target = zero
+	})
 }
 
 func TestBuiltInRulesByDefault(t *testing.T) {
@@ -385,10 +389,12 @@ func TestCloseWaitsForRunningScansAndStopsNewOnes(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
+	var released atomic.Bool
 	setHook(t, &testHookBeforeNativeScan, func() {
 		once.Do(func() {
 			close(started)
 			<-release
+			released.Store(true)
 		})
 	})
 
@@ -409,20 +415,23 @@ func TestCloseWaitsForRunningScansAndStopsNewOnes(t *testing.T) {
 		waiting <- err
 	}()
 
+	// Close cannot return before the running scan is released, so each
+	// Close records whether the release came first.
 	closed := make(chan error, 3)
 	for range 3 {
-		go func() { closed <- e.Close() }()
+		go func() {
+			err := e.Close()
+			if err == nil && !released.Load() {
+				err = errors.New("Close returned while a scan was running")
+			}
+			closed <- err
+		}()
 	}
 	if err := <-waiting; !errors.Is(err, ErrClosed) {
 		t.Fatalf("waiting scan: %v, want ErrClosed", err)
 	}
 	if _, err := e.ScanString(ctx, "MARK-ABCD\n"); !errors.Is(err, ErrClosed) {
 		t.Fatalf("scan after Close: %v, want ErrClosed", err)
-	}
-	select {
-	case err := <-closed:
-		t.Fatalf("Close returned %v while a scan was running", err)
-	case <-time.After(100 * time.Millisecond):
 	}
 	close(release)
 	if err := <-running; err != nil {
@@ -467,48 +476,72 @@ func TestCancelBeforeScan(t *testing.T) {
 	}
 }
 
-func TestCancelDuringScan(t *testing.T) {
-	e := newEngine(t)
+// TestCancelInsideTheLibrary sets the cancel flag right before the native
+// call, so the library itself must report the cancelled scan.
+func TestCancelInsideTheLibrary(t *testing.T) {
+	e := markerEngine(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// The cancel comes while the library scans. A fast machine may finish
-	// the scan first, so only the kind of outcome is checked.
-	setHook(t, &testHookBeforeNativeScan, func() { time.AfterFunc(5*time.Millisecond, cancel) })
-	findings, err := e.ScanString(ctx, slowInput())
-	if err == nil {
-		if len(findings) != 0 {
-			t.Fatalf("findings %v", findings)
+	var handle unsafe.Pointer
+	setHook(t, &testHookNativeArgs, func(_ *scanArgs, c unsafe.Pointer) {
+		handle = c
+		cancel()
+		if status := callCancelSet(c); status != statusOK {
+			t.Errorf("rustleaks_cancel_set: status %d", status)
 		}
-		return
+	})
+	_, err := e.ScanString(ctx, "MARK-ABCD\n")
+	if handle == nil {
+		t.Fatal("a cancellable context got no cancel handle")
 	}
 	checkStopped(t, err, TerminationCancelled, context.Canceled)
 }
 
+// TestDeadlineInsideTheLibrary gives the library a deadline that has
+// already passed, so the library itself must report it.
+func TestDeadlineInsideTheLibrary(t *testing.T) {
+	e := markerEngine(t)
+	var handle unsafe.Pointer
+	setHook(t, &testHookNativeArgs, func(args *scanArgs, c unsafe.Pointer) {
+		handle = c
+		args.overrides |= scanSetDeadline
+		args.deadlineNS = 0
+	})
+	_, err := e.ScanString(context.Background(), "MARK-ABCD\n")
+	if handle != nil {
+		t.Error("a context that cannot end got a cancel handle")
+	}
+	checkStopped(t, err, TerminationDeadline, context.DeadlineExceeded)
+}
+
 func TestDeadline(t *testing.T) {
-	e := newEngine(t)
+	e := markerEngine(t)
+	called := false
+	setHook(t, &testHookBeforeNativeScan, func() { called = true })
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	_, err := e.ScanString(expired, "x")
+	_, err := e.ScanString(expired, "MARK-ABCD\n")
 	checkStopped(t, err, TerminationDeadline, context.DeadlineExceeded)
-
-	// The library stops at the deadline it was given, or the context sets
-	// the cancel flag when its own timer fires first. Both report the
-	// deadline. A fast machine may finish the scan first, so only the kind
-	// of outcome is checked.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-	findings, err := e.ScanString(ctx, slowInput())
-	if err != nil {
-		checkStopped(t, err, TerminationDeadline, context.DeadlineExceeded)
-	} else if len(findings) != 0 {
-		t.Fatalf("findings %v", findings)
+	if called {
+		t.Error("a scan past its deadline reached the library")
 	}
 
-	// A context without a Done channel gets no cancel handle and scans to
-	// the end.
-	findings, err = e.ScanString(context.Background(), slowInput()+"MARK-ABCD")
-	if err != nil || len(findings) != 0 {
-		t.Fatalf("background scan: %v, %v", findings, err)
+	// A deadline far away passes through to the library and does not stop
+	// a short scan.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+	var deadline uint64
+	setHook(t, &testHookNativeArgs, func(args *scanArgs, _ unsafe.Pointer) {
+		if args.overrides&scanSetDeadline != 0 {
+			deadline = args.deadlineNS
+		}
+	})
+	findings, err := e.ScanString(ctx, "MARK-ABCD\n")
+	if err != nil || len(findings) != 1 {
+		t.Fatalf("scan with a far deadline: %v, %v", findings, err)
+	}
+	if deadline == 0 || deadline > uint64(time.Hour) {
+		t.Errorf("deadline_ns = %d, want up to one hour", deadline)
 	}
 }
 

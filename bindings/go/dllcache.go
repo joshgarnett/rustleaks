@@ -39,6 +39,11 @@ const (
 // and the file appears only by rename from a temporary file in the same
 // folder. An existing file is used only after its hash is checked again.
 func extractLibrary(root string, lib *embeddedDLL) (string, error) {
+	return extractLibraryWait(root, lib, lockWait)
+}
+
+// extractLibraryWait is extractLibrary with the longest wait for the lock.
+func extractLibraryWait(root string, lib *embeddedDLL, wait time.Duration) (string, error) {
 	fail := func(message string, err error) (string, error) {
 		return "", &LibraryError{Kind: LibraryLoad, Op: "extract library", Path: root, Message: message, Err: err}
 	}
@@ -62,7 +67,7 @@ func extractLibrary(root string, lib *embeddedDLL) (string, error) {
 		return target, nil
 	}
 
-	unlock, err := lockFile(filepath.Join(dir, ".lock"), lockWait)
+	unlock, err := lockFile(filepath.Join(dir, ".lock"), wait)
 	if err != nil {
 		// The holder may have finished the file without releasing the lock
 		// yet.

@@ -137,6 +137,26 @@ func TestCollectionsLeaveOutTheSecret(t *testing.T) {
 	}
 }
 
+// TestUnexportedFieldShowsTheSecret pins the limit that the docs state: fmt
+// cannot call the methods of a Finding in an unexported struct field, so it
+// prints the fields, secret included. If this test fails, fmt changed and
+// the docs can drop the warning.
+func TestUnexportedFieldShowsTheSecret(t *testing.T) {
+	findings := formatFindings(t)
+	value := struct{ finding Finding }{findings[0]}
+	if text := fmt.Sprintf("%+v", value); !strings.Contains(text, formatMarker) {
+		t.Errorf("fmt no longer prints an unexported Finding field: %s", text)
+	}
+	// encoding/json skips unexported fields.
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), formatMarker) {
+		t.Errorf("json.Marshal wrote an unexported field: %s", encoded)
+	}
+}
+
 func TestErrorsLeaveOutTheInput(t *testing.T) {
 	ctx := context.Background()
 	input := "SYNTH-" + formatMarker + "\n"
