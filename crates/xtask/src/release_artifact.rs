@@ -87,6 +87,16 @@ pub(crate) const RELEASE_ARTIFACT_SUBCOMMANDS: &[&str] = &[
     "verify",
 ];
 
+/// The third-party license texts and notices of the release build for
+/// `target`, as the CLI archives carry them: paths under `licenses/` and
+/// their bytes, checked against the committed notice catalog.
+pub(crate) fn target_notice_files(
+    root: &Path,
+    target: &str,
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, String> {
+    notices::load(root, target, None).map(|bundle| bundle.files)
+}
+
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
         [command] if command == "notices" => notices::generate(root, false),

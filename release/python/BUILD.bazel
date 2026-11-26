@@ -1,14 +1,16 @@
 # The platform wheel for the Python package, for one target per build.
 #
-# Build it with the lane's release config. On musl, also select the musl C
-# platform so the library links the shared musl libc:
+# Build it with the lane's binding release config, which on musl also
+# selects the musl C platform so the library links the shared musl libc:
 #
-#   bazelisk build --config=release-linux-x86_64-musl \
-#     --platforms=//platforms:linux_x86_64_musl_c //release/python:wheel
+#   bazelisk build --config=release-bindings-linux-x86_64-musl //release/python:wheel
 #
 # The wheel holds the Python package, the shared library under
-# rustleaks/_native/, and LICENSE and NOTICE. `cargo xtask bindings
-# check-wheel` compares its metadata with bindings/python/pyproject.toml.
+# rustleaks/_native/, and LICENSE and NOTICE. It is not the release wheel
+# yet: `cargo xtask bindings finish-wheel` adds the third-party notices of
+# the linked library and writes core metadata 2.4 with the license
+# expression, and `release/python/upload.py check` compares the result with
+# bindings/python/pyproject.toml.
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python:py_binary.bzl", "py_binary")
@@ -92,7 +94,7 @@ py_wheel(
         "//:LICENSE": "licenses/LICENSE",
         "//:NOTICE": "licenses/NOTICE",
     },
-    license = "MIT",
+    license = "MIT AND BSD-3-Clause AND Apache-2.0 AND Apache-2.0 WITH LLVM-exception",
     platform = _PLATFORM_TAG,
     project_urls = {
         "Changelog": "https://github.com/joshgarnett/rustleaks/blob/main/CHANGELOG.md",

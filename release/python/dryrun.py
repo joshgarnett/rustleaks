@@ -24,6 +24,9 @@ def check_metadata(pyproject_path):
         "Version": project["version"],
         "Summary": project["description"],
         "Requires-Python": project["requires-python"],
+        "Metadata-Version": "2.4",
+        "License-Expression": project["license"],
+        "Keywords": ",".join(project["keywords"]),
     }
     for key, value in expected.items():
         if metadata[key] != value:

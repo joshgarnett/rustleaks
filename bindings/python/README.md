@@ -18,8 +18,10 @@ The value in the example is synthetic test data.
 
 Read [Using Rustleaks from
 Python](https://github.com/joshgarnett/rustleaks/blob/main/docs/user/python.md)
-for rules, options, errors, threads, timeouts and safe logging. The package
-is licensed under the MIT license.
+for rules, options, errors, threads, timeouts and safe logging. The Python
+code is under the MIT license. The native library in each wheel also holds
+code under BSD-3-Clause, Apache-2.0 and Apache-2.0 WITH LLVM-exception; the
+wheel's `licenses` folder holds every license text and notice.
 
 The code lives in `bindings/python/` of
 [joshgarnett/rustleaks](https://github.com/joshgarnett/rustleaks). Report

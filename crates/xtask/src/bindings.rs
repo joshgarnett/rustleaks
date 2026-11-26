@@ -22,8 +22,11 @@ use sha2::{Digest, Sha256};
 
 use crate::tooling::{command_output, sha256_bytes};
 
+mod wheel;
+mod zip;
+
 /// Subcommands accepted after `bindings`.
-pub(crate) const SUBCOMMANDS: &[&str] = &["go-layout", "go-proxy", "dry-run"];
+pub(crate) const SUBCOMMANDS: &[&str] = &["go-layout", "go-proxy", "finish-wheel", "dry-run"];
 
 /// The published Go module path.
 const GO_MODULE: &str = "github.com/joshgarnett/rustleaks-go";
@@ -37,6 +40,8 @@ struct Platform {
     name: &'static str,
     /// The Bazel config of the native lane, without the `release-` prefix.
     config: &'static str,
+    /// The Rust target, which selects the notice files.
+    target: &'static str,
     /// The Go build constraint for this platform.
     build: &'static str,
     description: &'static str,
@@ -53,6 +58,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "darwin-amd64",
         config: "macos-x86_64",
+        target: "x86_64-apple-darwin",
         build: "darwin && amd64",
         description: "macOS on x86_64",
         system_libraries: "-lSystem -lc -lm",
@@ -63,6 +69,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "darwin-arm64",
         config: "macos-aarch64",
+        target: "aarch64-apple-darwin",
         build: "darwin && arm64",
         description: "macOS on ARM64",
         system_libraries: "-lSystem -lc -lm",
@@ -73,6 +80,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "linux-amd64",
         config: "linux-x86_64-gnu",
+        target: "x86_64-unknown-linux-gnu",
         build: "linux && amd64 && !musl",
         description: "Linux on x86_64 with glibc",
         system_libraries: "-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc",
@@ -83,6 +91,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "linux-amd64-musl",
         config: "linux-x86_64-musl",
+        target: "x86_64-unknown-linux-musl",
         build: "linux && amd64 && musl",
         description: "Linux on x86_64 with musl",
         system_libraries: "-lc",
@@ -93,6 +102,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "linux-arm64",
         config: "linux-aarch64-gnu",
+        target: "aarch64-unknown-linux-gnu",
         build: "linux && arm64 && !musl",
         description: "Linux on ARM64 with glibc",
         system_libraries: "-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc",
@@ -103,6 +113,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "linux-arm64-musl",
         config: "linux-aarch64-musl",
+        target: "aarch64-unknown-linux-musl",
         build: "linux && arm64 && musl",
         description: "Linux on ARM64 with musl",
         system_libraries: "-lc",
@@ -113,6 +124,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "windows-amd64",
         config: "windows-x86_64-msvc",
+        target: "x86_64-pc-windows-msvc",
         build: "windows && amd64",
         description: "Windows on x86_64",
         system_libraries: "",
@@ -123,6 +135,7 @@ const PLATFORMS: &[Platform] = &[
     Platform {
         name: "windows-arm64",
         config: "windows-aarch64-msvc",
+        target: "aarch64-pc-windows-msvc",
         build: "windows && arm64",
         description: "Windows on ARM64",
         system_libraries: "",
@@ -146,6 +159,16 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
         [command, layout, proxy] if command == "go-proxy" => {
             go_proxy(Path::new(layout), Path::new(proxy)).map(|_| ())
+        }
+        [command, config, wheel, output] if command == "finish-wheel" => {
+            let platform = platform_for_config(config)?;
+            let path = wheel::finish(root, platform.target, Path::new(wheel), Path::new(output))?;
+            println!(
+                "wrote {} with the {} notices",
+                path.display(),
+                platform.target
+            );
+            Ok(())
         }
         [command, config, go_root, proxy, wheel, work, pythons @ ..]
             if command == "dry-run" && !pythons.is_empty() =>
@@ -174,6 +197,7 @@ fn usage() -> String {
 
 const USAGE_LINES: &str = "cargo xtask bindings go-layout <version> <libraries-dir> <output-dir>\n       \
      cargo xtask bindings go-proxy <layout-dir> <proxy-dir>\n       \
+     cargo xtask bindings finish-wheel <config> <wheel> <output-dir>\n       \
      cargo xtask bindings dry-run <config> <go-root> <proxy-dir> <wheel> <work-dir> <python>...";
 
 fn platform_for_config(config: &str) -> Result<&'static Platform, String> {
@@ -221,28 +245,55 @@ fn render(template: &str, values: &[(&str, &str)]) -> Result<String, String> {
     Ok(text)
 }
 
-/// Returns the `go` directive of a go.mod file and rejects dependencies,
-/// because the published main module requires only its own `lib` modules.
-fn go_directive(go_mod: &str) -> Result<String, String> {
+/// The parts of `bindings/go/go.mod` that the published go.mod keeps.
+#[derive(Debug, PartialEq, Eq)]
+struct GoMod {
+    /// The `go` directive's version.
+    go: String,
+    /// `retract` directives, line by line, as written. A retraction is how
+    /// a bad published version is withdrawn, because it cannot be replaced.
+    retract: Vec<String>,
+}
+
+/// Reads `bindings/go/go.mod`. It may hold only `module`, `go`, comments and
+/// `retract` directives (single lines or a block), because the published
+/// main module requires only its own `lib` modules.
+fn go_directive(go_mod: &str) -> Result<GoMod, String> {
     let mut module = None;
     let mut go = None;
+    let mut retract = Vec::new();
+    let mut in_retract_block = false;
     for line in go_mod.lines().map(str::trim) {
-        if let Some(path) = line.strip_prefix("module ") {
+        if in_retract_block {
+            retract.push(line.to_owned());
+            if line == ")" {
+                in_retract_block = false;
+            }
+        } else if let Some(path) = line.strip_prefix("module ") {
             module = Some(path.trim());
         } else if let Some(version) = line.strip_prefix("go ") {
             go = Some(version.trim().to_owned());
+        } else if line == "retract (" {
+            retract.push(line.to_owned());
+            in_retract_block = true;
+        } else if line.starts_with("retract ") {
+            retract.push(line.to_owned());
         } else if !line.is_empty() && !line.starts_with("//") {
             return Err(format!(
                 "bindings/go/go.mod has an unexpected line {line:?}; the binding takes no Go dependencies"
             ));
         }
     }
+    if in_retract_block {
+        return Err("bindings/go/go.mod has an unclosed retract block".into());
+    }
     if module != Some(GO_MODULE) {
         return Err(format!(
             "bindings/go/go.mod must declare module {GO_MODULE}"
         ));
     }
-    go.ok_or_else(|| "bindings/go/go.mod has no go directive".into())
+    let go = go.ok_or("bindings/go/go.mod has no go directive")?;
+    Ok(GoMod { go, retract })
 }
 
 /// Lists the files of the Go module rooted at `root` as module zip paths,
@@ -359,6 +410,20 @@ fn gzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("cannot compress the DLL: {error}"))
 }
 
+/// The third-party license texts and notices for the library of `target`.
+/// Under `cfg(test)` a synthetic set stands in, so the layout test needs no
+/// generated catalog.
+fn notices(root: &Path, target: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    if cfg!(test) {
+        let _ = root;
+        return Ok(BTreeMap::from([(
+            "licenses/index.json".to_owned(),
+            format!("{{\"target\":\"{target}\"}}").into_bytes(),
+        )]));
+    }
+    crate::release_artifact::target_notice_files(root, target)
+}
+
 /// Writes the `rustleaks-go` repository for `version` into `output`.
 ///
 /// `libraries` holds one folder per platform, named as under `lib/`, with
@@ -393,7 +458,8 @@ fn go_layout_from(
             "bindings/go/library.go is version {package_version}, not {version}"
         ));
     }
-    let go_version = go_directive(&read_text(&source.join("go.mod"))?)?;
+    let source_go_mod = go_directive(&read_text(&source.join("go.mod"))?)?;
+    let go_version = source_go_mod.go.clone();
     let license = read(&root.join("LICENSE"))?;
     let notice = read(&root.join("NOTICE"))?;
 
@@ -449,6 +515,9 @@ fn go_layout_from(
         write(&directory.join("go.mod"), go_mod.as_bytes())?;
         write(&directory.join("LICENSE"), &license)?;
         write(&directory.join("NOTICE"), &notice)?;
+        for (path, bytes) in notices(root, platform.target)? {
+            write(&directory.join(path), &bytes)?;
+        }
 
         let import = if platform.windows {
             "import_windows.go.tmpl"
@@ -465,7 +534,18 @@ fn go_layout_from(
         requires.push_str(&format!("\t{module} v{version}\n"));
     }
 
-    let go_mod = format!("module {GO_MODULE}\n\ngo {go_version}\n\nrequire (\n{requires})\n");
+    let mut go_mod = format!("module {GO_MODULE}\n\ngo {go_version}\n\nrequire (\n{requires})\n");
+    if !source_go_mod.retract.is_empty() {
+        go_mod.push('\n');
+        for line in &source_go_mod.retract {
+            let indent = if line.starts_with("retract") || line == ")" {
+                ""
+            } else {
+                "\t"
+            };
+            go_mod.push_str(&format!("{indent}{line}\n"));
+        }
+    }
     write(&output.join("go.mod"), go_mod.as_bytes())?;
     sums.sort();
     let go_sum = sums
@@ -542,7 +622,7 @@ fn go_proxy(layout: &Path, proxy: &Path) -> Result<Vec<String>, String> {
         )?;
         write(
             &versions.join(format!("v{version}.zip")),
-            &stored_zip(&entries)?,
+            &zip::write(&entries, false)?,
         )?;
         hashes.extend(go_sum_lines(&module, &version, &directory)?);
     }
@@ -573,62 +653,6 @@ fn escape_module_path(module: &str) -> String {
         }
     }
     escaped
-}
-
-/// Writes a zip archive whose entries are stored without compression. Go
-/// reads stored entries, and the module hash depends only on the names and
-/// contents, not on the compression.
-fn stored_zip(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
-    let mut archive = Vec::new();
-    let mut directory = Vec::new();
-    for (name, bytes) in entries {
-        let offset = u32::try_from(archive.len()).map_err(|_| "zip archive over 4 GiB")?;
-        let size = u32::try_from(bytes.len()).map_err(|_| format!("{name} is over 4 GiB"))?;
-        let name_length = u16::try_from(name.len()).map_err(|_| format!("{name} is too long"))?;
-        let mut crc = flate2::Crc::new();
-        crc.update(bytes);
-        let crc = crc.sum();
-        // Local file header: version 2.0, UTF-8 names, stored, DOS date
-        // 1980-01-01.
-        let mut local = Vec::new();
-        local.extend_from_slice(&0x0403_4b50_u32.to_le_bytes());
-        local.extend_from_slice(&20_u16.to_le_bytes());
-        local.extend_from_slice(&0x0800_u16.to_le_bytes());
-        local.extend_from_slice(&0_u16.to_le_bytes());
-        local.extend_from_slice(&0_u16.to_le_bytes());
-        local.extend_from_slice(&0x0021_u16.to_le_bytes());
-        local.extend_from_slice(&crc.to_le_bytes());
-        local.extend_from_slice(&size.to_le_bytes());
-        local.extend_from_slice(&size.to_le_bytes());
-        local.extend_from_slice(&name_length.to_le_bytes());
-        local.extend_from_slice(&0_u16.to_le_bytes());
-        archive.extend_from_slice(&local);
-        archive.extend_from_slice(name.as_bytes());
-        archive.extend_from_slice(bytes);
-
-        directory.extend_from_slice(&0x0201_4b50_u32.to_le_bytes());
-        directory.extend_from_slice(&20_u16.to_le_bytes());
-        directory.extend_from_slice(&local[4..30]);
-        directory.extend_from_slice(&0_u16.to_le_bytes());
-        directory.extend_from_slice(&0_u16.to_le_bytes());
-        directory.extend_from_slice(&0_u16.to_le_bytes());
-        directory.extend_from_slice(&0_u32.to_le_bytes());
-        directory.extend_from_slice(&offset.to_le_bytes());
-        directory.extend_from_slice(name.as_bytes());
-    }
-    let count = u16::try_from(entries.len()).map_err(|_| "too many zip entries")?;
-    let directory_offset = u32::try_from(archive.len()).map_err(|_| "zip archive over 4 GiB")?;
-    let directory_size = u32::try_from(directory.len()).map_err(|_| "zip directory over 4 GiB")?;
-    archive.extend_from_slice(&directory);
-    archive.extend_from_slice(&0x0605_4b50_u32.to_le_bytes());
-    archive.extend_from_slice(&0_u16.to_le_bytes());
-    archive.extend_from_slice(&0_u16.to_le_bytes());
-    archive.extend_from_slice(&count.to_le_bytes());
-    archive.extend_from_slice(&count.to_le_bytes());
-    archive.extend_from_slice(&directory_size.to_le_bytes());
-    archive.extend_from_slice(&directory_offset.to_le_bytes());
-    archive.extend_from_slice(&0_u16.to_le_bytes());
-    Ok(archive)
 }
 
 /// Resolves a path to an absolute one. On Windows it drops the `\\?\`
@@ -830,6 +854,19 @@ fn python_dry_run(
     if name != expected {
         return Err(format!("wheel is named {name}, expected {expected}"));
     }
+    // The upload form that Publish Python Package sends must be complete
+    // and match pyproject.toml, because PyPI keeps the first upload's
+    // metadata for good.
+    let form = command_output(
+        Command::new(python)
+            .arg("-I")
+            .arg(root.join("release/python/upload.py"))
+            .arg("check")
+            .arg(wheel)
+            .arg(root.join("bindings/python/pyproject.toml"))
+            .current_dir(work),
+    )?;
+    println!("{form}");
 
     command_output(
         Command::new(python)
@@ -888,6 +925,27 @@ fn python_dry_run(
 /// only system libraries on macOS.
 fn check_library_dependencies(platform: &Platform, library: &Path) -> Result<(), String> {
     if platform.config.starts_with("macos") {
+        // The wheel tag names the oldest macOS the library runs on; the
+        // library's own deployment target must not be newer.
+        let load_commands = command_output(Command::new("otool").arg("-l").arg(library))?;
+        let minimum = load_commands
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("minos "))
+            .ok_or("the library names no minimum macOS version")?
+            .trim();
+        let tag = platform
+            .wheel_tag
+            .strip_prefix("macosx_")
+            .and_then(|rest| rest.rsplit_once('_'))
+            .map(|(version, _)| version.replace('_', "."))
+            .ok_or("the macOS wheel tag has no version")?;
+        if version_tuple(minimum) > version_tuple(&tag) {
+            return Err(format!(
+                "{} needs macOS {minimum}, newer than its wheel tag {}",
+                library.display(),
+                platform.wheel_tag
+            ));
+        }
         let output = command_output(Command::new("otool").arg("-L").arg(library))?;
         for line in output.lines().skip(1) {
             let dependency = line.trim().split(' ').next().unwrap_or_default();
@@ -922,6 +980,15 @@ fn check_library_dependencies(platform: &Platform, library: &Path) -> Result<(),
     if let Some(extra) = needed.iter().find(|name| !allowed.contains(name)) {
         return Err(format!("{} needs {extra}", library.display()));
     }
+    // With immediate binding, loading the library resolves every C library
+    // symbol it uses. The dry run loads it under the host's musl 1.2, so a
+    // symbol newer than the musllinux_1_2 tag allows fails there.
+    if platform.musl && !dynamic.contains("BIND_NOW") {
+        return Err(format!(
+            "{} does not bind its symbols at load",
+            library.display()
+        ));
+    }
     if !platform.musl {
         let versions = command_output(Command::new("readelf").arg("--version-info").arg(library))?;
         let newest = versions
@@ -936,7 +1003,15 @@ fn check_library_dependencies(platform: &Platform, library: &Path) -> Result<(),
             })
             .max()
             .ok_or("the library names no glibc symbol version")?;
-        if newest > (2, 28) {
+        let floor = platform
+            .wheel_tag
+            .strip_prefix("manylinux_")
+            .and_then(|rest| {
+                let mut parts = rest.split('_');
+                Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+            })
+            .ok_or("the glibc wheel tag has no manylinux version")?;
+        if newest > floor {
             return Err(format!(
                 "{} needs GLIBC_{}.{}, newer than its manylinux_2_28 tag allows",
                 library.display(),
@@ -946,6 +1021,13 @@ fn check_library_dependencies(platform: &Platform, library: &Path) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// Parses a dotted version such as `14.0` for comparison.
+fn version_tuple(text: &str) -> Vec<u32> {
+    text.split('.')
+        .map(|part| part.parse().unwrap_or(u32::MAX))
+        .collect()
 }
 
 /// The release versions that the binding files name, for the version check.
@@ -1017,7 +1099,10 @@ mod tests {
     fn go_directive_rejects_dependencies() {
         assert_eq!(
             go_directive("module github.com/joshgarnett/rustleaks-go\n\ngo 1.27\n").unwrap(),
-            "1.27"
+            GoMod {
+                go: "1.27".into(),
+                retract: Vec::new()
+            }
         );
         assert!(
             go_directive("module github.com/joshgarnett/rustleaks-go\ngo 1.27\nrequire x v1\n")
@@ -1027,22 +1112,34 @@ mod tests {
     }
 
     #[test]
-    fn render_fails_on_unset_keys() {
-        assert_eq!(render("a {{x}} b", &[("x", "1")]).unwrap(), "a 1 b");
-        assert!(render("a {{y}}", &[("x", "1")]).is_err());
+    fn go_directive_keeps_retractions() {
+        let go_mod = concat!(
+            "module github.com/joshgarnett/rustleaks-go\n\ngo 1.27\n\n",
+            "// v0.3.0 loads the wrong library.\nretract v0.3.0\n",
+            "retract (\n\tv0.2.1 // broken\n\t[v0.1.0, v0.1.5]\n)\n",
+        );
+        assert_eq!(
+            go_directive(go_mod).unwrap().retract,
+            [
+                "retract v0.3.0",
+                "retract (",
+                "v0.2.1 // broken",
+                "[v0.1.0, v0.1.5]",
+                ")"
+            ]
+        );
+        assert!(
+            go_directive(
+                "module github.com/joshgarnett/rustleaks-go\ngo 1.27\nretract (\nv1.0.0\n"
+            )
+            .is_err()
+        );
     }
 
     #[test]
-    fn stored_zip_has_one_record_per_entry() {
-        let zip = stored_zip(&[
-            ("m@v1.0.0/go.mod".to_owned(), b"module m\n".to_vec()),
-            ("m@v1.0.0/a.go".to_owned(), b"package m\n".to_vec()),
-        ])
-        .unwrap();
-        assert_eq!(&zip[..4], &0x0403_4b50_u32.to_le_bytes());
-        let end = zip.len() - 22;
-        assert_eq!(&zip[end..end + 4], &0x0605_4b50_u32.to_le_bytes());
-        assert_eq!(u16::from_le_bytes([zip[end + 10], zip[end + 11]]), 2);
+    fn render_fails_on_unset_keys() {
+        assert_eq!(render("a {{x}} b", &[("x", "1")]).unwrap(), "a 1 b");
+        assert!(render("a {{y}}", &[("x", "1")]).is_err());
     }
 
     #[test]
@@ -1092,7 +1189,7 @@ mod tests {
         let source = temp.path.join("source");
         write(
             &source.join("go.mod"),
-            format!("module {GO_MODULE}\n\ngo 1.27\n").as_bytes(),
+            format!("module {GO_MODULE}\n\ngo 1.27\n\nretract v1.2.2\n").as_bytes(),
         )
         .unwrap();
         write(
@@ -1107,6 +1204,7 @@ mod tests {
         assert_eq!(sums.len(), 2 * PLATFORMS.len());
         let go_mod = read_text(&layout.join("go.mod")).unwrap();
         assert!(go_mod.contains(&format!("{GO_MODULE}/lib/windows-arm64 v{version}")));
+        assert!(go_mod.ends_with(")\n\nretract v1.2.2\n"), "{go_mod}");
         assert!(layout.join("library.go").is_file());
         assert!(!layout.join("library_test.go").exists());
         let windows = read_text(&layout.join("lib/windows-amd64/lib.go")).unwrap();
@@ -1125,6 +1223,11 @@ mod tests {
             layout
                 .join("lib/windows-amd64/rustleaks_ffi.dll.gz")
                 .is_file()
+        );
+        assert!(
+            read_text(&layout.join("lib/linux-arm64-musl/licenses/index.json"))
+                .unwrap()
+                .contains("aarch64-unknown-linux-musl")
         );
         assert!(!layout.join("BUILD.bazel").exists());
         assert!(
