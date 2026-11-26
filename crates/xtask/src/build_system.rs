@@ -559,7 +559,7 @@ fn check_module(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
     for required in [
         "bazel_dep(name = \"git\", version = \"2.55.0\")",
-        "bazel_dep(name = \"llvm\", version = \"0.8.11\")",
+        "bazel_dep(name = \"llvm\", version = \"0.8.27\")",
         "bazel_dep(name = \"rules_rust\", version = \"0.72.0\")",
         "cargo_lockfile = \"//:Cargo.lock\"",
         "isolated = True",
