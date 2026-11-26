@@ -276,7 +276,7 @@ The package writes an embedded DLL once to
 `<user cache folder>/rustleaks/<version>-<hash>/rustleaks_ffi.dll`, where the
 user cache folder is the one `os.UserCacheDir` returns, `%LocalAppData%`.
 The new folder inherits the access rules of that folder, which by default
-only the user and administrators can change. The file is read-only. The
+give access only to the user, administrators and SYSTEM. The file is read-only. The
 package checks the SHA-256 of the compressed bytes before it writes them,
 and of the written file. A lock that the system releases when its process
 ends keeps two processes from writing the file at once.

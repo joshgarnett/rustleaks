@@ -5,8 +5,8 @@
 - A Go package, `github.com/joshgarnett/rustleaks-go`, scans bytes for
   secrets in process with every built-in rule, a selection of them, or your
   own configuration. It has engine and scan options, budgets, context
-  deadlines and cancellation, and findings whose printed and logged forms
-  leave out the secret. It uses cgo on Linux and macOS and loads a DLL
+  deadlines and cancellation, and findings whose printed, logged and JSON
+  forms leave out the secret. It uses cgo on Linux and macOS and loads a DLL
   without cgo on Windows. Its defaults are those of `rustleaks-core`: decode
   depth 0 and allow comments honored. See [Using the Go
   package](docs/user/go.md).
