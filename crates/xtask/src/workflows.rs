@@ -6,8 +6,11 @@ use std::path::Path;
 
 const CODEQL_ACTION_PIN: &str = "1bd86f2fdb4b86187fa4059f16f31a3202acc9ea";
 /// The only secret any workflow reads: the packaging App key, in the
-/// protected publish job of `packages.yml`.
+/// protected publish jobs of `packages.yml` and `publish-go.yml`.
 const PACKAGING_SECRET: &str = "private-key: ${{ secrets.PACKAGING_APP_PRIVATE_KEY }}";
+/// The workflows whose protected publish job may name [`PACKAGING_SECRET`]
+/// once: the package manager channels and the rustleaks-go repository.
+const PACKAGING_WORKFLOWS: &[&str] = &["packages.yml", "publish-go.yml"];
 const SECRET_SCANNING_CONFIG: &str = r#"paths-ignore:
   - "testdata/allowlist-corpus/**"
   - "testdata/cli-corpus/**"
@@ -999,7 +1002,10 @@ fn validate_workflow(
     if !names.insert(name.to_owned()) {
         return Err(format!("duplicate workflow name {name:?}"));
     }
-    let allowed_secret = path.file_name().and_then(|name| name.to_str()) == Some("packages.yml")
+    let allowed_secret = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| PACKAGING_WORKFLOWS.contains(&name))
         && source.matches(PACKAGING_SECRET).count() == 1;
     let checked = if allowed_secret {
         source.replacen(PACKAGING_SECRET, "", 1)
