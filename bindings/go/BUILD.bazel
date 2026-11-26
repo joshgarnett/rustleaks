@@ -76,6 +76,14 @@ go_test(
     srcs = _TEST_SRCS,
     data = _TEST_DATA,
     embed = [":rustleaks"],
+    # The Linux configs set --force_pic, which makes rules_go link PIE test
+    # binaries. The Go race detector's ThreadSanitizer cannot map its shadow
+    # memory around a PIE load address on Linux, so this test links as a
+    # normal executable there, as go test -race does.
+    linkmode = select({
+        "@platforms//os:linux": "normal",
+        "//conditions:default": "auto",
+    }),
     pure = "off",
     race = "on",
     target_compatible_with = select({
