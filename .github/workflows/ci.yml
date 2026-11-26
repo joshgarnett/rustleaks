@@ -285,18 +285,6 @@ jobs:
           bazelisk --output_user_root=C:/b --windows_enable_symlinks test --enable_runfiles --config="$env:BAZEL_CONFIG" --host_platform="$env:PLATFORM" --extra_execution_platforms="$env:PLATFORM" --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0 --extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all --test_env=PATH --jobs=1 //:test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-  # Temporary, for the bindings branch: run the binding package workflow on
-  # this commit. Remove before merging.
-  bindings:
-    name: Binding packages
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/bindings.yml
-    with:
-      candidate: ${{ github.sha }}
-      version: "0.2.0"
-
   required:
     name: Required
     if: always()

@@ -62,3 +62,35 @@ jobs:
           path: rustleaks/bazel-out/_coverage/_coverage_report.dat
           if-no-files-found: error
           retention-days: 7
+
+  binding-version:
+    name: Binding package version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the workspace version
+        id: version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          test -n "${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  # Builds the Go and Python packages on the eight native lanes and installs
+  # them as a user would, with CPython 3.12, 3.13, 3.14 and 3.15. Pull
+  # requests test 3.12 and 3.15 in //:test; this covers the other two.
+  bindings:
+    name: Binding packages
+    needs: binding-version
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/bindings.yml
+    with:
+      candidate: ${{ github.sha }}
+      version: ${{ needs.binding-version.outputs.version }}
