@@ -8,7 +8,9 @@ bazel_dep(name = "git", version = "2.55.0")
 bazel_dep(name = "llvm", version = "0.8.11")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "rules_go", version = "0.65.0")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
+bazel_dep(name = "rules_python", version = "2.5.1")
 bazel_dep(name = "rules_rust", version = "0.72.0")
 
 single_version_override(
@@ -19,6 +21,55 @@ single_version_override(
 )
 
 register_toolchains("@llvm//toolchain:all")
+
+# The Go binding tests use one pinned Go SDK. The pinned llvm toolchain
+# supports cgo without a patched Go compiler only from Go 1.27. The hashes
+# are the published go.dev archive hashes for the six host platforms.
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(
+    name = "go_sdk",
+    sdks = {
+        "darwin_amd64": ["go1.27.4.darwin-amd64.tar.gz", "2b799377704ef12db39bd254995d5c348c9cc8d86562ca817724390e56c38f43"],
+        "darwin_arm64": ["go1.27.4.darwin-arm64.tar.gz", "91a44a2b8a716600ad94a4f143e156116620db8828086a6e3602291be9bd0bb4"],
+        "linux_amd64": ["go1.27.4.linux-amd64.tar.gz", "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"],
+        "linux_arm64": ["go1.27.4.linux-arm64.tar.gz", "3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92"],
+        "windows_amd64": ["go1.27.4.windows-amd64.zip", "178ab98950ac69ab25069307dc6ade79f3816e414cce95b4da166a115cde1e7e"],
+        "windows_arm64": ["go1.27.4.windows-arm64.zip", "9e7a72565792b8ab370b37ac9ac109799237abacb39ff2f541c438b963c0cc64"],
+    },
+    version = "1.27.4",
+)
+use_repo(go_sdk, "go_sdk")
+
+# The Python binding tests run on two CPython versions on every pull request.
+# rules_python downloads python-build-standalone interpreters. It declares no
+# aarch64 musl platform, so the two aarch64 musl interpreters are added here
+# with the hashes from the rules_python runtime manifest.
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.defaults(python_version = "3.12")
+python.toolchain(python_version = "3.12")
+python.toolchain(python_version = "3.15")
+[
+    python.single_version_platform_override(
+        arch = "aarch64",
+        os_name = "linux",
+        platform = "aarch64-unknown-linux-musl",
+        python_version = version,
+        sha256 = sha256,
+        target_compatible_with = [
+            "@platforms//cpu:aarch64",
+            "@platforms//os:linux",
+        ],
+        target_settings = [
+            "@rules_python//python/config_settings:_is_py_linux_libc_musl",
+            "@rules_python//python/config_settings:_is_py_freethreaded_no",
+        ],
+        urls = ["https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-{}+20261026-aarch64-unknown-linux-musl-install_only.tar.gz".format(version)],
+    )
+    for version, sha256 in [
+        ("3.12.16", "4ae0f7e999d6823852a60baad66c4c2fd2e9e45c7c1d3e6b6efc305ad867c29c"),
+        ("3.15.2", "2bdc94b8155ee7aff6a4c4d24d23e26cf98adbee71734273865f4d8e2c41b77c"),
+    ]
+]
 
 # The .rpm release package is built with the host rpmbuild. Only the
 # GNU release lanes build //release/linux-packages, and they install rpm
