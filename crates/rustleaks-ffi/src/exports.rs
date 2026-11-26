@@ -206,7 +206,9 @@ pub unsafe extern "C" fn rustleaks_options_new(abi_version: u32, out: *mut *mut 
 }
 
 /// Replaces the built-in rules with a TOML configuration. The bytes are
-/// copied. `[extend] useDefault = true` adds the built-in rules again.
+/// copied. `[extend] useDefault = true` adds the built-in rules again. A
+/// configuration with no rules, including an empty one, builds an engine
+/// that reports nothing.
 ///
 /// # Safety
 ///

@@ -578,7 +578,7 @@ Python bindings:
 | Workers | `RUSTLEAKS_OPTION_WORKERS`, or one per available CPU up to 12, or 1 when that fails | `default_workers` |
 | Search caches | 128 MiB divided by the workers, at least 8 MiB, for each pooled scratch value. The pool keeps one value for each worker. | `cache_limit` |
 | Threads | One thread for each engine build, and one scan thread for each worker unless `RUSTLEAKS_OPTION_SCAN_ON_CALLER_THREAD` is set, each with an 8 MiB stack | `SCAN_STACK_BYTES` in `src/threads.rs` |
-| Deadline | The clock is read at the first poll and at every 16th poll after it | `CLOCK_POLL_INTERVAL` in `src/cancel.rs` |
+| Deadline and cancel handle | Checked at every poll, between engine work units. The deadline reads the clock at each poll. | `ScanSignal` in `src/cancel.rs` |
 
 Core compiles a pattern with at most 200 groups on the thread that loads the
 configuration or runs the first search. A Go program on musl calls C on
@@ -595,6 +595,17 @@ with every built-in rule took about 3 microseconds, and handing a scan to a
 scan thread and back took about 3 microseconds more. A wrapper whose calling
 threads have large stacks can set `RUSTLEAKS_OPTION_SCAN_ON_CALLER_THREAD`
 to save the hand-off.
+
+A deadline or a set cancel handle stops a scan only at the next poll, and
+core polls between work units: once for a run of units that it charges
+together, because the signal only reads state (see
+[Cancellation](#cancellation)). One long step runs to its end first, such
+as one pattern search or the keyword pass over a large input. On an Apple
+Silicon Mac, a 9 MB input of ordinary words with every built-in rule and a
+1 ms deadline stopped with `RUSTLEAKS_TERMINATION_DEADLINE` after about
+90 ms, close to the 99 ms of the whole scan. The signal reads the clock at
+every poll; that costs tens of nanoseconds, and no poll interval could
+shorten a single long step.
 
 ## Startup memory of the built-in rules
 

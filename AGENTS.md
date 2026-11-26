@@ -81,7 +81,9 @@ compilation.
   fuzz seeds and issues. Treat findings and crash artifacts as sensitive.
 - Owned crates forbid unsafe Rust, except `rustleaks-ffi`. There every
   unsafe block has a `SAFETY:` comment and only checks or converts what a C
-  caller passes; detection stays in safe `rustleaks-core` code. The Go
+  caller passes, and every `unsafe impl Send` or `Sync` says why its pointer
+  views or handles can be shared between threads. Detection stays in safe
+  `rustleaks-core` code. The Go
   `unsafe`, cgo and `syscall` code and the Python ctypes code under
   `bindings/` are part of the same reviewed boundary. Apply the
   [threat model](docs/dev/threat-model.md),
