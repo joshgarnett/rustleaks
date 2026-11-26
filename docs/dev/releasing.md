@@ -290,7 +290,13 @@ accepts only the emitted gzip format and bounded GNU long paths. Limits are
 
 GNU manifests record the highest `GLIBC_X.Y` symbol version found in the
 binary. Musl archives must have no ELF interpreter and no dynamic `NEEDED`
-entry. macOS builds leave out the nondeterministic Mach-O UUID before the
+entry. `release-artifact prepare` also checks the ELF type of each Linux
+binary: the GNU binaries must be PIE (`ET_DYN`) with an interpreter, and the
+x86_64 musl binary must be a static PIE. Rust's `aarch64-unknown-linux-musl`
+target links a static executable that is not PIE (`ET_EXEC`), so the check
+requires only static linking there and accepts either type. The
+native Linux CI lanes run the same check, `release-artifact check-executable`,
+on their CLI build. macOS builds leave out the nondeterministic Mach-O UUID before the
 linker adds any ad-hoc signature. No other difference is normalized.
 
 #### Linux packages
@@ -516,7 +522,10 @@ the checksums.
    from `bindings/go/`, the templates in `release/go/` and the eight
    libraries: the main module, one module per platform under `lib/`, and
    the main module's `go.sum`. Each `lib/<platform>` module holds
-   `LICENSE`, `NOTICE` and the target's `licenses/` tree.
+   `LICENSE`, `NOTICE` and the target's `licenses/` tree. A Unix module
+   keeps its static library in `native/`, the only folder that cgo
+   searches, because Go checks every library-named file under a `-L`
+   folder and the glibc notice `COPYING.LIB` is not a library.
    `cargo xtask bindings go-proxy` writes a file-based Go module proxy of
    the nine modules and their `go.sum` lines in `hashes.txt`.
 4. The job keeps the layout (`rustleaks-go/`), the proxy (`proxy/`), the

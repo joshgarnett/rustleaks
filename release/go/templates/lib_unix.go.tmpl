@@ -4,8 +4,8 @@
 //
 // It is part of github.com/joshgarnett/rustleaks-go, which imports it on
 // this platform. It has no API. Release {{version}} of Rustleaks built
-// librustleaks_ffi.a.
+// native/librustleaks_ffi.a.
 package lib
 
-// #cgo LDFLAGS: -L${SRCDIR} -lrustleaks_ffi {{system_libraries}}
+// #cgo LDFLAGS: -L${SRCDIR}/native -lrustleaks_ffi {{system_libraries}}
 import "C"

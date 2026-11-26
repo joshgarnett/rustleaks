@@ -149,6 +149,11 @@ const PLATFORMS: &[Platform] = &[
 const STATIC_LIBRARY: &str = "librustleaks_ffi_static.a";
 /// The static library's name in a platform module, for `-lrustleaks_ffi`.
 const MODULE_STATIC_LIBRARY: &str = "librustleaks_ffi.a";
+/// The folder of a Unix `lib` module that holds the static library. cgo
+/// links with `-L` on this folder, and Go 1.27 checks every file in a `-L`
+/// tree whose name looks like a library, so `licenses/glibc-2.28/COPYING.LIB`
+/// must stay outside it.
+const MODULE_NATIVE_DIRECTORY: &str = "native";
 /// The DLL's name, which the Go package also uses for the extracted file.
 const DLL: &str = "rustleaks_ffi.dll";
 
@@ -499,7 +504,9 @@ fn go_layout_from(
             render(&read_text(&templates.join("lib_windows.go.tmpl"))?, &values)?
         } else {
             write(
-                &directory.join(MODULE_STATIC_LIBRARY),
+                &directory
+                    .join(MODULE_NATIVE_DIRECTORY)
+                    .join(MODULE_STATIC_LIBRARY),
                 &read(&input.join(STATIC_LIBRARY))?,
             )?;
             let mut values = values_build.to_vec();
@@ -1221,9 +1228,15 @@ mod tests {
         assert!(linux.starts_with("//go:build linux && amd64 && !musl\n"));
         assert!(
             layout
-                .join("lib/linux-amd64-musl/librustleaks_ffi.a")
+                .join("lib/linux-amd64-musl/native/librustleaks_ffi.a")
                 .is_file()
         );
+        assert!(linux.contains("-L${SRCDIR}/native -lrustleaks_ffi"));
+        let native = fs::read_dir(layout.join("lib/linux-amd64/native"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(native, ["librustleaks_ffi.a"]);
         assert!(
             layout
                 .join("lib/windows-amd64/rustleaks_ffi.dll.gz")
