@@ -229,8 +229,10 @@ int32_t rustleaks_version(const uint8_t **out_ptr, size_t *out_len);
  * Engine options. Without a configuration the engine has every built-in
  * rule. A configuration replaces them; [extend] useDefault = true adds them
  * again, and [extend] path fails because the library reads no files.
- * Without rule IDs every rule reports findings. Options are copied by
- * rustleaks_engine_new and can be freed after it.
+ * Without rule IDs every rule reports findings. A configuration with no
+ * rules, including an empty one, is valid: it builds an engine that reports
+ * nothing. Options are copied by rustleaks_engine_new and can be freed
+ * after it.
  */
 int32_t rustleaks_options_new(uint32_t abi_version, rustleaks_options **out);
 int32_t rustleaks_options_set_config(rustleaks_options *options, const uint8_t *config, size_t config_len);
@@ -259,6 +261,12 @@ int32_t rustleaks_cancel_free(rustleaks_cancel *cancel);
  * scan that stops early still returns RUSTLEAKS_OK and a result; check its
  * status. A scan that completes is complete even if its deadline passed
  * after the last check.
+ *
+ * The deadline and the cancel handle are checked between engine work
+ * units, not during one. One long step, such as one pattern search or the
+ * keyword pass over a large plain-text input, runs to its end first, so a
+ * scan can stop well after its deadline. Each check with a deadline reads
+ * the clock.
  */
 int32_t rustleaks_scan(const rustleaks_engine *engine, const uint8_t *input, size_t input_len, const rustleaks_scan_args *args, const rustleaks_cancel *cancel, rustleaks_result **out, rustleaks_error **error);
 
