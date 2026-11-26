@@ -76,8 +76,24 @@ func New(opts ...Option) (*Engine, error) {
 	e.slots = make(chan struct{}, e.workers)
 	// A leaked engine frees its native engine when the garbage collector
 	// finds it unreachable. Close is still the way to free it.
-	e.cleanup = runtime.AddCleanup(e, func(native unsafe.Pointer) { callEngineFree(native) }, native)
+	e.cleanup = runtime.AddCleanup(e, freeLeakedEngine, native)
 	return e, nil
+}
+
+// Test hooks. They are nil outside the package tests.
+var (
+	// testHookBeforeNativeScan runs after a scan has a worker and its
+	// cancel handle, right before the native call.
+	testHookBeforeNativeScan func()
+	// testHookLeakFreed runs after the cleanup of a leaked engine.
+	testHookLeakFreed func()
+)
+
+func freeLeakedEngine(native unsafe.Pointer) {
+	callEngineFree(native)
+	if hook := testHookLeakFreed; hook != nil {
+		hook()
+	}
 }
 
 // buildEngine creates the options handle, sets every option the caller
@@ -377,6 +393,9 @@ func (e *Engine) scanNative(ctx context.Context, input unsafe.Pointer, n int, se
 		}()
 	}
 
+	if hook := testHookBeforeNativeScan; hook != nil {
+		hook()
+	}
 	var result, failure unsafe.Pointer
 	status := callScan(e.native, input, uintptr(n), &args, cancel, &result, &failure)
 	runtime.KeepAlive(settings)
@@ -471,8 +490,8 @@ func incompleteError(ctx context.Context, s *statusView) *IncompleteError {
 	return err
 }
 
-// readFindings copies the findings of a result into Go values. Equal line
-// views become one string, and rule IDs and descriptions reuse the strings
+// readFindings copies the findings of a result into Go values. Equal lines
+// become one string, and rule IDs and descriptions reuse the strings
 // read with the rules.
 func (e *Engine) readFindings(result unsafe.Pointer, path string) ([]Finding, error) {
 	var count uintptr
@@ -483,7 +502,7 @@ func (e *Engine) readFindings(result unsafe.Pointer, path string) ([]Finding, er
 		return nil, nil
 	}
 	findings := make([]Finding, count)
-	lines := make(map[nativeBytes]string)
+	var lines lineCache
 	for i := range findings {
 		var view findingView
 		if status := callResultFinding(result, uintptr(i), &view); status != statusOK {
@@ -494,12 +513,7 @@ func (e *Engine) readFindings(result unsafe.Pointer, path string) ([]Finding, er
 		f.Tags = nativeStrings(view.tags, view.tagCount)
 		f.Secret = nativeString(view.secret)
 		f.Match = nativeString(view.matchText)
-		line, ok := lines[view.line]
-		if !ok {
-			line = nativeString(view.line)
-			lines[view.line] = line
-		}
-		f.Line = line
+		f.Line = lines.line(view.line)
 		if view.path.len == uintptr(len(path)) {
 			f.Path = path
 		} else {
@@ -514,6 +528,42 @@ func (e *Engine) readFindings(result unsafe.Pointer, path string) ([]Finding, er
 		f.Entropy = view.entropy
 	}
 	return findings, nil
+}
+
+// lineCache gives findings of one result with equal lines one string. The
+// library gives findings on one line of 4096 bytes or more the same buffer,
+// so those are found by pointer and length without reading them. Shorter
+// lines have their own buffers and are found by content; the map lookup
+// with a converted byte slice does not allocate.
+type lineCache struct {
+	byView    map[nativeBytes]string
+	byContent map[string]string
+}
+
+const shortLine = 4096
+
+func (c *lineCache) line(view nativeBytes) string {
+	if view.len == 0 || view.ptr == nil {
+		return ""
+	}
+	if line, ok := c.byView[view]; ok {
+		return line
+	}
+	if view.len < shortLine {
+		if line, ok := c.byContent[string(unsafe.Slice((*byte)(view.ptr), view.len))]; ok {
+			return line
+		}
+	}
+	line := nativeString(view)
+	if c.byView == nil {
+		c.byView = make(map[nativeBytes]string)
+		c.byContent = make(map[string]string)
+	}
+	c.byView[view] = line
+	if view.len < shortLine {
+		c.byContent[line] = line
+	}
+	return line
 }
 
 func (e *Engine) ruleText(id, description nativeBytes) (string, string) {

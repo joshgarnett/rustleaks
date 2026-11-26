@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"sync"
 	"unsafe"
-
-	"github.com/joshgarnett/rustleaks-go/nativelib"
 )
 
 // packageVersion is the Rustleaks version of this package. The native
@@ -17,6 +15,23 @@ const packageVersion = "0.2.0"
 // LibraryPathEnv names the environment variable that gives the absolute
 // path of the Rustleaks DLL on Windows.
 const LibraryPathEnv = "RUSTLEAKS_LIBRARY_PATH"
+
+// embeddedDLL is a Rustleaks DLL embedded in the program.
+type embeddedDLL struct {
+	version    string // Rustleaks version of the DLL, such as "0.2.0"
+	dllSHA256  string // lowercase hex SHA-256 of the DLL
+	gzipSHA256 string // lowercase hex SHA-256 of gzipped
+	gzipped    []byte // the gzip-compressed DLL
+}
+
+// embeddedLibrary is the DLL that the Windows platform module embeds. The
+// release generator writes a build-tagged file for each Windows platform
+// into the published module that sets it from that module. In this
+// repository it is nil, and the tests give the DLL path instead.
+var embeddedLibrary *embeddedDLL
+
+// embeddedLibraryName is the file name of an extracted DLL.
+const embeddedLibraryName = "rustleaks_ffi.dll"
 
 var library struct {
 	mu     sync.Mutex
@@ -91,26 +106,25 @@ func checkLibraryIdentity() error {
 // value, then RUSTLEAKS_LIBRARY_PATH, then the embedded library, written to
 // the user cache folder. The caller holds library.mu.
 func resolveLibraryPath() (string, error) {
-	embedded, ok := nativelib.Registered()
-	var source *nativelib.Library
-	if ok {
-		source = &embedded
-	}
-	path, lib, err := chooseLibrary(library.path, os.Getenv(LibraryPathEnv), source)
+	path, lib, err := chooseLibrary(library.path, os.Getenv(LibraryPathEnv), embeddedLibrary)
 	if err != nil || lib == nil {
 		return path, err
+	}
+	if lib.version != packageVersion {
+		return "", &LibraryError{Op: "load", Message: "the embedded library is version " + lib.version +
+			", but this package is version " + packageVersion}
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		return "", &LibraryError{Op: "extract library", Message: "cannot find the user cache folder", Err: err}
 	}
-	return extractLibrary(filepath.Join(cache, "rustleaks"), *lib)
+	return extractLibrary(filepath.Join(cache, "rustleaks"), lib)
 }
 
 // chooseLibrary picks the library source in order: a path set with
 // SetLibraryPath, the environment variable, the embedded library. It
 // returns either a path or the embedded library.
-func chooseLibrary(setPath, envPath string, embedded *nativelib.Library) (string, *nativelib.Library, error) {
+func chooseLibrary(setPath, envPath string, embedded *embeddedDLL) (string, *embeddedDLL, error) {
 	switch {
 	case setPath != "":
 		return setPath, nil, nil

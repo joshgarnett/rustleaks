@@ -45,8 +45,8 @@ type Finding struct {
 	Secret string
 	// Match is the full text that the rule matched.
 	Match string
-	// Line is the source line that holds the match. Findings on the same
-	// line of one scan share one string.
+	// Line is the source line that holds the match. Findings of one scan
+	// with equal lines share one string.
 	Line string
 	// StartLine, EndLine, StartColumn and EndColumn give the position of
 	// the match with the same values as the rustleaks command reports. A
@@ -138,14 +138,18 @@ func (f Finding) LogValue() slog.Value {
 }
 
 // Redacted returns a copy with percent of the secret masked, the same way
-// as WithRedaction: Secret keeps the first 100-percent percent of its bytes,
+// as WithRedaction. Secret keeps its first (100 - percent) percent of bytes,
 // rounded half to even, followed by "...". At 100 or more, Secret becomes
 // REDACTED. The secret is replaced in Match and Line. For a finding in
 // decoded text, which has a tag that starts with "decoded:", the whole Line
-// is replaced, because it holds the secret in encoded form. A negative
-// percent counts as 0.
+// is replaced, because it holds the secret in encoded form. At 0 or less,
+// Redacted returns an unchanged copy, as WithRedaction(0) masks nothing.
 func (f Finding) Redacted(percent int) Finding {
-	percent = max(percent, 0)
+	out := f
+	out.Tags = slices.Clone(f.Tags)
+	if percent <= 0 {
+		return out
+	}
 	var replacement string
 	switch {
 	case percent >= 100:
@@ -156,8 +160,6 @@ func (f Finding) Redacted(percent int) Finding {
 		kept := int(math.RoundToEven(float64(len(f.Secret)) * float64(100-percent) / 100))
 		replacement = f.Secret[:kept] + "..."
 	}
-	out := f
-	out.Tags = slices.Clone(f.Tags)
 	decoded := slices.ContainsFunc(f.Tags, func(tag string) bool {
 		return strings.HasPrefix(tag, "decoded:")
 	})

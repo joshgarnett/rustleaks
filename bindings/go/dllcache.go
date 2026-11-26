@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/joshgarnett/rustleaks-go/nativelib"
 )
 
 // The embedded Windows DLL is written once to a cache folder and loaded
@@ -31,7 +29,7 @@ const (
 	lockPoll  = 50 * time.Millisecond
 )
 
-// extractLibrary writes lib to root/<version>-<hash prefix>/<name> unless a
+// extractLibrary writes lib to root/<version>-<hash prefix>/rustleaks_ffi.dll unless a
 // file with the expected hash is already there, and returns the file path.
 //
 // The folder has mode 0700 and the file is read-only. The compressed bytes
@@ -39,29 +37,26 @@ const (
 // lock file keeps two processes from writing at once, and the file appears
 // only by rename from a temporary file in the same folder. An existing file
 // is used only after its hash is checked again.
-func extractLibrary(root string, lib nativelib.Library) (string, error) {
+func extractLibrary(root string, lib *embeddedDLL) (string, error) {
 	fail := func(message string, err error) (string, error) {
 		return "", &LibraryError{Op: "extract library", Path: root, Message: message, Err: err}
 	}
-	if lib.Name == "" || lib.Name != filepath.Base(lib.Name) || strings.ContainsAny(lib.Name, `/\:`) {
-		return fail("the embedded library has no plain file name", nil)
-	}
-	if !validVersion(lib.Version) {
+	if !validVersion(lib.version) {
 		return fail("the embedded library has no valid version", nil)
 	}
-	want := strings.ToLower(lib.SHA256)
+	want := strings.ToLower(lib.dllSHA256)
 	if len(want) != sha256.Size*2 || !isHex(want) {
 		return fail("the embedded library has no valid SHA-256", nil)
 	}
-	if !hashMatches(lib.Compressed, lib.CompressedSHA256) {
+	if !hashMatches(lib.gzipped, lib.gzipSHA256) {
 		return fail("the embedded library does not match its SHA-256", nil)
 	}
 
-	dir := filepath.Join(root, lib.Version+"-"+want[:16])
+	dir := filepath.Join(root, lib.version+"-"+want[:16])
 	if err := makePrivateDir(dir); err != nil {
 		return fail("cannot create the cache folder", err)
 	}
-	target := filepath.Join(dir, lib.Name)
+	target := filepath.Join(dir, embeddedLibraryName)
 	if fileHashMatches(target, want) {
 		return target, nil
 	}
@@ -76,7 +71,7 @@ func extractLibrary(root string, lib nativelib.Library) (string, error) {
 		return target, nil
 	}
 
-	data, err := gunzip(lib.Compressed)
+	data, err := gunzip(lib.gzipped)
 	if err != nil {
 		return fail("cannot decompress the embedded library", err)
 	}

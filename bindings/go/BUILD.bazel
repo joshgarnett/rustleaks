@@ -26,7 +26,6 @@ go_library(
     cgo = True,
     importpath = "github.com/joshgarnett/rustleaks-go",
     visibility = ["//visibility:public"],
-    deps = ["//bindings/go/nativelib"],
 )
 
 _TEST_SRCS = glob(["*_test.go"])
@@ -55,7 +54,6 @@ go_test(
     embed = [":rustleaks"],
     pure = "off",
     target_compatible_with = _CGO_COMPATIBLE,
-    deps = ["//bindings/go/nativelib"],
 )
 
 musl_c_test(
@@ -80,7 +78,6 @@ go_test(
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    deps = ["//bindings/go/nativelib"],
 )
 
 # Windows: no cgo. The tests load the Rust MSVC DLL through syscall.
@@ -93,7 +90,6 @@ go_test(
     env = {"RUSTLEAKS_TEST_LIBRARY": "$(rlocationpaths //crates/rustleaks-ffi:rustleaks_ffi_shared)"},
     pure = "on",
     target_compatible_with = ["@platforms//os:windows"],
-    deps = ["//bindings/go/nativelib"],
 )
 
 test_suite(

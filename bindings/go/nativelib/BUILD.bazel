@@ -1,8 +1,0 @@
-load("@rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "nativelib",
-    srcs = ["nativelib.go"],
-    importpath = "github.com/joshgarnett/rustleaks-go/nativelib",
-    visibility = ["//bindings/go:__subpackages__"],
-)
