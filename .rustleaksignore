@@ -24,12 +24,12 @@ crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:89
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:90
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:129
 crates/rustleaks-core/tests/controlled_scan.rs:generic-api-key:130
-crates/rustleaks-core/tests/engine.rs:generic-api-key:353
-crates/rustleaks-core/tests/engine.rs:generic-api-key:354
-crates/rustleaks-core/tests/engine.rs:generic-api-key:363
-crates/rustleaks-core/tests/engine.rs:generic-api-key:364
-crates/rustleaks-core/tests/engine.rs:generic-api-key:410
-crates/rustleaks-core/tests/engine.rs:generic-api-key:411
+crates/rustleaks-core/tests/engine.rs:generic-api-key:390
+crates/rustleaks-core/tests/engine.rs:generic-api-key:391
+crates/rustleaks-core/tests/engine.rs:generic-api-key:400
+crates/rustleaks-core/tests/engine.rs:generic-api-key:401
+crates/rustleaks-core/tests/engine.rs:generic-api-key:447
+crates/rustleaks-core/tests/engine.rs:generic-api-key:448
 
 # Reviewed synthetic private key in the benchmark data.
 crates/rustleaks-eval/src/perf/benchmark_data.rs:private-key:276
