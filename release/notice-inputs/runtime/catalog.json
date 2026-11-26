@@ -17,7 +17,7 @@
         "archive_sha256": "f4cf37f12e0c3a81485ea8743dc41dbcec31ae326b22d6265e724c7ee753529e",
         "archive_prefix": "glibc-92d25389c255b0da9b56bc05694f0702cd22921a",
         "provider_module": "llvm",
-        "provider_version": "0.8.11"
+        "provider_version": "0.8.27"
       },
       "coverage": {
         "text": "Static startup and nonshared support supplied by the pinned hermetic GNU link configuration. COPYING.LIB and LICENSES retain the upstream terms. Exact source comments preserve file-specific exceptions where present; no exception is asserted for files that do not contain one. Dynamic system libc and related shared libraries are imports, not archive members.",
@@ -196,9 +196,9 @@
       "status": "complete"
     },
     {
-      "id": "hermetic-glibc-support-0.8.11",
+      "id": "hermetic-glibc-support-0.8.27",
       "name": "GNU C Library support retained in the hermetic LLVM module",
-      "version": "0.8.11",
+      "version": "0.8.27",
       "license_expression": null,
       "targets": [
         "aarch64-unknown-linux-gnu",
@@ -206,12 +206,12 @@
       ],
       "source": {
         "kind": "source-archive",
-        "url": "https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.11/hermetic-llvm-v0.8.11.tar.gz",
-        "revision": "v0.8.11",
-        "archive_sha256": "781670efedbcffe9e6bedd086a8037a3fe467baec16d24124534062e36e727a4",
-        "archive_prefix": "hermetic-llvm-0.8.11",
-        "registry_source_url": "https://bcr.bazel.build/modules/llvm/0.8.11/source.json",
-        "registry_source_sha256": "b40edb2bb2ed271bf613b396d245cb473c42fb057a2b26a3bc7d7e8bfcf6aa71"
+        "url": "https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.27/hermetic-llvm-v0.8.27.tar.gz",
+        "revision": "v0.8.27",
+        "archive_sha256": "54f3c47b5a8aef7bf8922fc2333d6d221fb6101102a447c95035da0f549f1460",
+        "archive_prefix": "hermetic-llvm-0.8.27",
+        "registry_source_url": "https://bcr.bazel.build/modules/llvm/0.8.27/source.json",
+        "registry_source_sha256": "9172db076ba2be8df939e98adbe9624a46f4b6dc31171e87e4d1e3ef6a8d3e9f"
       },
       "coverage": {
         "text": "Exact glibc source notice comments for startup and nonshared support retained by the selected LLVM module. The corresponding complete LGPL text is supplied by the glibc-2.28 component. These notices preserve the individual linking exceptions without assigning one blanket exception to every glibc object.",
@@ -223,7 +223,7 @@
       "documents": [
         {
           "original_path": "3rd_party/libc/glibc/csu/abi-note-2.31.S",
-          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/csu/abi-note-2.31.S.notice",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.27/3rd_party/libc/glibc/csu/abi-note-2.31.S.notice",
           "sha256": "d7be7ddffa81b7e952fe6e6e9c2b690ba333be9b5156c29e386ea7a71fb399db",
           "original_file_sha256": "9abb7d71812ff5009197a67c57e3f8ae3138dd5be57c1a8e534e859c6e689ffc",
           "source_byte_range": {
@@ -234,7 +234,7 @@
         },
         {
           "original_path": "3rd_party/libc/glibc/csu/elf-init-2.31.c",
-          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/csu/elf-init-2.31.c.notice",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.27/3rd_party/libc/glibc/csu/elf-init-2.31.c.notice",
           "sha256": "d9643283950e81f005007b472c8f50a28eb43ffea2ea81756ebd840bd4b6e597",
           "original_file_sha256": "2d9b3d9b6af5d2ad6bf8a881e3c34f0bd7478f9709b62dfe9d48a749a5768519",
           "source_byte_range": {
@@ -245,7 +245,7 @@
         },
         {
           "original_path": "3rd_party/libc/glibc/nptl/pthread_atfork.c",
-          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/nptl/pthread_atfork.c.notice",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.27/3rd_party/libc/glibc/nptl/pthread_atfork.c.notice",
           "sha256": "247599f053b9266806c7f12832d313bb8e73e1e3e2d4b97079ee2d92664beda8",
           "original_file_sha256": "8717275bee70990f7f0defee218d4e43d8d9699a3948f337c09cb578df6fab21",
           "source_byte_range": {
@@ -256,7 +256,7 @@
         },
         {
           "original_path": "3rd_party/libc/glibc/stdlib/at_quick_exit.c",
-          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/stdlib/at_quick_exit.c.notice",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.27/3rd_party/libc/glibc/stdlib/at_quick_exit.c.notice",
           "sha256": "bfc2e15bad7d0aecb02e01168cab54b5451877a3a37d37a831b390ab905efbac",
           "original_file_sha256": "17ac10bc7d05b9e737e7ec96acc09f989278b09e8aab425eb32611f7b5e45652",
           "source_byte_range": {
@@ -267,7 +267,7 @@
         },
         {
           "original_path": "3rd_party/libc/glibc/stdlib/atexit.c",
-          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.11/3rd_party/libc/glibc/stdlib/atexit.c.notice",
+          "input_path": "release/notice-inputs/runtime/hermetic-glibc-support-0.8.27/3rd_party/libc/glibc/stdlib/atexit.c.notice",
           "sha256": "bfc2e15bad7d0aecb02e01168cab54b5451877a3a37d37a831b390ab905efbac",
           "original_file_sha256": "17874dda5fa44a2f737473c25fa34ed674728d00e5c48235463f3101ac3506ae",
           "source_byte_range": {
@@ -281,9 +281,9 @@
       "status": "complete"
     },
     {
-      "id": "hermetic-llvm-compiler-rt-22.1.8",
+      "id": "hermetic-llvm-compiler-rt-23.1.2",
       "name": "Hermetic LLVM compiler-rt",
-      "version": "22.1.8",
+      "version": "23.1.2",
       "license_expression": "Apache-2.0 WITH LLVM-exception",
       "targets": [
         "aarch64-apple-darwin",
@@ -295,12 +295,12 @@
       ],
       "source": {
         "kind": "source-archive",
-        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
-        "revision": "llvmorg-22.1.8-r1",
-        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
-        "archive_prefix": "llvm-project-22.1.8.src",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst",
+        "revision": "llvmorg-23.1.2-r1",
+        "archive_sha256": "271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56",
+        "archive_prefix": "llvm-project-23.1.2.src",
         "provider_module": "llvm",
-        "provider_version": "0.8.11"
+        "provider_version": "0.8.27"
       },
       "coverage": {
         "text": "Selected hermetic compiler runtime and CRT source notices.",
@@ -312,7 +312,7 @@
       "documents": [
         {
           "original_path": "compiler-rt/LICENSE.TXT",
-          "input_path": "release/notice-inputs/runtime/hermetic-llvm-compiler-rt-22.1.8/compiler-rt/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-compiler-rt-23.1.2/compiler-rt/LICENSE.TXT",
           "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
         }
       ],
@@ -320,9 +320,9 @@
       "status": "complete"
     },
     {
-      "id": "hermetic-llvm-libcxx-22.1.8",
+      "id": "hermetic-llvm-libcxx-23.1.2",
       "name": "Hermetic LLVM libcxx",
-      "version": "22.1.8",
+      "version": "23.1.2",
       "license_expression": "Apache-2.0 WITH LLVM-exception",
       "targets": [
         "aarch64-unknown-linux-gnu",
@@ -332,12 +332,12 @@
       ],
       "source": {
         "kind": "source-archive",
-        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
-        "revision": "llvmorg-22.1.8-r1",
-        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
-        "archive_prefix": "llvm-project-22.1.8.src",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst",
+        "revision": "llvmorg-23.1.2-r1",
+        "archive_sha256": "271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56",
+        "archive_prefix": "llvm-project-23.1.2.src",
         "provider_module": "llvm",
-        "provider_version": "0.8.11"
+        "provider_version": "0.8.27"
       },
       "coverage": {
         "text": "Conservative notices for static runtime libraries supplied by the selected Linux C++ toolchain. Supplied linker inputs are broader than incorporated code; this record does not claim that every object from the archive is embedded.",
@@ -348,7 +348,7 @@
       "documents": [
         {
           "original_path": "libcxx/LICENSE.TXT",
-          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libcxx-22.1.8/libcxx/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libcxx-23.1.2/libcxx/LICENSE.TXT",
           "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b"
         }
       ],
@@ -356,9 +356,9 @@
       "status": "complete"
     },
     {
-      "id": "hermetic-llvm-libcxxabi-22.1.8",
+      "id": "hermetic-llvm-libcxxabi-23.1.2",
       "name": "Hermetic LLVM libcxxabi",
-      "version": "22.1.8",
+      "version": "23.1.2",
       "license_expression": "Apache-2.0 WITH LLVM-exception",
       "targets": [
         "aarch64-unknown-linux-gnu",
@@ -368,12 +368,12 @@
       ],
       "source": {
         "kind": "source-archive",
-        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
-        "revision": "llvmorg-22.1.8-r1",
-        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
-        "archive_prefix": "llvm-project-22.1.8.src",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst",
+        "revision": "llvmorg-23.1.2-r1",
+        "archive_sha256": "271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56",
+        "archive_prefix": "llvm-project-23.1.2.src",
         "provider_module": "llvm",
-        "provider_version": "0.8.11"
+        "provider_version": "0.8.27"
       },
       "coverage": {
         "text": "Conservative notices for static runtime libraries supplied by the selected Linux C++ toolchain. Supplied linker inputs are broader than incorporated code; this record does not claim that every object from the archive is embedded.",
@@ -384,7 +384,7 @@
       "documents": [
         {
           "original_path": "libcxxabi/LICENSE.TXT",
-          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libcxxabi-22.1.8/libcxxabi/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libcxxabi-23.1.2/libcxxabi/LICENSE.TXT",
           "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c"
         }
       ],
@@ -392,9 +392,9 @@
       "status": "complete"
     },
     {
-      "id": "hermetic-llvm-libunwind-22.1.8",
+      "id": "hermetic-llvm-libunwind-23.1.2",
       "name": "Hermetic LLVM libunwind",
-      "version": "22.1.8",
+      "version": "23.1.2",
       "license_expression": "Apache-2.0 WITH LLVM-exception",
       "targets": [
         "aarch64-unknown-linux-gnu",
@@ -404,12 +404,12 @@
       ],
       "source": {
         "kind": "source-archive",
-        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-22.1.8-r1/llvm-project-22.1.8.src.tar.zst",
-        "revision": "llvmorg-22.1.8-r1",
-        "archive_sha256": "0a120cd02aa4319887b938ed98f34907563e9b4bcdd4a2aed23a1a05dd5a8157",
-        "archive_prefix": "llvm-project-22.1.8.src",
+        "url": "https://github.com/hermeticbuild/llvm-redist/releases/download/llvmorg-23.1.2-r1/llvm-project-23.1.2.src.tar.zst",
+        "revision": "llvmorg-23.1.2-r1",
+        "archive_sha256": "271da53a2feb0cb221a9276a14268a3b76ad802c7fc8fb1098291a43b06e4c56",
+        "archive_prefix": "llvm-project-23.1.2.src",
         "provider_module": "llvm",
-        "provider_version": "0.8.11"
+        "provider_version": "0.8.27"
       },
       "coverage": {
         "text": "Static LLVM unwind implementation in the selected Linux binaries. Native musl linker maps identify UnwindLevel1, UnwindLevel1-gcc-ext, UnwindRegistersSave, UnwindRegistersRestore and libunwind object contributions from this provider. The GNU artifact and selected-source review also identifies static LLVM unwind. This record does not claim that every archive member is incorporated.",
@@ -420,7 +420,7 @@
       "documents": [
         {
           "original_path": "libunwind/LICENSE.TXT",
-          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libunwind-22.1.8/libunwind/LICENSE.TXT",
+          "input_path": "release/notice-inputs/runtime/hermetic-llvm-libunwind-23.1.2/libunwind/LICENSE.TXT",
           "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
         }
       ],

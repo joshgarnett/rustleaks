@@ -18,7 +18,7 @@ use super::{
 
 const README: &str = "release/corresponding-source/README.md";
 const GLIBC_COMMIT: &str = "92d25389c255b0da9b56bc05694f0702cd22921a";
-const LLVM_PREFIX: &str = "hermetic-llvm-0.8.11/";
+const LLVM_PREFIX: &str = "hermetic-llvm-0.8.27/";
 const MAX_BUNDLE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const SOURCE_MEMBER_COUNT: usize = 8;
@@ -34,7 +34,7 @@ struct Input {
     url: &'static str,
 }
 
-// These identities come from the locked LLVM 0.8.11 module and its BCR source
+// These identities come from the locked LLVM 0.8.27 module and its BCR source
 // record. Changing them is a reviewed build-input change, never discovery.
 const INPUTS: &[Input] = &[
     Input {
@@ -44,16 +44,16 @@ const INPUTS: &[Input] = &[
         url: "https://github.com/bminor/glibc/archive/92d25389c255b0da9b56bc05694f0702cd22921a.tar.gz",
     },
     Input {
-        file: "hermetic-llvm-v0.8.11.tar.gz",
-        size: 514_739,
-        sha256: "781670efedbcffe9e6bedd086a8037a3fe467baec16d24124534062e36e727a4",
-        url: "https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.11/hermetic-llvm-v0.8.11.tar.gz",
+        file: "hermetic-llvm-v0.8.27.tar.gz",
+        size: 723_779,
+        sha256: "54f3c47b5a8aef7bf8922fc2333d6d221fb6101102a447c95035da0f549f1460",
+        url: "https://github.com/hermeticbuild/hermetic-llvm/releases/download/v0.8.27/hermetic-llvm-v0.8.27.tar.gz",
     },
     Input {
         file: "module_dot_bazel_version.patch",
         size: 295,
-        sha256: "066fb1fc462cc605d940b289e9538de3eae5e43804ff96d5b6a509b97d56fd23",
-        url: "https://bcr.bazel.build/modules/llvm/0.8.11/patches/module_dot_bazel_version.patch",
+        sha256: "4851b5b27458b6d772a5d061e6cc273f45c957473b9dc6bf62022b16ce034f14",
+        url: "https://bcr.bazel.build/modules/llvm/0.8.27/patches/module_dot_bazel_version.patch",
     },
     Input {
         file: "x86_64-linux-gnu.2.28.tar.zst",
@@ -243,7 +243,7 @@ fn validate_candidate(root: &Path, commit: &str) -> Result<(), String> {
     let lock = committed_file_bytes(root, commit, "MODULE.bazel.lock")?;
     let module = std::str::from_utf8(&module).map_err(|error| error.to_string())?;
     let lock = std::str::from_utf8(&lock).map_err(|error| error.to_string())?;
-    if !module.contains("bazel_dep(name = \"llvm\", version = \"0.8.11\")")
+    if !module.contains("bazel_dep(name = \"llvm\", version = \"0.8.27\")")
         || !lock.contains("b40edb2bb2ed271bf613b396d245cb473c42fb057a2b26a3bc7d7e8bfcf6aa71")
     {
         return Err("corresponding-source pins do not match the candidate LLVM module".into());
@@ -340,7 +340,7 @@ fn file_bytes<'a>(files: &'a Files, path: &str) -> Result<&'a [u8], String> {
 
 fn manifest(commit: &str, files: &Files) -> Result<Value, String> {
     let llvm = gzip_files(
-        file_bytes(files, "inputs/hermetic-llvm-v0.8.11.tar.gz")?,
+        file_bytes(files, "inputs/hermetic-llvm-v0.8.27.tar.gz")?,
         LLVM_PREFIX,
     )?;
     let mut recipes = BTreeMap::new();
@@ -359,7 +359,7 @@ fn manifest(commit: &str, files: &Files) -> Result<Value, String> {
         "schemaVersion":1, "candidate":commit, "version":RELEASE_VERSION,
         "application":{"path":"application.tar","format":"git archive --format=tar","commit":commit},
         "glibc":{"version":"2.28","commit":GLIBC_COMMIT,"stripPrefix":format!("glibc-{GLIBC_COMMIT}"),"patches":patches},
-        "llvm":{"version":"0.8.11","stripPrefix":"hermetic-llvm-0.8.11","registryPatch":"inputs/module_dot_bazel_version.patch","recipes":recipes},
+        "llvm":{"version":"0.8.27","stripPrefix":"hermetic-llvm-0.8.27","registryPatch":"inputs/module_dot_bazel_version.patch","recipes":recipes},
         "generatedHeaders":["inputs/x86_64-linux-gnu.2.28.tar.zst","inputs/aarch64-linux-gnu.2.28.tar.zst"],
         "inputs":INPUTS.iter().map(|input| json!({"path":format!("inputs/{}",input.file),"sha256":input.sha256,"url":input.url})).collect::<Vec<_>>(),
         "files":materials,
@@ -639,7 +639,7 @@ pub(super) fn relink(
     .unpack(&work)
     .map_err(|error| error.to_string())?;
     let glibc = work.join(format!("glibc-{GLIBC_COMMIT}"));
-    let llvm = work.join("hermetic-llvm-0.8.11");
+    let llvm = work.join("hermetic-llvm-0.8.27");
     command_output(
         Command::new("git")
             .current_dir(&llvm)
@@ -718,7 +718,7 @@ fn build_from_source(
     );
     let module = format!(
         "--override_repository=llvm+={}",
-        work.join("hermetic-llvm-0.8.11").display()
+        work.join("hermetic-llvm-0.8.27").display()
     );
     command_output(Command::new("bazelisk").current_dir(application).args([
         &output_root,
@@ -916,7 +916,7 @@ mod tests {
             "application.tar",
             "inputs/92d25389c255b0da9b56bc05694f0702cd22921a.tar.gz",
             "inputs/aarch64-linux-gnu.2.28.tar.zst",
-            "inputs/hermetic-llvm-v0.8.11.tar.gz",
+            "inputs/hermetic-llvm-v0.8.27.tar.gz",
             "inputs/module_dot_bazel_version.patch",
             "inputs/x86_64-linux-gnu.2.28.tar.zst",
             "manifest.json",
@@ -1187,7 +1187,7 @@ mod tests {
             "README.md",
             "manifest.json",
             "inputs/92d25389c255b0da9b56bc05694f0702cd22921a.tar.gz",
-            "inputs/hermetic-llvm-v0.8.11.tar.gz",
+            "inputs/hermetic-llvm-v0.8.27.tar.gz",
             "inputs/module_dot_bazel_version.patch",
             "inputs/x86_64-linux-gnu.2.28.tar.zst",
         ] {

@@ -28,8 +28,8 @@ license files, copyright notices, file modes and symbolic links.
 | Material | Identity and use |
 | --- | --- |
 | glibc source | 2.28, commit `92d25389c255b0da9b56bc05694f0702cd22921a`, including startup and nonshared support source and `COPYING.LIB` |
-| Hermetic LLVM Bazel module | 0.8.11, complete module source with glibc build definitions, helper rules, compiler defines, copied support source and notices |
-| BCR module patch | Exact `module_dot_bazel_version.patch` applied to LLVM 0.8.11 by the Bazel Central Registry |
+| Hermetic LLVM Bazel module | 0.8.27, complete module source with glibc build definitions, helper rules, compiler defines, copied support source and notices |
+| BCR module patch | Exact `module_dot_bazel_version.patch` applied to LLVM 0.8.27 by the Bazel Central Registry |
 | Generated glibc headers | Exact x86_64 and AArch64 GNU 2.28 header archives selected by the module's header index |
 
 The glibc patches are part of the supplied LLVM module. Apply them in order,
@@ -70,10 +70,10 @@ and apply the release patches:
 mkdir -p /tmp/rustleaks-relink/application
 tar -xf /tmp/rustleaks-corresponding-source/application.tar -C /tmp/rustleaks-relink/application
 tar -xzf /tmp/rustleaks-corresponding-source/inputs/92d25389c255b0da9b56bc05694f0702cd22921a.tar.gz -C /tmp/rustleaks-relink
-tar -xzf /tmp/rustleaks-corresponding-source/inputs/hermetic-llvm-v0.8.11.tar.gz -C /tmp/rustleaks-relink
-git -C /tmp/rustleaks-relink/hermetic-llvm-0.8.11 apply --no-index -p1 /tmp/rustleaks-corresponding-source/inputs/module_dot_bazel_version.patch
-git -C /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a apply --no-index -p1 /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0001-Add-empty-config.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0002-Add-abi-tag.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0003-Adding-libc-modules.h.patch
-cp /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/glibc.BUILD.bazel /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/BUILD.bazel
+tar -xzf /tmp/rustleaks-corresponding-source/inputs/hermetic-llvm-v0.8.27.tar.gz -C /tmp/rustleaks-relink
+git -C /tmp/rustleaks-relink/hermetic-llvm-0.8.27 apply --no-index -p1 /tmp/rustleaks-corresponding-source/inputs/module_dot_bazel_version.patch
+git -C /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a apply --no-index -p1 /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/0001-Add-empty-config.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/0002-Add-abi-tag.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/0003-Adding-libc-modules.h.patch
+cp /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/glibc.BUILD.bazel /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/BUILD.bazel
 touch /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/REPO.bazel
 ```
 
@@ -87,7 +87,7 @@ Build and relink with the supplied module and the changed library source:
 
 ```sh
 cd /tmp/rustleaks-relink/application
-bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-x86_64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.11 --override_repository=llvm++glibc+glibc_x86_64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-x86_64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_x86_64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --help
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --version
 ```
@@ -97,7 +97,7 @@ the native AArch64 build command:
 
 ```sh
 cd /tmp/rustleaks-relink/application
-bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-aarch64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.11 --override_repository=llvm++glibc+glibc_aarch64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-aarch64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_aarch64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --help
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --version
 ```
