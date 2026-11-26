@@ -47,10 +47,10 @@ rust_static_library(
     crate_name = "rustleaks_ffi_static",
     crate_root = "src/lib.rs",
     # Rust's musl standard library expects the program to link libunwind.a,
-    # which musl C toolchains do not ship. The LLVM toolchain links its
-    # unwinder into every Linux static library, so a musl Go program needs
-    # only the C library. A second copy of the unwinder here would define
-    # each _Unwind_ symbol twice in the archive.
+    # which musl C toolchains do not ship. rustc bundles the libunwind.a of
+    # Rust's musl standard library into this archive, so a musl Go program
+    # needs only the C library. Adding //bazel:llvm_unwind here would define
+    # each _Unwind_ symbol twice; the binding dry run checks for one copy.
     deps = _DEPS,
     edition = "2024",
     rustc_env = _RUSTC_ENV,
