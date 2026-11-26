@@ -14,10 +14,9 @@ and is not in a release yet.
 - One of the eight supported targets: Linux x86_64 or ARM64 with glibc or
   musl, macOS on Intel or Apple silicon, or Windows x86_64 or ARM64.
 
-The package uses only the Python standard library. Each wheel holds the
-native library for its platform in `rustleaks/_native/`, and the package
-loads it from there by absolute path. It never searches the current folder
-or `PATH`.
+The package uses only the Python standard library. It loads the native
+library from the `_native` folder inside the package, by absolute path. It
+never searches the current folder or `PATH` for it.
 
 Free-threaded CPython, PyPy and subinterpreters are not tested. The package
 does not refuse them, but nothing checks that it works there.
@@ -25,6 +24,22 @@ does not refuse them, but nothing checks that it works there.
 The package version and the native library version are the same. If the
 library is missing, is built for another architecture or has another
 version, creating an engine raises `LibraryError`.
+
+## Install
+
+The package is not published, and no wheel is built yet. To try it from a
+checkout of this repository, build the native library with Bazel, copy it
+into the package, and put the package folder on the import path:
+
+```sh
+bazelisk build //crates/rustleaks-ffi:rustleaks_ffi_shared
+mkdir -p bindings/python/src/rustleaks/_native
+cp bazel-bin/crates/rustleaks-ffi/librustleaks_ffi.so bindings/python/src/rustleaks/_native/
+export PYTHONPATH="$PWD/bindings/python/src"
+```
+
+On macOS the file is `librustleaks_ffi.dylib`, and on Windows it is
+`rustleaks_ffi.dll`.
 
 ## A first scan
 
@@ -104,7 +119,7 @@ the value of the native library, which is the same as in `rustleaks-core`.
 | `allow_comments` | `True` | Whether a `rustleaks:allow` or `gitleaks:allow` comment on a line hides its findings. |
 | `decode_depth` | 0 | How many levels of base64, hex, percent and Unicode escapes to decode. 0 does not decode. |
 | `base64_mode` | `"compatible"` | `"compatible"` or `"extended"`, as `--base64-mode` in the [command reference](cli-reference.md). |
-| `redaction` | 0 | The percent of each secret to hide in `secret` and `match`, from 0 to 100. |
+| `redaction` | 0 | The percent of each secret to hide, from 0 to 100. See [Logging findings safely](#logging-findings-safely). |
 
 Two defaults differ from the `rustleaks` command:
 
@@ -236,10 +251,14 @@ or `None` to keep the value that applies already:
 - `decoded_bytes`: bytes produced by decoding.
 - `work_units`: an internal count of detection steps. It has no fixed time
   cost, and the count for the same input can change between releases.
-- `finding_records`: findings, 100,000 by default.
+- `finding_records`: finding records, 100,000 by default. The engine counts
+  a record before its last filters, so a scan can stop at this limit with
+  fewer findings than the limit.
 - `finding_payload_bytes`: bytes held by findings.
-- `collected_spans`: candidate matches. A limit here turns off a faster
-  search path for some rules.
+- `collected_spans`: candidate matches. Any limit here, even a large one,
+  turns off the literal-anchored search that the engine uses for some rules
+  with keywords, so those rules search more of the input and scans can take
+  longer.
 - `normalization_bytes`: bytes produced by text normalization.
 
 A budget on the engine applies to every scan, and a budget given to `scan`
@@ -310,7 +329,10 @@ freed. The same is true of your input.
   need, not those three fields.
 - Error messages never hold scanned bytes. A `ConfigError` message can
   quote configuration text.
-- `redaction=100` replaces each secret with `REDACTED` in `secret` and
-  `match`. It does not change `line`.
+- `redaction=100` replaces each secret with `REDACTED` in `secret`,
+  `match` and `line`. A lower percent keeps the start of the secret and
+  replaces the rest with `...`. For a finding in decoded text, the whole
+  `line` becomes the replacement, because the line holds the secret in
+  encoded form.
 - `dataclasses.asdict(finding)` and similar helpers copy every field,
   including the secret.

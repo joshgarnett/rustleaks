@@ -1,6 +1,7 @@
 package rustleaks
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,11 +30,11 @@ type Range struct {
 
 // Finding is one secret that a scan found.
 //
-// Secret, Match and Line hold the secret. The String, GoString, Format and
-// LogValue methods leave them out, so printing or logging a Finding with
-// fmt or log/slog shows only the rule and position. Other encoders, such as
-// encoding/json, see every exported field. Use Redacted for a copy with
-// the secret masked.
+// Secret, Match and Line hold the secret. The String, GoString, Format,
+// LogValue and MarshalJSON methods leave them out, so fmt, log/slog and
+// encoding/json never write them, also for findings in slices, maps and
+// struct fields. To store or send those values, copy them into a type of
+// your own. Use Redacted for a copy with the secret masked.
 type Finding struct {
 	// RuleID and Description name the rule that matched.
 	RuleID      string
@@ -135,6 +136,41 @@ func (f Finding) LogValue() slog.Value {
 		slog.Int("start_column", f.StartColumn),
 		slog.Int("end_column", f.EndColumn),
 	)
+}
+
+// findingJSON is the JSON form of a Finding: every field but Secret, Match
+// and Line.
+type findingJSON struct {
+	RuleID      string
+	Description string
+	Tags        []string
+	StartLine   int
+	EndLine     int
+	StartColumn int
+	EndColumn   int
+	SecretRange Range
+	MatchRange  Range
+	Entropy     float64
+	Path        string
+}
+
+// MarshalJSON implements json.Marshaler. It writes every field except
+// Secret, Match and Line, under the Go field names, so encoding/json and
+// the log/slog JSON handler never write the secret.
+func (f Finding) MarshalJSON() ([]byte, error) {
+	return json.Marshal(findingJSON{
+		RuleID:      f.RuleID,
+		Description: f.Description,
+		Tags:        f.Tags,
+		StartLine:   f.StartLine,
+		EndLine:     f.EndLine,
+		StartColumn: f.StartColumn,
+		EndColumn:   f.EndColumn,
+		SecretRange: f.SecretRange,
+		MatchRange:  f.MatchRange,
+		Entropy:     f.Entropy,
+		Path:        f.Path,
+	})
 }
 
 // Redacted returns a copy with percent of the secret masked, the same way

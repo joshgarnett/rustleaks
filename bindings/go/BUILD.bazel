@@ -18,6 +18,8 @@ go_library(
         "errors.go",
         "finding.go",
         "library.go",
+        "lock_unix.go",
+        "lock_windows.go",
         "nocgo.go",
         "options.go",
         "rustleaks.h",

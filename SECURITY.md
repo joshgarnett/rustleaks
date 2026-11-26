@@ -29,9 +29,10 @@ date.
   [Resource limits](docs/user/resource-limits.md).
 - Rustleaks code uses no unsafe Rust, except the C ABI crate
   `rustleaks-ffi` that the Go and Python bindings call. Its unsafe code
-  reads and writes only through the pointers that callers pass and frees
-  the handles it made. Detection stays in safe code. Some dependencies use
-  unsafe Rust; see [Dependencies](docs/dev/dependencies.md).
+  reads and writes only through the pointers that callers pass, frees the
+  handles it made, and marks the pointer views and handles it owns as safe
+  to share between threads. Detection stays in safe code. Some dependencies
+  use unsafe Rust; see [Dependencies](docs/dev/dependencies.md).
 
 Findings and reports hold secrets:
 

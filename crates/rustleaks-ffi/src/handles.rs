@@ -1,6 +1,6 @@
 //! The objects behind the C handles, in safe Rust.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use rustleaks_core::config::{CompiledConfig, ConfigLoader};
@@ -717,23 +717,20 @@ pub struct ResultHandle {
     outcome: ScanOutcome,
     path: Vec<u8>,
     termination: i32,
-    tags: Vec<ViewList>,
+    /// Tag views of every finding, built at the first `finding` call. A C
+    /// caller only reaches a result through the pointer of its box, so by
+    /// then the result has its final address and never moves again, and the
+    /// views stay valid whatever storage `ByteText` uses.
+    tags: OnceLock<Vec<ViewList>>,
 }
 
 impl ResultHandle {
     fn new(outcome: ScanOutcome, path: Vec<u8>, termination: i32) -> Self {
-        // The views point into the findings' heap buffers, which stay in
-        // place when the outcome moves into the handle.
-        let tags = outcome
-            .findings()
-            .iter()
-            .map(|finding| ViewList::of(finding.tags().iter().map(ByteText::as_bytes)))
-            .collect();
         Self {
             outcome,
             path,
             termination,
-            tags,
+            tags: OnceLock::new(),
         }
     }
 
@@ -773,11 +770,19 @@ impl ResultHandle {
         self.outcome.findings().len()
     }
 
-    /// The view of finding `index`.
+    /// The view of finding `index`. Its pointers are valid while the result
+    /// stays at this address, as it does behind a C handle.
     #[must_use]
     pub fn finding(&self, index: usize) -> Option<FindingView> {
         let finding = self.outcome.findings().get(index)?;
-        let tags = self.tags.get(index)?;
+        let tags = self.tags.get_or_init(|| {
+            self.outcome
+                .findings()
+                .iter()
+                .map(|finding| ViewList::of(finding.tags().iter().map(ByteText::as_bytes)))
+                .collect()
+        });
+        let tags = tags.get(index)?;
         Some(finding_view(finding, tags, &self.path))
     }
 }

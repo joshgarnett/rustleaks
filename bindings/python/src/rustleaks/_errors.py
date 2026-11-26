@@ -50,8 +50,24 @@ class Error(Exception):
         return (_rebuild, (type(self), message), self.__dict__)
 
 
+LibraryKind = Literal["load", "version", "engine", "panic"]
+
+
 class LibraryError(Error):
-    """The native library is missing, cannot load, or has another version."""
+    """The native library cannot be used, or failed inside.
+
+    ``kind`` is ``"load"`` when the library is missing, cannot load or lacks
+    an export, ``"version"`` when it has another ABI number or version,
+    ``"engine"`` when it fails for a reason outside the configuration, such
+    as a thread that cannot start, and ``"panic"`` when it caught an internal
+    error.
+    """
+
+    kind: LibraryKind
+
+    def __init__(self, message: str, kind: LibraryKind = "load") -> None:
+        super().__init__(message)
+        self.kind = kind
 
 
 class ConfigError(Error):

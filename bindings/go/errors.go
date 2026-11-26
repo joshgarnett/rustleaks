@@ -27,9 +27,6 @@ const (
 	// KindRuleSelection means a rule ID given to WithRules does not exist,
 	// or the selection is over a limit.
 	KindRuleSelection
-	// KindEngine means the engine could not be built from a valid
-	// configuration, or a thread could not start.
-	KindEngine
 )
 
 // String returns the kind name.
@@ -39,15 +36,13 @@ func (k ConfigErrorKind) String() string {
 		return "config"
 	case KindRuleSelection:
 		return "rule selection"
-	case KindEngine:
-		return "engine"
 	default:
 		return "ConfigErrorKind(" + strconv.Itoa(int(k)) + ")"
 	}
 }
 
-// ConfigError is returned by New when the configuration, the rule selection
-// or the engine build fails.
+// ConfigError is returned by New when the configuration or the rule
+// selection fails.
 //
 // Message is the full message from rustleaks-core. It can quote text from
 // the configuration, so treat it as you would the configuration.
@@ -145,10 +140,48 @@ func contextError(err error) *IncompleteError {
 	return &IncompleteError{Termination: TerminationCancelled, cause: context.Canceled}
 }
 
+// LibraryErrorKind says how the native library failed.
+type LibraryErrorKind int
+
+const (
+	// LibraryLoad means the library could not be found, extracted or
+	// loaded, or lacks an export.
+	LibraryLoad LibraryErrorKind = iota + 1
+	// LibraryVersion means the library has a different ABI number or
+	// version than this package.
+	LibraryVersion
+	// LibraryEngine means the library could not build or use an engine,
+	// for example because a thread could not start, or it rejected a call
+	// that this package made.
+	LibraryEngine
+	// LibraryPanic means the library caught an internal panic. The call
+	// had no other effect.
+	LibraryPanic
+)
+
+// String returns the kind name: load, version, engine or panic.
+func (k LibraryErrorKind) String() string {
+	switch k {
+	case LibraryLoad:
+		return "load"
+	case LibraryVersion:
+		return "version"
+	case LibraryEngine:
+		return "engine"
+	case LibraryPanic:
+		return "panic"
+	default:
+		return "LibraryErrorKind(" + strconv.Itoa(int(k)) + ")"
+	}
+}
+
 // LibraryError is returned when the native library cannot be loaded, has a
-// different ABI number or version than this package, or fails in a way that
-// a correct call does not cause, such as an internal panic.
+// different ABI number or version than this package, cannot build an
+// engine, or fails in a way that a correct call does not cause, such as an
+// internal panic. Kind says which.
 type LibraryError struct {
+	// Kind says how the library failed.
+	Kind LibraryErrorKind
 	// Op is what the package was doing, such as "load".
 	Op string
 	// Path is the library path, when one is involved.
@@ -160,7 +193,7 @@ type LibraryError struct {
 }
 
 func (e *LibraryError) Error() string {
-	text := "rustleaks: " + e.Op + ": " + e.Message
+	text := "rustleaks: " + e.Op + ": " + e.Kind.String() + ": " + e.Message
 	if e.Path != "" {
 		text += " (" + e.Path + ")"
 	}
@@ -175,7 +208,19 @@ func (e *LibraryError) Unwrap() error { return e.Err }
 
 // statusError turns a status without an error handle into an error.
 func statusError(op string, status int32) error {
-	return &LibraryError{Op: op, Message: statusText(status)}
+	return &LibraryError{Kind: libraryKind(status), Op: op, Message: statusText(status)}
+}
+
+// libraryKind is the LibraryErrorKind of a native status or error kind.
+func libraryKind(status int32) LibraryErrorKind {
+	switch status {
+	case errorPanic:
+		return LibraryPanic
+	case errorABIMismatch:
+		return LibraryVersion
+	default:
+		return LibraryEngine
+	}
 }
 
 func statusText(status int32) string {

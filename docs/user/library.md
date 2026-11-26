@@ -83,7 +83,7 @@ then builds the engine.
 | Call | Result |
 | --- | --- |
 | `ConfigLoader::new().load_default()` | Every [built-in rule](built-in-rules.md), the same rules as the CLI. |
-| `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). |
+| `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). A configuration with no rules, such as empty text, loads without an error, and an engine built from it reports nothing. |
 | `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. A rule that a kept rule needs through `[[rules.required]]` stays, but does not report findings. |
 
 A configuration can use `[extend] useDefault = true` to build on the

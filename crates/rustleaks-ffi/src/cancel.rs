@@ -1,7 +1,7 @@
 //! Cancellation: a flag that another thread sets, and a deadline.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use rustleaks_core::ScanCancellation;
@@ -44,20 +44,20 @@ impl CancelHandle {
     }
 }
 
-/// The engine reads the clock at most once in this many polls.
-///
-/// One poll is cheap compared with the work between two polls, but reading
-/// the clock costs tens of nanoseconds. Reading it every 16th poll keeps that
-/// cost small and still stops a scan soon after its deadline.
-pub(crate) const CLOCK_POLL_INTERVAL: u32 = 16;
-
 /// The cancellation signal of one scan: an optional shared flag and an
 /// optional deadline.
+///
+/// Core polls the signal between work units, and only once for a run of
+/// units that it charges together, so polls are rare next to the work
+/// between them. Each poll with a deadline reads the clock, which costs tens
+/// of nanoseconds; reading it less often would save nothing measurable and
+/// would stop a slow scan later. One long step, such as one pattern search
+/// or the keyword pass over a large input, still runs to its end before the
+/// next poll.
 #[derive(Debug)]
 pub(crate) struct ScanSignal<'a> {
     flag: Option<&'a CancelFlag>,
     deadline: Option<Instant>,
-    polls: AtomicU32,
     expired: AtomicBool,
 }
 
@@ -67,7 +67,6 @@ impl<'a> ScanSignal<'a> {
         Self {
             flag,
             deadline,
-            polls: AtomicU32::new(0),
             expired: AtomicBool::new(false),
         }
     }
@@ -96,15 +95,6 @@ impl ScanCancellation for ScanSignal<'_> {
         let Some(deadline) = self.deadline else {
             return false;
         };
-        // The first poll reads the clock, so a deadline that has already
-        // passed stops the scan at its first check.
-        if !self
-            .polls
-            .fetch_add(1, Ordering::Relaxed)
-            .is_multiple_of(CLOCK_POLL_INTERVAL)
-        {
-            return false;
-        }
         if Instant::now() >= deadline {
             self.expired.store(true, Ordering::Relaxed);
             return true;
@@ -112,9 +102,9 @@ impl ScanCancellation for ScanSignal<'_> {
         false
     }
 
-    /// The signal reads a flag and, now and then, the clock. Polls with no
-    /// work between them give the same answer, apart from the clock moving,
-    /// so the engine can poll once for a run of work units.
+    /// The signal reads a flag and the clock. Polls with no work between
+    /// them give the same answer, apart from the clock moving, so the engine
+    /// can poll once for a run of work units.
     fn reads_state_only(&self) -> bool {
         true
     }
@@ -149,16 +139,12 @@ mod tests {
     }
 
     #[test]
-    fn far_deadline_reads_the_clock_only_every_interval() {
+    fn far_deadline_does_not_cancel() {
         let deadline = Instant::now().checked_add(Duration::from_secs(3600));
         let signal = ScanSignal::new(None, deadline);
-        for _ in 0..(CLOCK_POLL_INTERVAL * 3) {
+        for _ in 0..48 {
             assert!(!signal.is_cancelled());
         }
-        assert_eq!(
-            signal.polls.load(Ordering::Relaxed),
-            CLOCK_POLL_INTERVAL * 3
-        );
         assert!(!signal.deadline_expired());
     }
 

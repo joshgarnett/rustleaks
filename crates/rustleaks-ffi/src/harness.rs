@@ -441,7 +441,7 @@ impl Engine {
     pub fn scan(
         &self,
         input: &[u8],
-        args: Option<&ScanArgs>,
+        scan: Option<&Scan<'_>>,
         cancel: Option<&Cancel>,
     ) -> Result<Outcome, Error> {
         // An empty slice may have a dangling pointer; pass null, as a
@@ -451,8 +451,10 @@ impl Engine {
         } else {
             input.as_ptr()
         };
-        // SAFETY: the pointer is null with length 0 or a valid slice.
-        unsafe { self.scan_raw(pointer, input.len(), args, cancel) }
+        let args = scan.map(Scan::raw);
+        // SAFETY: the pointer is null with length 0 or a valid slice, and
+        // the path in `args` borrows `scan`, which outlives the call.
+        unsafe { self.scan_raw(pointer, input.len(), args.as_ref(), cancel) }
     }
 
     /// Scans with a raw input pointer.
@@ -587,16 +589,71 @@ unsafe fn finding(view: &FindingView) -> Finding {
     }
 }
 
+/// Scan arguments in safe Rust: the fields of [`ScanArgs`], with the path as
+/// a borrowed slice. [`Scan::raw`] builds the C struct for one call.
+#[derive(Clone, Copy, Debug)]
+pub struct Scan<'a> {
+    /// Path bytes, or empty.
+    pub path: &'a [u8],
+    /// `SCAN_SET_*` bits.
+    pub overrides: u64,
+    /// Decode depth.
+    pub decode_depth: u64,
+    /// `BASE64_*` value.
+    pub base64_mode: u64,
+    /// Redaction percent.
+    pub redaction_percent: u64,
+    /// Decoded byte budget.
+    pub max_decoded_bytes: u64,
+    /// Work unit budget.
+    pub max_work_units: u64,
+    /// Finding record budget.
+    pub max_finding_records: u64,
+    /// Finding payload byte budget.
+    pub max_finding_payload_bytes: u64,
+    /// Collected span budget.
+    pub max_collected_spans: u64,
+    /// Normalization byte budget.
+    pub max_normalization_bytes: u64,
+    /// Nanoseconds until the deadline.
+    pub deadline_ns: u64,
+    /// Raw allow comment byte, which the library checks.
+    pub allow_comments: u8,
+}
+
+impl Scan<'_> {
+    /// The C struct. Its path pointer borrows `self.path`, so it is valid
+    /// while `self` is.
+    #[must_use]
+    pub fn raw(&self) -> ScanArgs {
+        ScanArgs {
+            path: if self.path.is_empty() {
+                ptr::null()
+            } else {
+                self.path.as_ptr()
+            },
+            path_len: self.path.len(),
+            overrides: self.overrides,
+            decode_depth: self.decode_depth,
+            base64_mode: self.base64_mode,
+            redaction_percent: self.redaction_percent,
+            max_decoded_bytes: self.max_decoded_bytes,
+            max_work_units: self.max_work_units,
+            max_finding_records: self.max_finding_records,
+            max_finding_payload_bytes: self.max_finding_payload_bytes,
+            max_collected_spans: self.max_collected_spans,
+            max_normalization_bytes: self.max_normalization_bytes,
+            deadline_ns: self.deadline_ns,
+            allow_comments: self.allow_comments,
+        }
+    }
+}
+
 /// Scan arguments with no overrides and the given path.
 #[must_use]
-pub fn scan_args(path: &[u8]) -> ScanArgs {
-    ScanArgs {
-        path: if path.is_empty() {
-            ptr::null()
-        } else {
-            path.as_ptr()
-        },
-        path_len: path.len(),
+pub const fn scan_args(path: &[u8]) -> Scan<'_> {
+    Scan {
+        path,
         overrides: 0,
         decode_depth: 0,
         base64_mode: 0,
@@ -743,7 +800,7 @@ pub fn exercise(data: &[u8]) {
     }
 }
 
-fn check_outcome(input: &[u8], path: &[u8], redacted: bool, args: &ScanArgs, outcome: &Outcome) {
+fn check_outcome(input: &[u8], path: &[u8], redacted: bool, args: &Scan<'_>, outcome: &Outcome) {
     use crate::abi::{SCAN_SET_REDACTION_PERCENT, TERMINATION_COMPLETE, TERMINATION_OTHER};
     assert!((TERMINATION_COMPLETE..=TERMINATION_OTHER).contains(&outcome.status.termination));
     let unredacted = if args.overrides & SCAN_SET_REDACTION_PERCENT == 0 {

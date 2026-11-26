@@ -230,9 +230,11 @@ fn null_bytes_are_valid_only_with_length_zero() {
     let error = unsafe { engine.scan_raw(ptr::null(), 3, None, None) }.unwrap_err();
     assert_eq!(error.kind, ERROR_INVALID_ARGUMENT);
 
-    let mut args = scan_args(b"");
+    let mut args = scan_args(b"").raw();
     args.path_len = 4;
-    let error = engine.scan(b"TOKEN", Some(&args), None).unwrap_err();
+    // SAFETY: the input is a valid slice; the library checks the null
+    // path before reading it.
+    let error = unsafe { engine.scan_raw(b"TOKEN".as_ptr(), 5, Some(&args), None) }.unwrap_err();
     assert_eq!(error.kind, ERROR_INVALID_ARGUMENT);
 
     let mut options = Options::new().unwrap();
