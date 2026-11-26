@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- New Python package `rustleaks` for CPython 3.12 and later. It scans bytes
+  and text in process with the same engine and built-in rules as the
+  `rustleaks` command, and can select rules, extend them or replace them
+  with a TOML configuration. It supports budgets, timeouts, cancellation and
+  scans on many threads. Its defaults are those of `rustleaks-core`: no
+  decoding and allow comments honored. See
+  [Using Rustleaks from Python](docs/user/python.md).
 - In `rustleaks-core`, a `Fragment` starts at line 1 unless you set
   another start line, so findings from direct scans number lines like the
   `rustleaks` command. Before, the default was 0. `Fragment::new`,

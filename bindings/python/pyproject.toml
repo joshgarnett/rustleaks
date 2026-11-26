@@ -1,0 +1,35 @@
+# Package metadata. Bazel builds the platform wheels from this folder and the
+# native library, so this file names no build backend.
+[project]
+name = "rustleaks"
+version = "0.2.0"
+description = "Scan bytes and text for secrets with the Rustleaks engine"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+keywords = ["gitleaks", "secret-detection", "security", "scanner"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/joshgarnett/rustleaks"
+Documentation = "https://github.com/joshgarnett/rustleaks/blob/main/docs/user/python.md"
+Source = "https://github.com/joshgarnett/rustleaks/tree/main/bindings/python"
+Issues = "https://github.com/joshgarnett/rustleaks/issues"
+Changelog = "https://github.com/joshgarnett/rustleaks/blob/main/CHANGELOG.md"
