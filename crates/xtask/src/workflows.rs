@@ -709,6 +709,10 @@ fn published_native_bindings(platform: &str) -> &'static [&'static str] {
     }
 }
 
+/// The check that the binding packages artifact holds only the files that
+/// its `SHA256SUMS` lists.
+const FILE_SET_CHECK: &str = "diff <(cd \"${packages}\" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\\./||' | LC_ALL=C sort) \\\n            <(awk '{print $2}' \"${packages}/SHA256SUMS\" | LC_ALL=C sort)";
+
 /// The two binding publication workflows.
 #[derive(Clone, Copy)]
 enum BindingPublish {
@@ -774,10 +778,21 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
         "sha256sum --check --strict SHA256SUMS",
         "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/bindings.yml\"",
         "--source-digest \"${CANDIDATE}\"",
+        "[[ \"${CANDIDATE}\" =~ ^[0-9a-f]{40}$ ]]",
+        "[[ \"${EXPECTED_VERSION}\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]",
+        "[[ \"${DRY_RUN_ID}\" =~ ^[0-9]+$ ]]",
+        "test \"$(jq -r '.event' <<<\"${run_json}\")\" = \"workflow_dispatch\"",
+        "test \"$(jq -r '.status' <<<\"${run_json}\")\" = \"completed\"",
     ] {
         if !source.contains(required) {
             return Err(format!("{context} omits required boundary {required:?}"));
         }
+    }
+    let checkouts = source.matches("uses: actions/checkout@").count();
+    if checkouts == 0 || source.matches("persist-credentials: false").count() != checkouts {
+        return Err(format!(
+            "{context} must set persist-credentials: false on every checkout"
+        ));
     }
     if source.matches("        required: true\n").count() != 3 {
         return Err(format!("{context} must require exactly its three inputs"));
@@ -797,6 +812,7 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
             &[
                 ("environment: release", 1),
                 ("sha256sum --check --strict SHA256SUMS", 3),
+                (FILE_SET_CHECK, 3),
                 ("gh attestation verify", 3),
                 ("actions/create-github-app-token@", 1),
                 (" push ", 1),
@@ -817,6 +833,7 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
             &[
                 ("environment: release", 1),
                 ("sha256sum --check --strict SHA256SUMS", 1),
+                (FILE_SET_CHECK, 1),
                 ("gh attestation verify", 1),
                 ("id-token: write", 1),
                 ("upload.py upload", 1),
@@ -1954,6 +1971,9 @@ mod tests {
                     "test -n \"${TRIGGER_REF}\"",
                 ),
                 ("sha256sum --check --strict SHA256SUMS", "true"),
+                ("[[ \"${DRY_RUN_ID}\" =~ ^[0-9]+$ ]]", "true"),
+                ("persist-credentials: false", "persist-credentials: true"),
+                ("find . -type f ! -name 'SHA256SUMS*'", "find . -type f"),
                 ("        required: true\n", "        required: false\n"),
             ] {
                 assert!(source.contains(before), "{file} omits {before:?}");

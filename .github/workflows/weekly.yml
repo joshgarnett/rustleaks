@@ -87,7 +87,8 @@ jobs:
   bindings:
     name: Binding packages
     needs: binding-version
-    # The layout job attests the checksums of the binding packages.
+    # The called layout job declares the attestation permissions; the weekly
+    # run leaves its attest input unset and attests nothing.
     permissions:
       actions: read
       attestations: write
