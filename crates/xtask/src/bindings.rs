@@ -631,11 +631,23 @@ fn stored_zip(entries: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
     Ok(archive)
 }
 
+/// Resolves a path to an absolute one. On Windows it drops the `\\?\`
+/// prefix that `canonicalize` adds, because Go does not match `go:embed`
+/// patterns under such a path.
+fn absolute_path(path: &Path) -> Result<PathBuf, String> {
+    let absolute = fs::canonicalize(path)
+        .map_err(|error| format!("cannot resolve {}: {error}", path.display()))?;
+    let text = absolute.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => Ok(PathBuf::from(rest)),
+        _ => Ok(absolute),
+    }
+}
+
 /// Turns a local folder into a `file://` URL that Go accepts on every
 /// system.
 fn file_url(path: &Path) -> Result<String, String> {
-    let absolute = fs::canonicalize(path)
-        .map_err(|error| format!("cannot resolve {}: {error}", path.display()))?;
+    let absolute = absolute_path(path)?;
     let text = absolute.to_string_lossy().replace('\\', "/");
     let text = text.strip_prefix("//?/").unwrap_or(&text);
     if text.starts_with('/') {
@@ -662,7 +674,7 @@ fn dry_run(
     }
     fs::create_dir_all(work)
         .map_err(|error| format!("cannot create {}: {error}", work.display()))?;
-    let work = fs::canonicalize(work).map_err(|error| error.to_string())?;
+    let work = absolute_path(work)?;
     go_dry_run(root, platform, go_root, proxy, &work)?;
     for (index, python) in pythons.iter().enumerate() {
         let venv = work.join(format!("venv-{index}"));
