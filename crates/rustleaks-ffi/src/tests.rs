@@ -5,9 +5,9 @@ use std::ptr;
 use std::sync::OnceLock;
 
 use crate::abi::{
-    ABI_VERSION, BUDGET_FINDING_RECORDS, BUDGET_NONE, ERROR_ABI_MISMATCH, ERROR_CONFIG,
-    ERROR_INPUT_TOO_LARGE, ERROR_INVALID_ARGUMENT, ERROR_PANIC, ERROR_RULE_SELECTION, FindingView,
-    OPTION_ALLOW_COMMENTS, OPTION_MAX_FINDING_RECORDS, OPTION_MAX_INPUT_BYTES,
+    ABI_VERSION, BUDGET_FINDING_RECORDS, BUDGET_NONE, ERROR_ABI_MISMATCH, ERROR_CLOSED,
+    ERROR_CONFIG, ERROR_INPUT_TOO_LARGE, ERROR_INVALID_ARGUMENT, ERROR_PANIC, ERROR_RULE_SELECTION,
+    FindingView, OPTION_ALLOW_COMMENTS, OPTION_MAX_FINDING_RECORDS, OPTION_MAX_INPUT_BYTES,
     OPTION_SCAN_ON_CALLER_THREAD, OPTION_WORKERS, RuleView, SCAN_SET_ALL, SCAN_SET_DEADLINE,
     SCAN_SET_MAX_FINDING_RECORDS, STATUS_OK, StatusView, TERMINATION_BUDGET, TERMINATION_CANCELLED,
     TERMINATION_COMPLETE, TERMINATION_DEADLINE, UNLIMITED,
@@ -33,6 +33,26 @@ const PANIC_INPUT: &[u8] = b"rustleaks-ffi synthetic scan panic";
 /// Panics when `input` is [`PANIC_INPUT`]. Only test builds call this.
 pub(crate) fn panic_if_requested(input: &[u8]) {
     assert!(input != PANIC_INPUT, "synthetic scan panic");
+}
+
+thread_local! {
+    /// A process ID that this test thread pretends to have, in place of a
+    /// real fork. A fork needs `libc`, which is not a dependency.
+    static FAKE_PROCESS: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+}
+
+/// The fake process ID of this thread, if a test set one.
+pub(crate) fn fake_process() -> Option<u32> {
+    FAKE_PROCESS.with(std::cell::Cell::get)
+}
+
+/// Runs `work` as if this thread were in another process, such as a forked
+/// child of the one that made the engines.
+fn as_other_process<T>(work: impl FnOnce() -> T) -> T {
+    FAKE_PROCESS.with(|fake| fake.set(Some(std::process::id().wrapping_add(1))));
+    let outcome = work();
+    FAKE_PROCESS.with(|fake| fake.set(None));
+    outcome
 }
 
 const TOKEN_CONFIG: &[u8] = br#"
@@ -1042,4 +1062,118 @@ fn error_message_checks_both_out_pointers_before_writing() {
         assert_eq!(text, ptr::without_provenance::<u8>(7));
         assert_eq!(rustleaks_error_free(handle), STATUS_OK);
     }
+}
+
+/// Copies a raw engine handle, then uses it as a forked child would: every
+/// engine function returns `ERROR_CLOSED`, and free returns `STATUS_OK`
+/// without dropping anything. The engine still works in its own process.
+fn check_engine_in_another_process(caller_thread: u8) {
+    let mut options = Options::new().unwrap();
+    options.set_config(TOKEN_CONFIG).unwrap();
+    options
+        .set_bool(OPTION_SCAN_ON_CALLER_THREAD, caller_thread)
+        .unwrap();
+    let mut engine = ptr::null_mut();
+    let mut error = ptr::null_mut();
+    // SAFETY: the options handle is live and the out pointers are locals.
+    let status = unsafe { rustleaks_engine_new(options.raw(), &raw mut engine, &raw mut error) };
+    assert_eq!(status, STATUS_OK);
+    let copied: *mut EngineHandle = engine;
+
+    as_other_process(|| {
+        let mut count = 0_usize;
+        let mut limit = 0_u64;
+        let mut view = RuleView {
+            id: crate::abi::Bytes::EMPTY,
+            description: crate::abi::Bytes::EMPTY,
+            tags: ptr::null(),
+            tag_count: 0,
+            keywords: ptr::null(),
+            keyword_count: 0,
+        };
+        let mut result = ptr::null_mut();
+        let mut error = ptr::null_mut();
+        // SAFETY: the copied handle is live in this process; the library
+        // reads only its owner field before it refuses the call, and the
+        // free below releases nothing. The error handle is freed once.
+        unsafe {
+            let status = rustleaks_scan(
+                copied,
+                b"TOKEN".as_ptr(),
+                5,
+                ptr::null(),
+                ptr::null(),
+                &raw mut result,
+                &raw mut error,
+            );
+            assert_eq!(status, ERROR_CLOSED);
+            assert!(result.is_null());
+            let mut kind = 0;
+            let mut text = ptr::null();
+            let mut len = 0;
+            assert_eq!(rustleaks_error_kind(error, &raw mut kind), STATUS_OK);
+            assert_eq!(kind, ERROR_CLOSED);
+            assert_eq!(
+                rustleaks_error_message(error, &raw mut text, &raw mut len),
+                STATUS_OK
+            );
+            let message = std::slice::from_raw_parts(text, len);
+            assert_eq!(
+                message,
+                b"the engine was made in another process, before this process forked"
+            );
+            assert_eq!(rustleaks_error_free(error), STATUS_OK);
+
+            assert_eq!(
+                rustleaks_engine_rule_count(copied, &raw mut count),
+                ERROR_CLOSED
+            );
+            assert_eq!(
+                rustleaks_engine_rule(copied, 0, &raw mut view),
+                ERROR_CLOSED
+            );
+            assert_eq!(
+                rustleaks_engine_workers(copied, &raw mut count),
+                ERROR_CLOSED
+            );
+            assert_eq!(
+                rustleaks_engine_max_input_bytes(copied, &raw mut limit),
+                ERROR_CLOSED
+            );
+            assert_eq!(rustleaks_engine_free(copied), STATUS_OK);
+        }
+    });
+
+    // Back in the process that made it, the engine, its threads and its
+    // pool are untouched: it still scans, and the real free releases it.
+    let mut result = ptr::null_mut();
+    // SAFETY: the engine is live, the input is a valid slice, the out
+    // pointers are locals, and every handle is freed once.
+    unsafe {
+        let status = rustleaks_scan(
+            engine,
+            b"TOKEN".as_ptr(),
+            5,
+            ptr::null(),
+            ptr::null(),
+            &raw mut result,
+            ptr::null_mut(),
+        );
+        assert_eq!(status, STATUS_OK);
+        let mut count = 0_usize;
+        assert_eq!(rustleaks_result_count(result, &raw mut count), STATUS_OK);
+        assert_eq!(count, 1);
+        assert_eq!(rustleaks_result_free(result), STATUS_OK);
+        assert_eq!(rustleaks_engine_free(engine), STATUS_OK);
+    }
+}
+
+#[test]
+fn an_engine_from_another_process_is_closed_and_free_releases_nothing() {
+    check_engine_in_another_process(0);
+}
+
+#[test]
+fn a_caller_thread_engine_from_another_process_is_closed_too() {
+    check_engine_in_another_process(1);
 }

@@ -1304,6 +1304,10 @@ fn miri_check() -> Result<(), String> {
             "rustleaks-ffi",
             "tests::rules_list_every_reporting_rule_in_report_order",
         ),
+        (
+            "rustleaks-ffi",
+            "tests::an_engine_from_another_process_is_closed_and_free_releases_nothing",
+        ),
     ];
     for (package, case) in cases {
         command_status_with_timeout(

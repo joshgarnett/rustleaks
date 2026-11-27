@@ -42,10 +42,13 @@
  * scan beyond that waits in a queue for a free scan thread, and while it
  * waits neither its deadline nor its cancel handle is checked.
  *
- * Fork: a forked child has none of the parent's scan threads. In the child,
- * do not scan with or free an engine handle made before the fork; drop the
- * handle without calling any function on it, and build a new engine there.
- * The parent's handles stay valid in the parent.
+ * Fork: a forked child has none of the parent's scan threads, and the
+ * engine's locks may have been held at the fork. In the child, every engine
+ * function on a handle made before the fork returns RUSTLEAKS_ERROR_CLOSED,
+ * except rustleaks_engine_free, which releases nothing and returns
+ * RUSTLEAKS_OK. Build a new engine in the child. The parent's handles stay
+ * valid in the parent. Options, cancel handles, results and errors hold no
+ * threads and can be used and freed in the child.
  *
  * Text: rule IDs, descriptions, tags, keywords and error messages are
  * UTF-8. Secrets, matches, lines and paths are the scanned and given bytes.
@@ -71,7 +74,10 @@ extern "C" {
 #define RUSTLEAKS_ERROR_RULE_SELECTION 4
 #define RUSTLEAKS_ERROR_ENGINE 5
 #define RUSTLEAKS_ERROR_INPUT_TOO_LARGE 6
-/* Reserved for the wrappers. The library never returns it. */
+/*
+ * An engine handle used in a process other than the one that made it, such
+ * as a forked child. Wrappers also use it for an engine they closed.
+ */
 #define RUSTLEAKS_ERROR_CLOSED 7
 #define RUSTLEAKS_ERROR_PANIC 8
 

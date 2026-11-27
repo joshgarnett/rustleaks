@@ -578,9 +578,28 @@ impl EngineInner {
 pub struct EngineHandle {
     inner: Arc<EngineInner>,
     threads: Option<ScanThreads>,
+    /// The process that made the engine. A forked child has none of its
+    /// scan threads, and its locks may have been held at the fork, so the
+    /// exports refuse the engine in any other process.
+    owner: u32,
+}
+
+/// The current process ID. Tests can pretend to be another process.
+pub(crate) fn current_process() -> u32 {
+    #[cfg(test)]
+    if let Some(pid) = crate::tests::fake_process() {
+        return pid;
+    }
+    std::process::id()
 }
 
 impl EngineHandle {
+    /// Returns whether the current process made this engine.
+    #[must_use]
+    pub fn in_owner_process(&self) -> bool {
+        self.owner == current_process()
+    }
+
     /// Loads the configuration, selects the rules and builds the engine on
     /// a thread with a known stack, then starts the scan threads unless the
     /// options ask for scans on the calling thread.
@@ -598,7 +617,11 @@ impl EngineHandle {
         } else {
             Some(ScanThreads::start(inner.workers)?)
         };
-        Ok(Self { inner, threads })
+        Ok(Self {
+            inner,
+            threads,
+            owner: current_process(),
+        })
     }
 
     /// The number of workers that share the search caches.

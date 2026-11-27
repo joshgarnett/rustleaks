@@ -25,8 +25,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr::{self, NonNull};
 
 use crate::abi::{
-    ABI_VERSION, Bytes, ERROR_ABI_MISMATCH, ERROR_INVALID_ARGUMENT, ERROR_PANIC, FindingView,
-    RuleView, SCAN_SET_ALL, STATUS_OK, ScanArgs, StatusView,
+    ABI_VERSION, Bytes, ERROR_ABI_MISMATCH, ERROR_CLOSED, ERROR_INVALID_ARGUMENT, ERROR_PANIC,
+    FindingView, RuleView, SCAN_SET_ALL, STATUS_OK, ScanArgs, StatusView,
 };
 use crate::cancel::CancelHandle;
 use crate::handles::{EngineHandle, FfiError, Options, ResultHandle, ScanRequest};
@@ -186,6 +186,27 @@ unsafe fn borrow<'a, T>(handle: *const T) -> Result<&'a T, i32> {
     // SAFETY: the pointer is not null and aligned, and the caller guarantees
     // that it is a live handle with no mutable borrow.
     Ok(unsafe { &*handle })
+}
+
+/// Borrows an engine handle and checks that this process made it.
+///
+/// # Errors
+///
+/// Returns `ERROR_INVALID_ARGUMENT` for a null or misaligned handle and
+/// `ERROR_CLOSED` for an engine made in another process, such as the parent
+/// of a forked child.
+///
+/// # Safety
+///
+/// As for [`borrow`].
+unsafe fn borrow_engine<'a>(engine: *const EngineHandle) -> Result<&'a EngineHandle, i32> {
+    // SAFETY: forwarded from the caller.
+    let engine = unsafe { borrow(engine) }?;
+    if engine.in_owner_process() {
+        Ok(engine)
+    } else {
+        Err(ERROR_CLOSED)
+    }
 }
 
 /// Borrows a handle mutably.
@@ -428,14 +449,29 @@ pub unsafe extern "C" fn rustleaks_engine_new(
 /// Frees an engine and joins its scan threads. Null is accepted. No scan may
 /// use the engine during or after the call.
 ///
+/// In a process other than the one that made the engine, such as a forked
+/// child, this releases nothing and returns `STATUS_OK`. The child has none
+/// of the scan threads, so dropping the engine there could wait forever or
+/// crash; the handle's memory is left as the fork copied it.
+///
 /// # Safety
 ///
 /// `engine` must be null or a live engine handle that no one uses during or
 /// after the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rustleaks_engine_free(engine: *mut EngineHandle) -> i32 {
-    // SAFETY: forwarded from the caller.
-    guarded(|| unsafe { free(engine) })
+    guarded(|| {
+        if engine.is_null() {
+            return Ok(());
+        }
+        // SAFETY: forwarded from the caller; the borrow ends before the free.
+        let owned = unsafe { borrow(engine.cast_const()) }?.in_owner_process();
+        if !owned {
+            return Ok(());
+        }
+        // SAFETY: forwarded from the caller.
+        unsafe { free(engine) }
+    })
 }
 
 /// Writes the number of workers that share the engine's search caches.
@@ -453,7 +489,7 @@ pub unsafe extern "C" fn rustleaks_engine_workers(
     guarded(|| {
         // SAFETY: forwarded from the caller.
         unsafe {
-            let engine = borrow(engine)?;
+            let engine = borrow_engine(engine)?;
             write_out(out, engine.workers())
         }
     })
@@ -474,7 +510,7 @@ pub unsafe extern "C" fn rustleaks_engine_max_input_bytes(
     guarded(|| {
         // SAFETY: forwarded from the caller.
         unsafe {
-            let engine = borrow(engine)?;
+            let engine = borrow_engine(engine)?;
             write_out(out, engine.max_input_bytes())
         }
     })
@@ -494,7 +530,7 @@ pub unsafe extern "C" fn rustleaks_engine_rule_count(
     guarded(|| {
         // SAFETY: forwarded from the caller.
         unsafe {
-            let engine = borrow(engine)?;
+            let engine = borrow_engine(engine)?;
             write_out(out, engine.rule_count())
         }
     })
@@ -516,7 +552,7 @@ pub unsafe extern "C" fn rustleaks_engine_rule(
     guarded(|| {
         // SAFETY: forwarded from the caller.
         unsafe {
-            let engine = borrow(engine)?;
+            let engine = borrow_engine(engine)?;
             let view = engine.rule(index).ok_or(ERROR_INVALID_ARGUMENT)?;
             write_out(out, view)
         }
@@ -652,8 +688,16 @@ pub unsafe extern "C" fn rustleaks_scan(
             // SAFETY: the engine and cancel handles, the scan arguments and the
             // input follow the rules that the caller guarantees.
             let (engine, cancel, request) = unsafe {
-                let engine = borrow(engine)
-                    .map_err(|_| invalid("the engine handle is null or misaligned"))?;
+                let engine = borrow_engine(engine).map_err(|status| {
+                    if status == ERROR_CLOSED {
+                        FfiError::new(
+                            ERROR_CLOSED,
+                            "the engine was made in another process, before this process forked",
+                        )
+                    } else {
+                        invalid("the engine handle is null or misaligned")
+                    }
+                })?;
                 let cancel = if cancel.is_null() {
                     None
                 } else {

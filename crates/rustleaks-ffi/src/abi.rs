@@ -21,8 +21,9 @@ pub const ERROR_RULE_SELECTION: i32 = 4;
 pub const ERROR_ENGINE: i32 = 5;
 /// The input is longer than the engine's input limit.
 pub const ERROR_INPUT_TOO_LARGE: i32 = 6;
-/// Reserved for the language wrappers, for a call on a closed engine. The
-/// library never returns it.
+/// The engine is closed: the library returns it for an engine handle used in
+/// a process other than the one that made it, such as a forked child, and
+/// the wrappers return it for an engine they closed.
 pub const ERROR_CLOSED: i32 = 7;
 /// The library caught a panic. The call had no other effect.
 pub const ERROR_PANIC: i32 = 8;
