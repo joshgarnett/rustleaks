@@ -2,7 +2,7 @@
   "schema_version": 2,
   "scope": "Synthetic intent labels; no deployment accuracy or live validity claim. Exact-span and case-distinct-value recall are separate metrics.",
   "profile": "default-rules",
-  "package_version": "0.2.0",
+  "package_version": "0.3.0-alpha.1",
   "default_config_sha256": "35c17b31383953534b7e5769082564aab30a52606f32a310a217e99b341280b8",
   "rule_files": [
     {

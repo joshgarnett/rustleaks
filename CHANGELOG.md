@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0-alpha.1] - 2026-11-27
+
 - A Go package, `github.com/joshgarnett/rustleaks-go`, scans bytes for
   secrets in process with every built-in rule, a selection of them, or your
   own configuration. It has engine and scan options, budgets, context
@@ -17,6 +19,11 @@
   scans on many threads. Its defaults are those of `rustleaks-core`: no
   decoding and allow comments honored. See
   [Using Rustleaks from Python](docs/user/python.md).
+- The Python package uses the PEP 440 form of the Rustleaks version, which
+  pip compares: 0.3.0-alpha.1 is the package version 0.3.0a1, so install it
+  with `python -m pip install rustleaks==0.3.0a1`. The Go module uses the
+  version itself, `v0.3.0-alpha.1`. Homebrew and Scoop keep 0.2.0, because
+  a pre-release is not added to the tap or the bucket.
 - In `rustleaks-core`, a `Fragment` starts at line 1 unless you set
   another start line, so findings from direct scans number lines like the
   `rustleaks` command. Before, the default was 0. `Fragment::new`,
@@ -813,7 +820,7 @@ Hosted native workflows cover the declared Linux, Windows, macOS, and musl
 target matrix. The crates.io package and GitHub release identify the published
 version and exact source commit.
 
-[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/joshgarnett/rustleaks/compare/v0.3.0-alpha.1...HEAD
 [0.1.0-alpha.1]: https://crates.io/crates/rustleaks-core/0.1.0-alpha.1
 [0.1.0-alpha.2]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.3]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.3
@@ -827,3 +834,4 @@ version and exact source commit.
 [0.1.0-alpha.11]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.11
 [0.1.0-alpha.12]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.1.0-alpha.12
 [0.2.0]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.2.0
+[0.3.0-alpha.1]: https://github.com/joshgarnett/rustleaks/releases/tag/v0.3.0-alpha.1

@@ -10,7 +10,7 @@ import (
 
 // packageVersion is the Rustleaks version of this package. The native
 // library must have the same version.
-const packageVersion = "0.2.0"
+const packageVersion = "0.3.0-alpha.1"
 
 // LibraryPathEnv names the environment variable that gives the absolute
 // path of the Rustleaks DLL on Windows.

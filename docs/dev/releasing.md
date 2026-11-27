@@ -36,8 +36,8 @@ approval.
       - `[workspace.package]` in the root `Cargo.toml`;
       - the `=VERSION` path dependency pins in
         `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-eval/Cargo.toml`,
-        `crates/rustleaks-report/Cargo.toml` and
-        `crates/rustleaks-sources/Cargo.toml`;
+        `crates/rustleaks-ffi/Cargo.toml`, `crates/rustleaks-report/Cargo.toml`
+        and `crates/rustleaks-sources/Cargo.toml`;
       - the `module()` version in `MODULE.bazel` and `RUSTLEAKS_VERSION` in
         `bazel/rust_crate.bzl`;
       - `CHANGELOG.md` and the Status section of `README.md`;

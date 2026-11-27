@@ -5,8 +5,8 @@ secrets inside their own program. The `rustleaks` package runs the same
 engine as the `rustleaks` command, in your process. It scans data that you
 give it; it does not read files, run Git or write reports.
 
-The package is listed under Unreleased in the [changelog](../../CHANGELOG.md)
-and is not in a release yet.
+The package was first released in 0.3.0-alpha.1, a pre-release, so its API
+can still change.
 
 ## Requirements
 
@@ -29,10 +29,17 @@ raises `LibraryError`.
 
 ## Install
 
-The package is not published yet. To try it from a checkout of this
-repository, build the wheel for your platform with Bazel and install it
-with pip. Pick the `release-bindings-*` configuration in `.bazelrc` that
-matches your platform, for example on Linux x86_64 with glibc:
+PyPI has a wheel for each supported target. pip installs a pre-release only
+when you name it:
+
+```sh
+python -m pip install rustleaks==0.3.0a1
+```
+
+To build the package from a checkout of this repository, build the wheel
+for your platform with Bazel and install it with pip. Pick the
+`release-bindings-*` configuration in `.bazelrc` that matches your
+platform, for example on Linux x86_64 with glibc:
 
 ```sh
 bazelisk build --config=release-bindings-linux-x86_64-gnu //release/python:wheel

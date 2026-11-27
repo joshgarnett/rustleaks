@@ -9,11 +9,11 @@ load(
 
 # The workspace package version from Cargo.toml. Bazel targets of workspace
 # crates set it as `CARGO_PKG_VERSION`.
-RUSTLEAKS_VERSION = "0.2.0"
+RUSTLEAKS_VERSION = "0.3.0-alpha.1"
 
 # The PEP 440 form of RUSTLEAKS_VERSION, which the Python wheel uses: a
 # pre-release such as 0.3.0-alpha.1 is 0.3.0a1.
-RUSTLEAKS_PYTHON_VERSION = "0.2.0"
+RUSTLEAKS_PYTHON_VERSION = "0.3.0a1"
 
 _DOC_TEST_INCOMPATIBLE = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],

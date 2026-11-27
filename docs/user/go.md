@@ -11,22 +11,25 @@ Git history, and it has no baselines, ignore files or fingerprints. For
 those, use the [`rustleaks` command](getting-started.md) or [the Rust
 library](library.md).
 
-These guides describe the current source. The Go package is listed under
-Unreleased in the [changelog](../../CHANGELOG.md) and is not in a release yet.
+These guides describe the current source. The Go package was first released
+in 0.3.0-alpha.1, a pre-release, so its API can still change.
 
 ## Install
 
-The package is not published yet. Its code is in `bindings/go/` of this
-repository, where Bazel builds the Rust library and links it into the
-package tests:
+The module `github.com/joshgarnett/rustleaks-go` has a prebuilt library for
+each supported system. Add it to your module with:
+
+```sh
+go get github.com/joshgarnett/rustleaks-go@v0.3.0-alpha.1
+```
+
+Go picks a pre-release only when you name it, as above. The module's code
+is in `bindings/go/` of this repository, where Bazel builds the Rust library
+and links it into the package tests:
 
 ```sh
 just test-go
 ```
-
-A later release is planned to publish the module
-`github.com/joshgarnett/rustleaks-go` with prebuilt libraries for each
-system. Until then there is no `go get` command for it.
 
 The package needs Go 1.27 or later.
 

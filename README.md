@@ -10,7 +10,9 @@ comments written for Gitleaks. If you use Gitleaks now, start with
 
 ## Status
 
-The current release is 0.2.0. Rustleaks keeps commands, flags,
+The current release is 0.3.0-alpha.1, a pre-release of 0.3.0. It adds the
+first Go and Python packages. The current stable release is 0.2.0, which
+Homebrew and Scoop install. Rustleaks keeps commands, flags,
 configuration files, ignore files, baselines, allow comments, report fields
 and exit codes working. A release that removes or changes one of them says
 so in the [changelog](CHANGELOG.md). Before 1.0, a minor release, such as
