@@ -58,9 +58,6 @@ approval.
       (`testdata/quality-corpus/baseline-v1.json`).
 - [ ] `DEFAULT_CONFIG_SHA256` in `rustleaks-core` and `DEFAULT_RULES_SHA256`
       in `xtask` agree.
-- [ ] For the first release of the Go and Python packages, pull request
-      #216 is merged. See
-      [Publishing the Go and Python packages](#publishing-the-go-and-python-packages).
 - [ ] The candidate is merged to `main`.
 
 ### 2. Run the local checks
@@ -593,11 +590,6 @@ attributions. The GNU wheels' glibc code also has the corresponding source
 above.
 
 ### Publishing the Go and Python packages
-
-Before the first binding release, pull request #216 (the core fix for the
-last line of an input without a final line break) must be merged. Until
-then `Finding.Line` (Go) and `line` (Python) can hold the whole input for a
-finding on such a last line.
 
 Publish the binding packages of a version only after its
 [GitHub release](#publishing-the-github-release), while `main` is still the
