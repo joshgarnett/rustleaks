@@ -94,6 +94,17 @@ rustleaks_integration_test(
     deps = [":rustleaks_ffi"],
 )
 
+# Scans the core corpus inputs with core and through the C ABI and compares.
+rustleaks_integration_test(
+    name = "differential_test",
+    src = "tests/differential.rs",
+    data = ["//testdata:all"],
+    deps = [
+        ":rustleaks_ffi",
+        "//crates/rustleaks-core:rustleaks_core",
+    ],
+)
+
 rustleaks_integration_test(
     name = "exports_fuzz_test",
     src = "tests/exports_fuzz.rs",
@@ -147,6 +158,7 @@ test_suite(
     name = "all_tests",
     tests = [
         ":contract_test",
+        ":differential_test",
         ":exports_fuzz_test",
         ":linktest_musl_test",
         ":linktest_test",

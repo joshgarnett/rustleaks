@@ -201,6 +201,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:special_coverage_test",
     "//crates/rustleaks-core:triage_test",
     "//crates/rustleaks-ffi:contract_test",
+    "//crates/rustleaks-ffi:differential_test",
     "//crates/rustleaks-ffi:exports_fuzz_test",
     "//crates/rustleaks-ffi:linktest_other_static",
     "//crates/rustleaks-ffi:rustleaks_ffi",
