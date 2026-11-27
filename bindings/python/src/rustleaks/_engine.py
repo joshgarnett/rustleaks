@@ -453,9 +453,11 @@ class Engine:
 
         New scans raise ``ClosedError``. Running scans are not cancelled:
         ``close`` waits until they return. Calling ``close`` again does
-        nothing. Calling it on a thread that is inside a scan of this engine,
-        for example from a signal handler, raises ``RuntimeError``, because
-        it would wait for itself.
+        nothing. Do not call it from a signal handler or from another place
+        that can run in the middle of a scan on the same thread: it would
+        wait for that scan. When that scan is already running in the
+        library, ``close`` raises ``RuntimeError``; when the thread is still
+        starting or ending the scan, ``close`` can wait forever.
         """
         if getattr(self, "_lock", None) is None:
             return

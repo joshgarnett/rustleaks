@@ -14,9 +14,9 @@ The dictionary is `dictionaries/exports.dict`.
 
 The target runs `rustleaks_ffi::harness::exercise`, a safe Rust client of
 the C ABI. The input starts with a two-byte configuration length and the
-configuration, then up to seven option calls, a path, the scan argument
-fields, a choice of no cancel handle, a fresh one or one that is already
-set, and the scanned bytes. Each run also reads the ABI number, the
+configuration, then up to seven option calls, a path and the scan argument
+fields. Next comes a choice of no cancel handle, a fresh one or one that is
+already set, and then the scanned bytes. Each run also reads the ABI number, the
 version, the rules, the worker count and the input limit. The target never loads the built-in rules, so
 each run stays short. It checks that every call returns a known status,
 that every range in a finding lies inside the input, and that the match

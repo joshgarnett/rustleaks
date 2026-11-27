@@ -117,7 +117,8 @@ The `manylinux_2_28` wheels hold `rustleaks/_native/librustleaks_ffi.so`,
 built from the same candidate with the same GNU link configuration. The
 linker maps of both architectures show that it links two members of the
 glibc `libc_nonshared.a`, from `io/stat64.c` and `io/fstat64.c`, and no
-startup object. Prepare the sources as above. Then, for example, insert
+glibc startup object. Its `crtbeginS.o` comes from the LLVM compiler
+runtime. Prepare the sources as above. Then, for example, insert
 this line in `io/stat64.c` of the glibc source, right before
 `return __xstat64 (_STAT_VER, file, buf);`:
 

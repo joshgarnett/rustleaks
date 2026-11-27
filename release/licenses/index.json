@@ -6034,7 +6034,7 @@
     "crates/rustleaks-sources/Cargo.toml": "33bf1c702e38ede4f97da0916c642ebd9082e20dcc6a32eb8afd996ae33cf8fb",
     "platforms/BUILD.bazel": "4fc390dd4f93983b36dc369336ff0a657cafcb5adc8ca9bc45289b29574edb39",
     "release/notice-inputs/packages/catalog.json": "193ae78951cf9184699ea6cf670b3fb80b711c2f0276ff2b94474b5205b7bdfe",
-    "release/notice-inputs/runtime/catalog.json": "a68050dfc38d531f70a8c9b8389d0218b22344fb4cd3d15fd5fb6c4ab3608de3",
+    "release/notice-inputs/runtime/catalog.json": "3cffe8820b2e3eb6620a20cd32296dc71cfec78ce3c14cc5f3ab837d95e73274",
     "rust-toolchain.toml": "e3a213e0d222e94d213cafbc20932eb3f76c643b4dd63756acf95192df2aa310"
   },
   "runtime_target_coverage": [
@@ -6070,7 +6070,7 @@
     },
     {
       "evidence": {
-        "observed": "The linker map identifies the glibc startup objects Scrt1.o and crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6. The native AArch64 relink baseline built from the corresponding source has the same digest.",
+        "observed": "The linker map identifies the glibc startup object Scrt1.o, the LLVM compiler runtime object crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6. The native AArch64 relink baseline built from the corresponding source has the same digest.",
         "reference_binary_sha256": "d58e535afca4bc24ef24d9b8d5536ef7e046f55587c14aa44ef9b5cd0dcc5129",
         "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
         "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
@@ -6133,7 +6133,7 @@
     },
     {
       "evidence": {
-        "observed": "The linker map identifies the glibc startup objects Scrt1.o and crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are librt.so.1, libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6.",
+        "observed": "The linker map identifies the glibc startup object Scrt1.o, the LLVM compiler runtime object crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are librt.so.1, libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6.",
         "reference_binary_sha256": "a864176aa937c1cec8ddcf64b5fa25eb869af5fd16be9d6d61998d35a108c65a",
         "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
         "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",

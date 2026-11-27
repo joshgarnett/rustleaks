@@ -217,11 +217,14 @@ line and column 0 and no ranges. Use the ranges, not the columns, to find
 the secret in the input. On every line after the first, `line` starts with
 the line break that ends the line before it, as in `b"\nsecond = ..."`.
 
-When a match starts on, or runs to, a last line that has no line break,
-`line` currently holds the text from the start of the input instead of
-that one line. It can then contain other secrets, which redaction does not
-mask. End the input with a line break to avoid this. A fix in the engine is
-pending in pull request #216.
+Take an input with more than one line whose last line has no line break.
+For a match that starts on that last line, `line` currently holds the text
+from the start of the input to the end of that line. It can then hold other
+secrets of the input, and redaction masks only the finding's own secret. End
+the input with a line break, or do not use `line`, when this matters. A
+match that starts on an earlier line and runs to such a last line is not
+affected: its `line` starts at the first line of the match. A fix in the
+engine is pending in pull request #216.
 
 Findings with the same long line share one `bytes` object for `line`, so
 many findings on one large line do not copy it many times.
@@ -322,9 +325,11 @@ end. An engine that is not closed is freed when it is garbage collected.
 
 Do not call `close()` from a signal handler or from another place that can
 run in the middle of a scan on the same thread. It would wait for that scan,
-which cannot finish, so it raises `RuntimeError` instead. In a signal
-handler, set a `CancelToken` or a flag, and close the engine after the scan
-returns.
+which cannot finish. When the scan is already running in the library,
+`close()` sees this and raises `RuntimeError`. When the signal arrives while
+the thread is still starting or ending a scan, `close()` can wait forever.
+In a signal handler, set a `CancelToken` or a flag, and close the engine
+after the scan returns.
 
 Engines, tokens and findings cannot be pickled. Engines and tokens cannot be
 copied.

@@ -88,7 +88,7 @@ filegroup(
 
 # Runs the reference tool at build time of the binding tests. The outputs
 # are never checked in. The samples file is the generator corpus inputs, one
-# after another; it covers most built-in rules.
+# after another; with it the set reaches 216 of the 515 built-in rules.
 run_binary(
     name = "binding_reference",
     srcs = [

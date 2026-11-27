@@ -2863,7 +2863,7 @@
         "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
         "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
         "reference_binary_sha256": "d58e535afca4bc24ef24d9b8d5536ef7e046f55587c14aa44ef9b5cd0dcc5129",
-        "observed": "The linker map identifies the glibc startup objects Scrt1.o and crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6. The native AArch64 relink baseline built from the corresponding source has the same digest.",
+        "observed": "The linker map identifies the glibc startup object Scrt1.o, the LLVM compiler runtime object crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6. The native AArch64 relink baseline built from the corresponding source has the same digest.",
         "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
         "reference_link_map_sha256": "97262dab3036c18dfb621b7eeecf251b3ac0c884c607fab2dafa0b9047589f5f",
         "source_terms": "Individual GNU source linking exceptions are retained only where present. The aarch64 startup source and csu/init.c do not contain the x86_64 startup exception."
@@ -2926,7 +2926,7 @@
         "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
         "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
         "reference_binary_sha256": "a864176aa937c1cec8ddcf64b5fa25eb869af5fd16be9d6d61998d35a108c65a",
-        "observed": "The linker map identifies the glibc startup objects Scrt1.o and crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are librt.so.1, libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6.",
+        "observed": "The linker map identifies the glibc startup object Scrt1.o, the LLVM compiler runtime object crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are librt.so.1, libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6.",
         "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
         "reference_link_map_sha256": "3babe2b8ec66a992adfbf5abc62aa617c223d6b7fa57931088b37f457af56eb1",
         "source_terms": "Individual GNU source linking exceptions are retained only where present. The aarch64 startup source and csu/init.c do not contain the x86_64 startup exception."
