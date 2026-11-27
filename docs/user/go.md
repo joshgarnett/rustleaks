@@ -243,11 +243,13 @@ that matches only a path, such as `pkcs12-file`, reports line and column 0,
 and reports a finding even for empty content. On every line after the
 first, `Line` starts with the line break that ends the line before it.
 
-When a match starts on, or runs to, a last line that has no line break,
-`Line` currently holds the text from the start of the input, not the last
-line alone. It can then hold other secrets of the input, and redaction masks
-only the finding's own secret. End the input with a line break, or do not
-use `Line`, when this matters.
+Take an input with more than one line whose last line has no line break.
+For a match that starts on that last line, `Line` currently holds the text
+from the start of the input to the end of that line. It can then
+hold other secrets of the input, and redaction masks only the finding's own
+secret. End the input with a line break, or do not use `Line`, when this
+matters. A match that starts on an earlier line and runs to such a last
+line is not affected: its `Line` starts at the first line of the match.
 
 Use `SecretRange` and `MatchRange`, not lines and columns, if you change the
 scanned bytes. Do not guess a range whose `OK` is false.

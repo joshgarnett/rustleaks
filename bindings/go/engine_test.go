@@ -30,12 +30,6 @@ tags = ["synthetic"]
 // that this file holds no complete key.
 func awsKey() string { return "AKIA" + "LALEMEL33243OLIB" }
 
-// slowInput takes a few hundred milliseconds to scan with every built-in
-// rule on a fast machine, and has no findings.
-func slowInput() string {
-	return strings.Repeat("token secret password key api auth\n", 250000)
-}
-
 func newEngine(t testing.TB, opts ...Option) *Engine {
 	t.Helper()
 	e, err := New(opts...)
@@ -408,12 +402,17 @@ func TestCloseWaitsForRunningScansAndStopsNewOnes(t *testing.T) {
 	}()
 	<-started
 
-	// This scan waits for the only worker.
+	// This scan is counted as active before Close starts, so it waits for
+	// the only worker and Close wakes it.
+	counted := make(chan struct{})
+	setHook(t, &testHookBeforeSlotWait, func() { close(counted) })
 	waiting := make(chan error, 1)
 	go func() {
 		_, err := e.ScanString(ctx, "MARK-ABCD\n")
 		waiting <- err
 	}()
+	<-counted
+	testHookBeforeSlotWait = nil
 
 	// Close cannot return before the running scan is released, so each
 	// Close records whether the release came first.

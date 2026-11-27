@@ -81,6 +81,9 @@ func extractLibraryWait(root string, lib *embeddedDLL, wait time.Duration) (stri
 	if fileHashMatches(target, want) {
 		return target, nil
 	}
+	// Only the lock holder writes, so any temporary file is left from a
+	// process that stopped while it wrote.
+	removeTemporaryFiles(dir)
 
 	data, err := gunzip(lib.gzipped)
 	if err != nil {
@@ -171,11 +174,27 @@ func gunzip(compressed []byte) ([]byte, error) {
 	return data, r.Close()
 }
 
+// tempPattern is the name pattern of the temporary files of writeReadOnly.
+const tempPattern = ".rustleaks-*.tmp"
+
+// removeTemporaryFiles removes the temporary files in dir. Failures are
+// ignored, because a file that stays only takes space.
+func removeTemporaryFiles(dir string) {
+	names, err := filepath.Glob(filepath.Join(dir, tempPattern))
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		_ = os.Chmod(name, 0o600)
+		_ = os.Remove(name)
+	}
+}
+
 // writeReadOnly writes data to a temporary file in dir, makes it read-only
 // and renames it to target. A file already at target, which failed its hash
 // check, is removed first.
 func writeReadOnly(dir, target string, data []byte) (err error) {
-	tmp, err := os.CreateTemp(dir, ".rustleaks-*.tmp")
+	tmp, err := os.CreateTemp(dir, tempPattern)
 	if err != nil {
 		return err
 	}

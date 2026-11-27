@@ -10,15 +10,14 @@ const abiVersion = 1
 
 // Status and error kinds.
 const (
-	statusOK                    = 0
-	errorInvalidArgument        = 1
-	errorABIMismatch            = 2
-	errorConfig                 = 3
-	errorRuleSelection          = 4
-	errorEngine                 = 5
-	errorInputTooLarge          = 6
-	errorPanic                  = 8
-	nativeUnlimited      uint64 = ^uint64(0)
+	statusOK             = 0
+	errorInvalidArgument = 1
+	errorABIMismatch     = 2
+	errorConfig          = 3
+	errorRuleSelection   = 4
+	errorEngine          = 5
+	errorInputTooLarge   = 6
+	errorPanic           = 8
 )
 
 // Keys for rustleaks_options_set_u64.

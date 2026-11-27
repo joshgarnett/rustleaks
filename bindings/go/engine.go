@@ -82,6 +82,9 @@ var (
 	// testHookBeforeNativeScan runs after a scan has a worker and its
 	// cancel handle, right before the native call.
 	testHookBeforeNativeScan func()
+	// testHookBeforeSlotWait runs after a scan is counted as active and
+	// before it waits for a worker.
+	testHookBeforeSlotWait func()
 	// testHookNativeArgs runs right before the native call with the scan
 	// arguments and the cancel handle, which is nil without one. Tests use
 	// it to reach the library past the package's own checks.
@@ -323,6 +326,9 @@ func (e *Engine) scan(ctx context.Context, input unsafe.Pointer, n int, opts []S
 	e.mu.Unlock()
 	defer e.active.Done()
 
+	if hook := testHookBeforeSlotWait; hook != nil {
+		hook()
+	}
 	select {
 	case e.slots <- struct{}{}:
 	case <-e.closing:

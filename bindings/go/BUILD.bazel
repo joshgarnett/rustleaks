@@ -23,6 +23,7 @@ go_library(
         "nocgo.go",
         "options.go",
         "rustleaks.h",
+        "unsupported_windows.go",
     ],
     cdeps = select({
         "@platforms//os:windows": [],

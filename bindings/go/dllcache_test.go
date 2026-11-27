@@ -245,6 +245,29 @@ func TestLockFileIsExclusive(t *testing.T) {
 
 // A lock file that a stopped process left behind is not held, because the
 // system releases the lock with the process, so it does not block.
+func TestExtractLibraryRemovesLeftoverTemporaryFiles(t *testing.T) {
+	root := cacheRoot(t)
+	lib := fakeLibrary(t, []byte("library after a crash"))
+	dir := filepath.Dir(lockPath(t, root, lib))
+	leftover := filepath.Join(dir, ".rustleaks-123.tmp")
+	if err := os.WriteFile(leftover, []byte("half a library"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(other, []byte("not ours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := extractLibraryWait(root, lib, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(leftover); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the leftover temporary file is still there: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("a file that is not a temporary file was removed: %v", err)
+	}
+}
+
 func TestExtractLibraryIgnoresALeftoverLockFile(t *testing.T) {
 	root := cacheRoot(t)
 	lib := fakeLibrary(t, []byte("leftover lock library"))
