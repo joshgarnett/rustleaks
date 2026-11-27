@@ -723,6 +723,26 @@ const BINDING_PRERELEASE: &str = "          if [[ \"${EXPECTED_VERSION}\" = *-* 
           test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = \"${prerelease}\"
 ";
 
+/// How the Go check job reads the head of `rustleaks-go`: empty for an
+/// empty repository, else a 40-hex `main`. A repository with refs but no
+/// `main` fails.
+const GO_REMOTE_HEAD: &[&str] = &[
+    "          if [[ -z \"${refs}\" ]]; then\n",
+    "            head=\"\"\n          else\n            head=\"$(awk '$2 == \"refs/heads/main\" {print $1}' <<<\"${refs}\")\"\n            if ! [[ \"${head}\" =~ ^[0-9a-f]{40}$ ]]; then\n",
+    "              exit 1\n            fi\n          fi\n          printf 'head=%s\\n' \"${head}\" >> \"${GITHUB_OUTPUT}\"\n",
+];
+
+/// How the Go publish job starts its commit: a new `main` for an empty
+/// repository, which must still have no refs just before the push, or a
+/// clone of `main` at the checked head.
+const GO_PUBLISH_CHECKOUT: &[&str] = &[
+    "          if [[ -z \"${EXPECTED_HEAD}\" ]]; then\n",
+    "            git init --quiet --initial-branch=main \"${checkout}\"\n            git -C \"${checkout}\" remote add origin https://github.com/joshgarnett/rustleaks-go.git\n          else\n            git clone --branch main https://github.com/joshgarnett/rustleaks-go.git \"${checkout}\"\n",
+    "            test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${EXPECTED_HEAD}\"\n            git -C \"${checkout}\" rm -r --quiet --ignore-unmatch -- .\n          fi\n",
+    "            test -z \"$(git -C \"${checkout}\" ls-remote origin)\"\n          fi\n",
+    "          refs=(HEAD:refs/heads/main)\n",
+];
+
 /// The two binding publication workflows.
 #[derive(Clone, Copy)]
 enum BindingPublish {
@@ -840,6 +860,8 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
                 (" push ", 1),
                 ("id-token:", 0),
                 ("attestations:", 0),
+                ("if [[ -z \"${EXPECTED_HEAD}\" ]]; then", 2),
+                ("EXPECTED_HEAD: ${{ needs.check.outputs.head }}", 2),
             ],
         ),
         BindingPublish::Python => (
@@ -887,6 +909,23 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
     // Only the protected job holds the credential: the App key, or the
     // identity token that PyPI exchanges.
     let protected = workflow_job(source, "publish")?;
+    if let BindingPublish::Go = kind {
+        let check = workflow_job(source, "check")?;
+        for needle in GO_REMOTE_HEAD {
+            if !check.contains(needle) {
+                return Err(format!(
+                    "{context} check job omits the rustleaks-go head rule {needle:?}"
+                ));
+            }
+        }
+        for needle in GO_PUBLISH_CHECKOUT {
+            if !protected.contains(needle) {
+                return Err(format!(
+                    "{context} publish job omits the rustleaks-go checkout rule {needle:?}"
+                ));
+            }
+        }
+    }
     if !protected.contains("environment: release") {
         return Err(format!(
             "{context} must run its publish job in the release environment"
@@ -2047,6 +2086,44 @@ mod tests {
         let go = std::fs::read_to_string(root.join(".github/workflows/publish-go.yml")).unwrap();
         let forced = go.replacen("push --atomic", "push --force --atomic", 1);
         assert!(validate_binding_publish_workflow(&forced, BindingPublish::Go).is_err());
+        // An empty rustleaks-go gets a new main; anything else needs a
+        // 40-hex main that has not moved.
+        for (before, after) in [
+            ("! [[ \"${head}\" =~ ^[0-9a-f]{40}$ ]]", "false"),
+            (
+                "[0-9a-f]{40}$ ]]; then\n              echo \"rustleaks-go has refs",
+                "[0-9a-f]*$ ]]; then\n              echo \"rustleaks-go has refs",
+            ),
+            (
+                "if [[ -z \"${refs}\" ]]; then",
+                "if [[ -z \"${head:-}\" ]]; then",
+            ),
+            ("--initial-branch=main", "--initial-branch=master"),
+            (
+                "test -z \"$(git -C \"${checkout}\" ls-remote origin)\"",
+                "true",
+            ),
+            (
+                "test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${EXPECTED_HEAD}\"",
+                "true",
+            ),
+            (
+                "          EXPECTED_HEAD: ${{ needs.check.outputs.head }}\n          EXPECTED_VERSION",
+                "          EXPECTED_VERSION",
+            ),
+            ("refs=(HEAD:refs/heads/main)", "refs=()"),
+            (
+                "            git init --quiet",
+                "            git clone --branch main https://github.com/joshgarnett/rustleaks-go.git \"${checkout}\" || git init --quiet",
+            ),
+        ] {
+            assert!(go.contains(before), "publish-go.yml omits {before:?}");
+            let changed = go.replacen(before, after, 1);
+            assert!(
+                validate_binding_publish_workflow(&changed, BindingPublish::Go).is_err(),
+                "publish-go.yml accepted {after:?} in place of {before:?}"
+            );
+        }
         let capitals = go.replacen("(-[0-9a-z.-]+)?$", "(-[0-9A-Za-z.-]+)?$", 1);
         assert_ne!(capitals, go);
         assert!(validate_binding_publish_workflow(&capitals, BindingPublish::Go).is_err());

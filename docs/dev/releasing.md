@@ -645,7 +645,8 @@ file set. Neither one builds anything: they publish the dry run's files.
 replaced. Its `publish` job runs in the protected `release` environment,
 with only Git, the GitHub CLI and the pinned token action, as in
 [Updating the package managers](#updating-the-package-managers). It
-replaces the whole tree of `main` with the layout, commits it as the
+replaces the whole tree of `main` with the layout, or starts `main` with it
+in an empty repository. It commits the layout as the
 `rustleaks-packaging` App, and pushes the commit, the `vVERSION` tag and the
 eight `lib/<platform>/vVERSION` tags in one atomic push. The `verify` job then
 waits for the Go checksum database and compares its hashes for all nine
@@ -655,9 +656,13 @@ published copy and that issues and pull requests go to this repository.
 
 The first Go publication also needs:
 
-- `joshgarnett/rustleaks-go` to exist, to be public, and to have a `main`
-  branch with at least one commit. The workflow clones `main` and pushes a
-  fast-forward commit on top of it; it does not create the branch.
+- `joshgarnett/rustleaks-go` to exist and to be public. It may be empty, with
+  no branch and no tag. Then the check job records an empty head. The
+  publish job starts a new repository with `main` as its branch and commits
+  the layout. It checks that `rustleaks-go` still has no refs, then creates
+  `main` and every tag in the one atomic push. When `rustleaks-go` has a `main`,
+  the workflow clones it and pushes a fast-forward commit on top of it. A
+  repository that has refs but no `main` stops the workflow;
 - no tag in `rustleaks-go` that starts with `v` or `lib/`;
 - the `rustleaks-packaging` App installed on `rustleaks-go` with contents
   write, and the `PACKAGING_APP_ID` variable and `PACKAGING_APP_PRIVATE_KEY`
