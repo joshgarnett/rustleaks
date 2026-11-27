@@ -821,39 +821,160 @@ fn rust_files_outside_unsafe_crate(root: &Path) -> Result<Vec<String>, String> {
 /// 2024.
 const UNSAFE_ATTRIBUTES: [&str; 3] = ["no_mangle", "export_name", "link_section"];
 
-/// Reports whether Rust source uses an attribute in [`UNSAFE_ATTRIBUTES`] in
-/// code.
+/// Macros that run assembly. `global_asm!` needs no `unsafe` keyword.
+const ASSEMBLY_MACROS: [&str; 3] = ["asm", "global_asm", "naked_asm"];
+
+/// Reports whether Rust source uses, in code, an attribute in
+/// [`UNSAFE_ATTRIBUTES`] or a macro in [`ASSEMBLY_MACROS`].
 fn mentions_unsafe_attribute(source: &str) -> bool {
-    code_only(source)
-        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
-        .any(|word| UNSAFE_ATTRIBUTES.contains(&word))
+    let code = code_only(source).chars().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < code.len() {
+        if !is_identifier(code[index]) {
+            index += 1;
+            continue;
+        }
+        let end = identifier_end(&code, index);
+        let word = code[index..end].iter().collect::<String>();
+        if UNSAFE_ATTRIBUTES.contains(&word.as_str())
+            || (ASSEMBLY_MACROS.contains(&word.as_str())
+                && next_code(&code, end).is_some_and(|next| code[next] == '!'))
+        {
+            return true;
+        }
+        index = end;
+    }
+    false
 }
 
-/// Returns the first `include!` or `#[path = ...]` target in Rust source that
+/// Returns the first `include!` or path attribute target in Rust source that
 /// is not a literal `.rs` path, since the unsafe search reads only `.rs`
-/// files.
+/// files. It finds `include!` with any delimiter, `#[path = ...]` and
+/// `path = ...` inside any attribute, such as `cfg_attr`, with comments or
+/// whitespace between the tokens.
 fn non_rust_include(source: &str) -> Option<String> {
-    let code = code_only(source);
-    let compact = code.split_whitespace().collect::<String>();
-    if !compact.contains("include!(") && !compact.contains("#[path=") {
-        return None;
-    }
-    let compact_source = source.split_whitespace().collect::<String>();
-    for opener in ["include!(", "#[path="] {
-        for (offset, _) in compact_source.match_indices(opener) {
-            let rest = &compact_source[offset + opener.len()..];
-            let target = rest
-                .strip_prefix('"')
-                .and_then(|literal| literal.split_once('"'))
-                .map(|(path, _)| path);
-            match target {
-                Some(path) if path.ends_with(".rs") => {}
-                Some(path) => return Some(path.to_owned()),
-                None => return Some(rest.chars().take(40).collect()),
+    let tokens = literal_marked(source);
+    let code = |index: usize| {
+        tokens
+            .get(index)
+            .filter(|(_, literal)| !literal)
+            .map(|(c, _)| *c)
+    };
+    let next = |mut index: usize| {
+        while let Some(&(character, literal)) = tokens.get(index) {
+            if literal || !character.is_whitespace() {
+                return Some(index);
+            }
+            index += 1;
+        }
+        None
+    };
+    let word_at = |index: usize| {
+        let mut end = index;
+        while code(end).is_some_and(is_identifier) {
+            end += 1;
+        }
+        let starts = index == 0 || !code(index - 1).is_some_and(is_identifier);
+        (starts && end > index).then(|| {
+            (
+                tokens[index..end]
+                    .iter()
+                    .map(|(c, _)| c)
+                    .collect::<String>(),
+                end,
+            )
+        })
+    };
+    // The target after `at`: a literal path, or the start of whatever else
+    // is there.
+    let target = |at: Option<usize>| -> Result<(), String> {
+        let Some(at) = at.filter(|&at| tokens[at].1) else {
+            let rest = at.map_or(String::new(), |at| {
+                tokens[at..].iter().take(40).map(|(c, _)| c).collect()
+            });
+            return Err(rest);
+        };
+        let mut end = at;
+        while tokens.get(end).is_some_and(|(_, literal)| *literal) {
+            end += 1;
+        }
+        let literal = tokens[at..end].iter().map(|(c, _)| c).collect::<String>();
+        let path = literal
+            .split_once('"')
+            .and_then(|(_, rest)| rest.rsplit_once('"'))
+            .map_or(literal.as_str(), |(path, _)| path);
+        if path.ends_with(".rs") {
+            Ok(())
+        } else {
+            Err(path.to_owned())
+        }
+    };
+    let mut attribute_depth = 0_usize;
+    let mut index = 0;
+    while index < tokens.len() {
+        let Some(character) = code(index) else {
+            index += 1;
+            continue;
+        };
+        if character == '#' {
+            let mut open = next(index + 1);
+            if open.and_then(code) == Some('!') {
+                open = open.and_then(|open| next(open + 1));
+            }
+            if let Some(open) = open.filter(|&open| code(open) == Some('[')) {
+                attribute_depth = 1;
+                index = open + 1;
+                continue;
             }
         }
+        if attribute_depth > 0 {
+            match character {
+                '[' | '(' => attribute_depth += 1,
+                ']' | ')' => attribute_depth -= 1,
+                _ => {}
+            }
+        }
+        if let Some((word, end)) = word_at(index) {
+            let after = next(end);
+            if word == "include" && after.and_then(code) == Some('!') {
+                let open = after.and_then(|after| next(after + 1));
+                if open
+                    .and_then(code)
+                    .is_some_and(|open| matches!(open, '(' | '[' | '{'))
+                    && let Err(found) = target(open.and_then(|open| next(open + 1)))
+                {
+                    return Some(found);
+                }
+            }
+            if word == "path"
+                && attribute_depth > 0
+                && after.and_then(code) == Some('=')
+                && let Err(found) = target(after.and_then(|after| next(after + 1)))
+            {
+                return Some(found);
+            }
+            index = end;
+            continue;
+        }
+        index += 1;
     }
     None
+}
+
+/// Returns the next index at or after `index` in `code` that is not
+/// whitespace.
+fn next_code(code: &[char], index: usize) -> Option<usize> {
+    (index..code.len()).find(|&index| !code[index].is_whitespace())
+}
+
+/// Returns the characters of Rust source without comments, each marked as
+/// part of a string or character literal or not. Comments become one space.
+fn literal_marked(source: &str) -> Vec<(char, bool)> {
+    let mut tokens = Vec::with_capacity(source.len());
+    scan_rust(source, &mut |piece: &[char], literal: bool| {
+        tokens.extend(piece.iter().map(|&character| (character, literal)));
+    });
+    tokens
 }
 
 /// Returns the code of Rust source with comments (nested block comments
@@ -863,8 +984,23 @@ fn non_rust_include(source: &str) -> Option<String> {
 /// tokens and stay code, so that the `r` at the end of `'r` or `r#r` never
 /// starts a raw string.
 fn code_only(source: &str) -> String {
-    let characters = source.chars().collect::<Vec<_>>();
     let mut code = String::with_capacity(source.len());
+    scan_rust(source, &mut |piece: &[char], literal: bool| {
+        if literal {
+            code.push(' ');
+        } else {
+            code.extend(piece);
+        }
+    });
+    code
+}
+
+/// Splits Rust source into code and literals, without comments, and passes
+/// each piece to `emit` with whether it is a literal. A comment is passed as
+/// one space of code.
+fn scan_rust(source: &str, emit: &mut dyn FnMut(&[char], bool)) {
+    let characters = source.chars().collect::<Vec<_>>();
+    let space = [' '];
     let mut index = 0;
     while let Some(&character) = characters.get(index) {
         let next = characters.get(index + 1).copied();
@@ -892,7 +1028,7 @@ fn code_only(source: &str) -> String {
                     _ => index += 1,
                 }
             }
-            code.push(' ');
+            emit(&space, false);
             continue;
         }
         if is_identifier(character) {
@@ -901,17 +1037,18 @@ fn code_only(source: &str) -> String {
             if matches!(word.as_str(), "r" | "br" | "cr")
                 && let Some(end) = raw_string_end(&characters, end)
             {
+                emit(&characters[index..end], true);
                 index = end;
-                code.push(' ');
                 continue;
             }
             // A raw identifier, such as `r#r`, is one token.
             let end = raw_identifier_end(&characters, &word, end).unwrap_or(end);
-            code.extend(&characters[index..end]);
+            emit(&characters[index..end], false);
             index = end;
             continue;
         }
         if character == '"' {
+            let start = index;
             index += 1;
             while let Some(&next) = characters.get(index) {
                 index += if next == '\\' { 2 } else { 1 };
@@ -919,7 +1056,8 @@ fn code_only(source: &str) -> String {
                     break;
                 }
             }
-            code.push(' ');
+            index = index.min(characters.len());
+            emit(&characters[start..index], true);
             continue;
         }
         if character == '\'' {
@@ -936,9 +1074,9 @@ fn code_only(source: &str) -> String {
             } else {
                 None
             };
-            if let Some(end) = end {
+            if let Some(end) = end.map(|end: usize| end.min(characters.len())) {
+                emit(&characters[index..end], true);
                 index = end;
-                code.push(' ');
                 continue;
             }
             // A lifetime or a label, such as `'r` or `'r#r`, is one token.
@@ -946,14 +1084,13 @@ fn code_only(source: &str) -> String {
             let mut end = identifier_end(&characters, start);
             let word = characters[start..end].iter().collect::<String>();
             end = raw_identifier_end(&characters, &word, end).unwrap_or(end);
-            code.extend(&characters[index..end]);
+            emit(&characters[index..end], false);
             index = end;
             continue;
         }
-        code.push(character);
+        emit(&characters[index..=index], false);
         index += 1;
     }
-    code
 }
 
 fn is_identifier(character: char) -> bool {
@@ -1292,6 +1429,43 @@ mod tests {
         assert!(
             super::non_rust_include("include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"));\n").is_some()
         );
+        // Any delimiter, comments between tokens, and path in any attribute.
+        for (source, found) in [
+            ("include!{\"x.inc\"}\n", "x.inc"),
+            ("include![\"x.inc\"]\n", "x.inc"),
+            ("include /* x */ ! /* y */ (\"x.inc\");\n", "x.inc"),
+            ("include // x\n!(\"x.inc\");\n", "x.inc"),
+            ("#[path /* x */ = \"x.txt\"]\nmod x;\n", "x.txt"),
+            ("#[cfg_attr(all(), path = \"x.txt\")]\nmod x;\n", "x.txt"),
+            ("#![cfg_attr(unix, path = \"x.txt\")]\n", "x.txt"),
+            ("#[path = r\"x.txt\"]\nmod x;\n", "x.txt"),
+        ] {
+            assert_eq!(
+                super::non_rust_include(source).as_deref(),
+                Some(found),
+                "{source}"
+            );
+        }
+        for source in [
+            "#[cfg_attr(unix, path = \"unix.rs\")]\nmod x;\n",
+            "fn f(path: &str) { let path = 1; }\n",
+            "#[derive(Debug)]\nstruct S { path: u8 }\nconst T: &str = \"include!(x)\";\n",
+            "// include!(\"x.inc\")\nfn f() {}\n",
+            "let x = my_include!(\"x.inc\");\n",
+        ] {
+            assert_eq!(super::non_rust_include(source), None, "{source}");
+        }
+        // Assembly macros, which need no unsafe keyword in global_asm!.
+        assert!(super::mentions_unsafe_attribute("global_asm!(\"nop\");\n"));
+        assert!(super::mentions_unsafe_attribute(
+            "core::arch::global_asm /* x */ !(\"nop\");\n"
+        ));
+        assert!(super::mentions_unsafe_attribute(
+            "fn f() { asm!(\"nop\") }\n"
+        ));
+        assert!(!super::mentions_unsafe_attribute(
+            "let asm = 1; // global_asm!\n"
+        ));
         // An identifier that ends in r is not a raw string prefix.
         assert!(mentions_unsafe(
             "fn f() { let r = 1; let br = \"x\"; unsafe { g() } }\n"
