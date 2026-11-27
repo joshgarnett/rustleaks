@@ -882,9 +882,9 @@ fn source_location_preserves_newline_and_empty_span_edges() {
         (0, 1, (0, 0, 1, 1, 0, 1)),
         (1, 1, (1, 1, 1, 1, 1, 4)),
         (1, 4, (1, 1, 1, 3, 1, 4)),
-        (4, 4, (2, 2, 1, 0, 0, 4)),
-        (4, 5, (2, 2, 1, 1, 0, 6)),
-        (5, 6, (2, 2, 2, 2, 0, 6)),
+        (4, 4, (2, 2, 1, 0, 4, 4)),
+        (4, 5, (2, 2, 1, 1, 4, 6)),
+        (5, 6, (2, 2, 2, 2, 4, 6)),
         (0, 6, (0, 0, 1, 0, 0, 6)),
     ] {
         let location = source_location(&[1, 4], raw, start, end);
@@ -1013,6 +1013,9 @@ fn linear_source_location(
         previous = newline;
     }
     if !line_set {
+        // The last line starts at the last newline, or at the start of a
+        // fragment that has none.
+        location.start_line_index = if raw.contains(&b'\n') { previous } else { 0 };
         location.start_column = start - previous + 1;
         location.end_column = end - previous;
         location.start_line = last_line + 1;
@@ -1146,12 +1149,17 @@ fn cached_locations_match_pinned_loop_for_reordered_crlf_and_empty_spans() {
 }
 
 #[test]
-fn marker_cache_retains_pinned_prefix_and_disabled_option_behavior() {
+fn marker_cache_checks_the_reported_line_and_the_disabled_option() {
     let detector = engine("[[rules]]\nid = 'probe'\nregex = 'ZX9'\n");
     let disabled = ScanOptions::builder().honor_allow_markers(false).build();
     for (raw, suppressed_count, offsets) in [
         (b"ZX9 rustleaks:allow ZX9".as_slice(), 0, vec![0, 20]),
-        (b"rustleaks:allow\nZX9".as_slice(), 0, vec![16]),
+        (b"rustleaks:allow\nZX9".as_slice(), 1, vec![16]),
+        (
+            b"rustleaks:allow\nZX9 rustleaks:allow".as_slice(),
+            0,
+            vec![16],
+        ),
         (b"rustleaks:allow\nZX9\n".as_slice(), 1, vec![16]),
     ] {
         let fragment = Fragment::new(raw);

@@ -4143,23 +4143,26 @@ fn source_location(
     tail: &Cell<Option<(usize, usize)>>,
 ) -> SourceLocation {
     let fallback;
-    let newlines = if newlines.is_empty() {
+    let (newlines, last_line_start) = if newlines.is_empty() {
         fallback = [raw.len()];
-        &fallback[..]
+        (&fallback[..], 0)
     } else {
-        newlines
+        (newlines, newlines[newlines.len() - 1])
     };
     let start_line = newlines.partition_point(|newline| *newline <= start);
     if start_line == newlines.len() {
         let previous = newlines[newlines.len() - 1];
-        // When no line contains the start, keep the start index at zero and
-        // search for the next CR or LF, as Gitleaks does.
+        // The start is after the last newline, so it is on a last line
+        // without a final newline. As on other later lines, the line text
+        // starts at the newline before it, so an allow comment on an earlier
+        // line cannot hide the finding. The line text ends at the next CR or
+        // LF after the match.
         return SourceLocation {
             start_line,
             end_line: start_line,
             start_column: start - previous + 1,
             end_column: end - previous,
-            start_line_index: 0,
+            start_line_index: last_line_start,
             end_line_index: next_line_break(raw, end, tail),
         };
     }

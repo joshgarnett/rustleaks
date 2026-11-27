@@ -2,6 +2,78 @@
 
 use super::*;
 
+/// A file that does not end with a newline: an allow comment on an earlier
+/// line does not hide a secret on the last line, and the template `Line` of
+/// that finding is only the last line, starting with the newline before it.
+#[test]
+fn allow_comments_on_earlier_lines_do_not_hide_a_last_line_without_newline() {
+    let fixture = Fixture::new();
+    fixture.write("config.toml", matching_config());
+    fixture.write(
+        "report.tmpl",
+        "{{ range . }}<{{ .File }}|{{ .Line }}>{{ end }}",
+    );
+    fixture.write("input/earlier.txt", "token=AB12 gitleaks:allow\ntoken=CD34");
+    fixture.write("input/crlf.txt", "rustleaks:allow\r\nx\r\ntoken=EF56");
+    fixture.write("input/last.txt", "x\ntoken=GH78 gitleaks:allow");
+    fixture.write("input/single.txt", "token=IJ90 rustleaks:allow");
+    let scan = |format: &[&str]| {
+        let mut arguments = vec![
+            "dir",
+            "input",
+            "--no-banner",
+            "--log-level=fatal",
+            "-c",
+            "config.toml",
+            "-r",
+            "-",
+        ];
+        arguments.extend(format);
+        let result = output(&fixture.0, &arguments);
+        assert_eq!(
+            result.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        result
+    };
+
+    let mut rows = report_rows(&scan(&["-f", "json"]));
+    rows.sort();
+    let row = |file: &str, line: i128, secret: &str| {
+        (
+            "fixture-token".to_owned(),
+            file.to_owned(),
+            line,
+            secret.to_owned(),
+            String::new(),
+        )
+    };
+    assert_eq!(
+        rows,
+        vec![
+            row("input/crlf.txt", 3, "EF56"),
+            row("input/earlier.txt", 2, "CD34"),
+        ]
+    );
+
+    let template = scan(&["-f", "template", "--report-template", "report.tmpl"]);
+    let text = String::from_utf8(template.stdout).unwrap();
+    let mut lines = text
+        .split_terminator('>')
+        .map(|entry| entry.strip_prefix('<').unwrap())
+        .collect::<Vec<_>>();
+    lines.sort_unstable();
+    assert_eq!(
+        lines,
+        vec![
+            "input/crlf.txt|\ntoken=EF56",
+            "input/earlier.txt|\ntoken=CD34"
+        ]
+    );
+}
+
 #[test]
 fn directory_aliases_emit_the_same_json_and_custom_exit() {
     let fixture = Fixture::new();
