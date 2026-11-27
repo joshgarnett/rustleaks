@@ -56,12 +56,12 @@ fn entropy_and_location_helpers_follow_the_engine_rules() {
     );
     assert_eq!((second.start_index, second.end_index), (5, 12));
 
-    // After the last newline: the zero-start, no-line-matched path.
-    // Columns are (13 - 12) + 1 = 2 and 18 - 12 = 6.
+    // After the last newline: the no-line-matched path. The line starts at
+    // that newline, byte 12. Columns are (13 - 12) + 1 = 2 and 18 - 12 = 6.
     let tail = go_location(&newlines, raw, 13, 18);
     assert_eq!((tail.start_line, tail.end_line), (2, 2));
     assert_eq!((tail.start_column, tail.end_column), (2, 6));
-    assert_eq!((tail.start_index, tail.end_index), (0, raw.len()));
+    assert_eq!((tail.start_index, tail.end_index), (12, raw.len()));
 
     // No newline at all: one virtual newline at the end.
     let flat = b"abcdef";

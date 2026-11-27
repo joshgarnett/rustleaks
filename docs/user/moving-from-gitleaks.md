@@ -186,3 +186,12 @@ reasons for a difference:
   Gitleaks, Rustleaks still skips files whose content starts like a binary
   format. See [Files that are
   skipped](cli-reference.md#files-that-are-skipped).
+- **Last line without a final newline.** When a
+  [piece](reports.md#line-and-column-numbers) of input does not end with a
+  newline, for example a file without a final newline, Gitleaks takes the
+  line of a finding on its last line to start at the start of the piece. An allow
+  comment on any earlier line then hides the finding, line allowlists
+  (`regexTarget = "line"`) see the earlier lines, and the template `Line`
+  field holds them. Rustleaks takes only the last line, so it reports these
+  findings. `Line` then starts with the newline before the last line, as on
+  other lines.

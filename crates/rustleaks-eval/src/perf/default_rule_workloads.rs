@@ -315,14 +315,20 @@ fn go_location(newlines: &[usize], raw: &[u8], start: usize, end: usize) -> GoLo
         location.end_index = newlines[end_line];
     }
     if !line_set {
-        // The "no line matched" path: the line starts at zero and ends
-        // at the first CR or LF after the match, or at the end of the raw text.
+        // The "no line matched" path: the start is on a last line without a
+        // final newline. The line starts at the last newline, or at zero when
+        // the only newline is the virtual one, and ends at the first CR or LF
+        // after the match, or at the end of the raw text.
         let previous = newlines[newlines.len() - 1];
         location.start_line = newlines.len();
         location.end_line = newlines.len();
         location.start_column = start - previous + 1;
         location.end_column = end - previous;
-        location.start_index = 0;
+        location.start_index = if raw.get(previous) == Some(&b'\n') {
+            previous
+        } else {
+            0
+        };
         location.end_index = raw[end..]
             .iter()
             .position(|byte| matches!(byte, b'\n' | b'\r'))

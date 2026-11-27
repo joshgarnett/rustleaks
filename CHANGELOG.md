@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Rustleaks finds secrets on the last line of a file that does not end with
+  a newline when an earlier line has an allow comment (`gitleaks:allow` or
+  `rustleaks:allow`). Before, the line of such a finding started at the
+  start of the scanned piece, so an allow comment on any earlier line hid it.
+  The same applies to the last line of any scanned piece of input without a
+  final newline. The template `Line` field of these findings now holds only
+  the last line, starting with the newline before it, as on other lines, and
+  line allowlists (`regexTarget = "line"`) match against that line. Line
+  and column numbers and fingerprints do not change. Scans of such files can
+  report new findings; add an allow comment on the line of the secret or an
+  ignore entry where a finding is not a secret.
 - Git history scans with several detection threads finish sooner. The first
   `git log` batches start while `git rev-list` still lists the commits, and
   their results wait until the list is complete. On the rails history with 12

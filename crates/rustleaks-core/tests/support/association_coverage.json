@@ -42,7 +42,7 @@
             },
             {
               "id": "rustleaks.association.helper.auth0-domain-v1",
-              "line_base64": "YXV0aDBfY2xpZW50X2lkID0gQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXkgCgoKCgoKCgoKYXV0aDBfY2xpZW50X3NlY3JldCA9IAoKQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXlaQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VVwiIDsgZml4dHVyZS5hdXRoMC5jb20g",
+              "line_base64": "CkE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFVcIiA7IGZpeHR1cmUuYXV0aDAuY29tIA==",
               "location": [
                 11,
                 11,
@@ -106,7 +106,7 @@
           "nested": [
             {
               "id": "rustleaks.association.helper.auth0-client-id-v1",
-              "line_base64": "YXV0aDBfY2xpZW50X3NlY3JldCA9IAoKQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXlaQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VVwiIDsgZml4dHVyZS5hdXRoMC5jb20gCgoKCgoKCgoKYXV0aDBfY2xpZW50X2lkID0gQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXkg",
+              "line_base64": "CmF1dGgwX2NsaWVudF9pZCA9IEE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5IA==",
               "location": [
                 11,
                 11,
@@ -191,7 +191,7 @@
           "nested": [
             {
               "id": "rustleaks.association.helper.auth0-client-id-v1",
-              "line_base64": "YXV0aDBfY2xpZW50X3NlY3JldCA9IEE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFUKZml4dHVyZS5hdXRoMC5jb20gCgoKCgoKCgoKYXV0aDBfY2xpZW50X2lkID0gQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXkg",
+              "line_base64": "CmF1dGgwX2NsaWVudF9pZCA9IEE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5IA==",
               "location": [
                 10,
                 10,
@@ -351,7 +351,7 @@
           "nested": [
             {
               "id": "rustleaks.association.helper.artifactory-jfrog-url",
-              "line_base64": "QUtDcEE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3cTJNOXo0QjZ3OEMzdjVEMXgwRmhKa0xwUm5TdFV5WkE3CmZpeHR1cmUtYWxwaGEuamZyb2cuaW8g",
+              "line_base64": "CmZpeHR1cmUtYWxwaGEuamZyb2cuaW8g",
               "location": [
                 1,
                 1,
@@ -41249,7 +41249,7 @@
         },
         {
           "id": "rustleaks.packagist-api-secret",
-          "line_base64": "cGFja2FnaXN0X2Fja19hN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2MwojIGNvbnRleHQgISBAIHt9DQpwYWNrYWdpc3RfYWNzX2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYz",
+          "line_base64": "CnBhY2thZ2lzdF9hY3NfYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjM=",
           "location": [
             2,
             2,
@@ -41828,7 +41828,7 @@
         },
         {
           "id": "rustleaks.packagist-api-key",
-          "line_base64": "cGFja2FnaXN0X2Fjc19hN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2MwojIGNvbnRleHQgISBAIHt9DQpwYWNrYWdpc3RfYWNrX2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYz",
+          "line_base64": "CnBhY2thZ2lzdF9hY2tfYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjM=",
           "location": [
             2,
             2,
@@ -42241,7 +42241,7 @@
         },
         {
           "id": "rustleaks.packagist-api-secret",
-          "line_base64": "cGFja2FnaXN0X2Fja19hN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2MwpwYWNrYWdpc3RfYWNzX2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzCnBhY2thZ2lzdF9hY2tfYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjMKcGFja2FnaXN0X2Fjc19hN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2Mw==",
+          "line_base64": "CnBhY2thZ2lzdF9hY3NfYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjNhN2YyYjllNGMxZDgwNTYzYTdmMmI5ZTRjMWQ4MDU2M2E3ZjJiOWU0YzFkODA1NjM=",
           "location": [
             3,
             3,
@@ -44452,7 +44452,7 @@
           "nested": [
             {
               "id": "rustleaks.association.helper.azure-storage-account-name",
-              "line_base64": "QWNjb3VudEtleQorQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXlaQTdxMk05ejRCNnc4QzN2NUQxeDBGaEprTHBSblN0VXlaQTdxMk05ejRCNnc4QzN2NUQxeD09IDsgQWNjb3VudE5hbWU9Zml4dHVyZTlzdG9yZQ==",
+              "line_base64": "CitBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4PT0gOyBBY2NvdW50TmFtZT1maXh0dXJlOXN0b3Jl",
               "location": [
                 1,
                 1,
@@ -50690,7 +50690,7 @@
       "expected": [
         {
           "id": "rustleaks.association.azure-storage-account-key",
-          "line_base64": "Y29uc3QgZW5kcG9pbnQgPSAiaHR0cHM6Ly9zY29wZWF1ZGl0LmJsb2IuY29yZS53aW5kb3dzLm5ldCI7CmNvbnN0IEFjY291bnRLZXkgLyrDqSovID0gIitBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4PT0iOw==",
+          "line_base64": "CmNvbnN0IEFjY291bnRLZXkgLyrDqSovID0gIitBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4MEZoSmtMcFJuU3RVeVpBN3EyTTl6NEI2dzhDM3Y1RDF4PT0iOw==",
           "location": [
             1,
             1,
