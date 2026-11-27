@@ -93,7 +93,7 @@ pub(super) fn validate_mach_o(target: &str, file_type: u32, bytes: &[u8]) -> Res
         .filter(|end| *end <= bytes.len())
         .ok_or_else(|| format!("{target} binary Mach-O load commands are out of bounds"))?;
     let mut offset = MACH_HEADER_SIZE;
-    let mut uuids = 0_usize;
+    let mut identity_commands = 0_usize;
     for _ in 0..count {
         if end - offset < LOAD_COMMAND_SIZE {
             return Err(format!(
@@ -113,16 +113,18 @@ pub(super) fn validate_mach_o(target: &str, file_type: u32, bytes: &[u8]) -> Res
                     "{target} binary has an LC_UUID load command of size {size}"
                 ));
             }
-            uuids += 1;
+            identity_commands += 1;
         }
         offset += size;
     }
-    match uuids {
+    match identity_commands {
         1 => Ok(()),
         0 => Err(format!(
             "{target} binary has no LC_UUID load command, so dyld refuses to load it"
         )),
-        _ => Err(format!("{target} binary has {uuids} LC_UUID load commands")),
+        _ => Err(format!(
+            "{target} binary has {identity_commands} LC_UUID load commands"
+        )),
     }
 }
 
