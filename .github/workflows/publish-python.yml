@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       version:
-        description: Exact rustleaks Python package version to publish.
+        description: Exact release version, as in Cargo.toml (for example 0.3.0-alpha.1). The workflow publishes its PEP 440 form.
         required: true
         type: string
 

@@ -29,8 +29,9 @@ raises `LibraryError`.
 
 ## Install
 
-PyPI has a wheel for each supported target. pip installs a pre-release only
-when you name it:
+PyPI has a wheel for each supported target. Pin the version, because
+there is no stable release yet and pip's choice of a pre-release depends on
+what else PyPI holds:
 
 ```sh
 python -m pip install rustleaks==0.3.0a1

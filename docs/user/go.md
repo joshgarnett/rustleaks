@@ -23,7 +23,9 @@ each supported system. Add it to your module with:
 go get github.com/joshgarnett/rustleaks-go@v0.3.0-alpha.1
 ```
 
-Go picks a pre-release only when you name it, as above. The module's code
+Pin the version as above. The module has no stable release yet, so `go get`
+without a version also gives this pre-release, and a later stable release
+would replace it. The module's code
 is in `bindings/go/` of this repository, where Bazel builds the Rust library
 and links it into the package tests:
 
@@ -279,8 +281,8 @@ On Windows the package needs the Rust DLL. It looks for it in this order:
 1. The absolute path given to `rustleaks.SetLibraryPath`, called before the
    first `New`.
 2. The absolute path in the `RUSTLEAKS_LIBRARY_PATH` environment variable.
-3. A DLL embedded in the program. The planned published module embeds one
-   for each Windows platform; this repository does not.
+3. A DLL embedded in the program. The published module embeds one for each
+   Windows platform; this repository does not.
 
 The package writes an embedded DLL once to
 `<user cache folder>/rustleaks/<version>-<hash>/rustleaks_ffi.dll`, where the
