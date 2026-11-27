@@ -62,6 +62,25 @@ jobs:
           test -z "$(git status --short)"
           actual_version="$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' bindings/python/pyproject.toml)"
           test "${actual_version}" = "${EXPECTED_VERSION}"
+      - name: Require the GitHub release of this commit
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A package version names one released commit. The GNU libraries
+          # link glibc support code, so the release that offers its
+          # corresponding source must exist before any package does.
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.draft' <<<"${release_json}")" = false
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          source_archive="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
+          test "$(jq --arg name "${source_archive}" '[.assets[] | select(.name == $name and .state == "uploaded")] | length' <<<"${release_json}")" = 1
+          # release.yml creates a lightweight tag; the tag is what users fetch.
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.object.type' <<<"${ref_json}")" = commit
+          test "$(jq -r '.object.sha' <<<"${ref_json}")" = "${CANDIDATE}"
       - name: Require the successful dry run and download its wheels
         env:
           CANDIDATE: ${{ inputs.candidate }}
