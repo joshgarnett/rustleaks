@@ -6009,7 +6009,7 @@
     "Cargo.lock": "a29bd5150cc908bc67f540a4d73cbee2cb682d670e3fdc5e9a27b679caeca7f7",
     "Cargo.toml": "3c31dd62536bcf39d12ca577ecfa7e6ea4ff082a2fd5c7ffeb5c6cb89e98064c",
     "LICENSE": "2b5010fc2eb2c6fce349552b161bc4e57c140aeb668c3f297c0185ce5c04ae21",
-    "MODULE.bazel": "7562b11fa74421376b6cb64900733a1735aae8b18c96a459802fcba03f335a11",
+    "MODULE.bazel": "f21b96225a2caa0ebcdd16fb0d85f4f68ea02ef5485d884699f3c820680b66da",
     "MODULE.bazel.lock": "b23b4f09694e1858759205ab7f19840062dd5fb55ea6986af6f1abfe16a58d24",
     "bazel/BUILD.bazel": "6a8b6b4ae8ce25456371677c70dcb5010e34b996e8433783a1c123bd03195eaf",
     "cargo-bazel-lock.json": "dfd9f18b7d1a59c6932198365ec710a84cf38cd322df4f607220d0183ec9d2f4",
