@@ -129,8 +129,8 @@ def _check_timeout(value: object) -> float | None:
     try:
         seconds = float(value)
     except OverflowError:
-        # An int too large for a float.
-        seconds = _LONGEST_TIMEOUT
+        # An int too large for a float. A negative one fails the check below.
+        seconds = -1.0 if value < 0 else _LONGEST_TIMEOUT
     if not math.isfinite(seconds) or seconds < 0:
         raise ValueError("timeout must be a finite number of seconds, 0 or more")
     return min(seconds, _LONGEST_TIMEOUT)
@@ -173,6 +173,10 @@ def _status_error(kind: int, message: str) -> Error:
         return LibraryError(message, "engine")
     if kind == _native.ERROR_PANIC:
         return LibraryError(message, "panic")
+    if kind == _native.ERROR_CLOSED:
+        # The library refuses an engine made in another process, such as the
+        # parent of this forked child.
+        return ClosedError(message)
     return Error(message)
 
 
@@ -248,9 +252,15 @@ class CancelToken:
 _live_engines: weakref.WeakSet[Engine] = weakref.WeakSet()
 
 # For the package's tests only: called with the engine after a scan holds a
-# worker and before the native call, so a test can hold a scan in flight or
-# cancel it after the checks in Python.
+# worker and has read the native handle, and before the native call, so a
+# test can hold a scan in flight, cancel it after the checks in Python, or
+# fork with the handle already read.
 _test_hook_before_native: Callable[[Engine], None] | None = None
+
+# For the package's tests only: called right after the native engine is
+# made, before the engine reads its settings and registers for the at-fork
+# hook, so a test can fork in that window.
+_test_hook_after_engine_new: Callable[[], None] | None = None
 
 
 class Engine:
@@ -310,6 +320,9 @@ class Engine:
             status = library.rustleaks_engine_new(options, byref(self._handle), byref(error))
             if status != _native.OK:
                 raise _take_error(library, status, error)
+            built = _test_hook_after_engine_new
+            if built is not None:
+                built()
         finally:
             _release(library.rustleaks_error_free, error)
             _release(library.rustleaks_options_free, options)
@@ -579,11 +592,11 @@ class Engine:
         key = object()
         try:
             self._acquire(key, deadline, request.cancel)
+            # close() frees the handle only when no scan is registered.
+            handle = self._handle
             hook = _test_hook_before_native
             if hook is not None:
                 hook(self)
-            # close() frees the handle only when no scan is registered.
-            handle = self._handle
             return self._scan_native(handle, payload, request, deadline)
         finally:
             # One call with no Python frame in between, so an interrupt

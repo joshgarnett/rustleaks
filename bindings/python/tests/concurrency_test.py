@@ -466,6 +466,127 @@ class ForkTest(unittest.TestCase):
         )
         self.assertEqual(len(scanned.value), 1)
 
+    def fork_from_signal_handler(
+        self, child_work: Callable[[], dict[str, Any]], parent_work: Callable[[], None]
+    ) -> dict[str, Any]:
+        """Forks from a real signal handler at the moment a test hook raises
+        the signal, while ``parent_work`` runs on this thread.
+
+        The child goes on with the interrupted call, as a child that returns
+        from the handler does, then runs ``child_work`` with that call's
+        outcome and reports through a pipe. The parent finishes
+        ``parent_work`` and waits for the child, which must exit cleanly.
+        """
+        read_end, write_end = os.pipe()
+        state: dict[str, Any] = {"pid": None, "child": False}
+
+        def handler(signum: int, frame: object) -> None:
+            if state["pid"] is not None or state["child"]:
+                return
+            with warnings.catch_warnings():
+                # Python warns about fork in a process with threads.
+                warnings.simplefilter("ignore", DeprecationWarning)
+                pid = os.fork()
+            if pid == 0:
+                state["child"] = True
+            else:
+                state["pid"] = pid
+
+        previous = signal.signal(signal.SIGUSR1, handler)
+        try:
+            outcome: Any = None
+            try:
+                parent_work()
+                outcome = "returned"
+            except rustleaks.ClosedError as error:
+                outcome = f"ClosedError: {error}"
+            except BaseException as error:  # noqa: BLE001
+                outcome = type(error).__name__
+            if state["child"]:
+                code = 1
+                try:
+                    os.close(read_end)
+                    report = {"interrupted_call": outcome}
+                    report.update(child_work())
+                    os.write(write_end, json.dumps(report).encode())
+                    code = 0
+                finally:
+                    os._exit(code)
+        finally:
+            signal.signal(signal.SIGUSR1, previous)
+        os.close(write_end)
+        chunks = []
+        while chunk := os.read(read_end, 65536):
+            chunks.append(chunk)
+        os.close(read_end)
+        self.assertIsNotNone(state["pid"], "the hook did not fork")
+        _, status = os.waitpid(state["pid"], 0)
+        # A child killed by a signal, as by SIGTRAP on macOS, fails here.
+        self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+        self.assertEqual(outcome, "returned")
+        return json.loads(b"".join(chunks))
+
+    def child_builds_a_new_engine(self) -> dict[str, Any]:
+        with rustleaks.Engine(config=MARKER_CONFIG) as fresh:
+            return {"new_findings": len(fresh.scan(marker_input()))}
+
+    def test_a_fork_after_a_scan_read_the_handle_closes_that_scan(self) -> None:
+        # A signal handler can fork after the scan read the native handle and
+        # before the native call. The at-fork hook cannot clear that copy, so
+        # the library itself must refuse the parent's engine in the child.
+        engine = rustleaks.Engine(config=MARKER_CONFIG, workers=2)
+        try:
+
+            def raise_once(_: rustleaks.Engine) -> None:
+                _engine._test_hook_before_native = None
+                signal.raise_signal(signal.SIGUSR1)
+
+            def parent_work() -> None:
+                _engine._test_hook_before_native = raise_once
+                try:
+                    self.assertEqual(len(engine.scan(marker_input())), 1)
+                finally:
+                    _engine._test_hook_before_native = None
+
+            def child_work() -> dict[str, Any]:
+                engine.close()
+                report = {"closed": engine.closed}
+                report.update(self.child_builds_a_new_engine())
+                return report
+
+            report = self.fork_from_signal_handler(child_work, parent_work)
+        finally:
+            engine.close()
+        self.assertTrue(report.pop("interrupted_call").startswith("ClosedError: "))
+        self.assertEqual(report, {"closed": True, "new_findings": 1})
+
+    def test_a_fork_while_an_engine_is_built_closes_it_in_the_child(self) -> None:
+        # A signal handler can fork after the native engine exists and before
+        # the engine registers for the at-fork hook. In the child the rest of
+        # the construction then reaches the library, which refuses it.
+        built: list[rustleaks.Engine] = []
+
+        def raise_once() -> None:
+            _engine._test_hook_after_engine_new = None
+            signal.raise_signal(signal.SIGUSR1)
+
+        def parent_work() -> None:
+            _engine._test_hook_after_engine_new = raise_once
+            try:
+                built.append(rustleaks.Engine(config=MARKER_CONFIG, workers=2))
+            finally:
+                _engine._test_hook_after_engine_new = None
+
+        def child_work() -> dict[str, Any]:
+            gc.collect()
+            return self.child_builds_a_new_engine()
+
+        report = self.fork_from_signal_handler(child_work, parent_work)
+        with built[0] as engine:
+            self.assertEqual(len(engine.scan(marker_input())), 1)
+        self.assertTrue(report.pop("interrupted_call").startswith("ClosedError: "))
+        self.assertEqual(report, {"new_findings": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

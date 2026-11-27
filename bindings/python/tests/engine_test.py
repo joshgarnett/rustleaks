@@ -277,6 +277,8 @@ class OptionsTest(unittest.TestCase):
             ({"path": 1}, TypeError),
             ({"path": b"config/app.env"}, TypeError),
             ({"timeout": -1}, ValueError),
+            ({"timeout": -(10**400)}, ValueError),
+            ({"timeout": -(2**1024)}, ValueError),
             ({"timeout": float("nan")}, ValueError),
             ({"timeout": float("inf")}, ValueError),
             ({"timeout": True}, TypeError),
