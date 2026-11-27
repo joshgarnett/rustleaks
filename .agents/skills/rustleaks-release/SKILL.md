@@ -29,9 +29,15 @@ approved the exact unchanged action, do not ask a second time.
 - Do not claim an artifact, checksum, SBOM, attestation or native result that
   the release workflow does not produce.
 - Keep tokens and signing keys out of the repository and logs.
-- The Go module and the Python package use the release version. The version
-  check covers `bindings/go/library.go`, `bindings/python/pyproject.toml`
-  and `bindings/python/src/rustleaks/_version.py`.
+- The Go module uses the release version. The Python package uses its PEP
+  440 form: `0.3.0-alpha.1` is `0.3.0a1` (see
+  [Python version](../../../docs/dev/releasing.md#python-version)). The
+  version check covers `bindings/go/library.go`, `RUSTLEAKS_PYTHON_VERSION`
+  in `bazel/rust_crate.bzl`, `bindings/python/pyproject.toml` and
+  `bindings/python/src/rustleaks/_version.py`.
+- A pre-release is not pushed to the Homebrew tap or Scoop bucket while
+  they hold a stable release; its Go module and Python package are
+  published as usual.
 - `Publish Go Module` and `Publish Python Package` publish the files of the
   dry run's `rustleaks-bindings-<version>-packages` artifact; they build
   nothing. Each push to `joshgarnett/rustleaks-go` and each PyPI upload is a

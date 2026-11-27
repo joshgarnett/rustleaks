@@ -21,9 +21,11 @@ never searches the current folder or `PATH` for it.
 Free-threaded CPython, PyPy and subinterpreters are not tested. The package
 does not refuse them, but nothing checks that it works there.
 
-The package version and the native library version are the same. If the
-library is missing, is built for another architecture or has another
-version, creating an engine raises `LibraryError`.
+The package and the native library have the same Rustleaks version. The
+package writes it in the PEP 440 form that pip uses, so the pre-release
+0.3.0-alpha.1 is the package version 0.3.0a1. If the library is missing, is
+built for another architecture or has another version, creating an engine
+raises `LibraryError`.
 
 ## Install
 

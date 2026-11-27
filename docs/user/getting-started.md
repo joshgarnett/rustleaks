@@ -42,6 +42,10 @@ scoop install rustleaks/rustleaks
 
 Run `scoop update rustleaks` to get a newer release.
 
+Homebrew and Scoop install stable releases only. A pre-release, such as
+0.3.0-alpha.1, is not added to the tap or the bucket. Install a pre-release
+from its `.deb` or `.rpm` package or its release archive, as below.
+
 ### With a .deb or .rpm package
 
 For Linux x86_64 and ARM64 with glibc 2.28 or later, such as Debian 10,

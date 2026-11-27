@@ -55,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9a-z.-]+)?$ ]]
           test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
           test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
@@ -75,7 +75,14 @@ jobs:
           # corresponding source must exist before any package does.
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
           test "$(jq -r '.draft' <<<"${release_json}")" = false
-          test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          # release.yml publishes a version with a pre-release suffix as a
+          # GitHub pre-release, and any other version as a normal release.
+          if [[ "${EXPECTED_VERSION}" = *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = "${prerelease}"
           source_archive="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
           test "$(jq --arg name "${source_archive}" '[.assets[] | select(.name == $name and .state == "uploaded")] | length' <<<"${release_json}")" = 1
           # release.yml creates a lightweight tag; the tag is what users fetch.
