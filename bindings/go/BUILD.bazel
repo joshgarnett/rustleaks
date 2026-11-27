@@ -38,6 +38,8 @@ _TEST_SRCS = glob(["*_test.go"])
 
 _TEST_DATA = [
     "rustleaks.h",
+    "//crates/rustleaks-eval:binding_reference",
+    "//crates/rustleaks-eval:binding_reference_files",
     "//crates/rustleaks-ffi:header",
     "//testdata:bindings",
 ]

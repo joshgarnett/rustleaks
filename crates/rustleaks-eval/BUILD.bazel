@@ -1,4 +1,5 @@
 load("@crates//:defs.bzl", "aliases", "all_crate_deps")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION", "rustleaks_build_contract_files", "rustleaks_library")
 
@@ -50,6 +51,62 @@ rust_binary(
         "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
     },
     srcs = ["src/bin/rustleaks-quality.rs"],
+    visibility = ["//visibility:public"],
+)
+
+# Writes the core findings that the Go and Python differential tests
+# compare with. See :binding_reference.
+rust_binary(
+    name = "rustleaks_binding_reference",
+    aliases = aliases(),
+    crate_name = "rustleaks_binding_reference",
+    crate_root = "src/bin/rustleaks-binding-reference.rs",
+    deps = all_crate_deps(normal = True) + ["//crates/rustleaks-core:rustleaks_core"],
+    edition = "2024",
+    rustc_env = {
+        "CARGO_MANIFEST_DIR": "crates/rustleaks-eval",
+        "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
+    },
+    srcs = ["src/bin/rustleaks-binding-reference.rs"],
+    visibility = ["//visibility:public"],
+)
+
+# The files that the Go and Python differential tests scan: every fixture
+# file, which includes binary files and files without a final line break,
+# and a pinned list of text files.
+filegroup(
+    name = "binding_reference_files",
+    srcs = [
+        "//testdata:bindings/cases.json",
+        "//testdata:fixtures",
+        "//testdata:quality-corpus/README.md",
+        "//testdata:quality-corpus/cases-v1.json",
+        "//testdata:README.md",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Runs the reference tool at build time of the binding tests. The outputs
+# are never checked in. The samples file is the generator corpus inputs, one
+# after another; it covers most built-in rules.
+run_binary(
+    name = "binding_reference",
+    srcs = [
+        ":binding_reference_files",
+        "//testdata:generator-corpus/samples-v1.jsonl",
+    ],
+    outs = [
+        "binding-reference.json",
+        "binding-samples.txt",
+    ],
+    args = [
+        "$(execpath binding-reference.json)",
+        "$(execpath //testdata:generator-corpus/samples-v1.jsonl)",
+        "$(execpath binding-samples.txt)",
+        "crates/rustleaks-eval/binding-samples.txt",
+        "$(execpaths :binding_reference_files)",
+    ],
+    tool = ":rustleaks_binding_reference",
     visibility = ["//visibility:public"],
 )
 

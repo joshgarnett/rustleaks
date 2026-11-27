@@ -160,6 +160,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-cli:rustleaks",
     "//crates/rustleaks-cli:rustleaks_cli",
     "//crates/rustleaks-cli:rustleaks_cli_unit_test",
+    "//crates/rustleaks-eval:rustleaks_binding_reference",
     "//crates/rustleaks-eval:rustleaks_cli_fixture",
     "//crates/rustleaks-eval:rustleaks_eval",
     "//crates/rustleaks-eval:rustleaks_eval_unit_test",
