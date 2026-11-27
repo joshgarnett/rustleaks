@@ -534,10 +534,11 @@ the checksums.
 
 1. On each native lane it builds `//release/native:all` and
    `//release/python:wheel` with the lane's `release-bindings-*` config from
-   `.bazelrc`. Those configs are the lane's release settings, with two
-   differences: musl lanes build for `//platforms:linux_<cpu>_musl_c`, so the
-   shared library links the shared musl libc, and macOS libraries keep their
-   Mach-O UUID, because dyld does not load a dylib without one. The Go
+   `.bazelrc`. Those configs are the lane's release settings, with one
+   difference: musl lanes build for `//platforms:linux_<cpu>_musl_c`, so the
+   shared library links the shared musl libc. macOS libraries keep their
+   Mach-O UUID like the executables, because dyld does not load a dylib
+   without one. The Go
    archive leaves out the LLVM bitcode sections that Rust's standard library
    objects carry, because Go refuses a cgo library with bitcode.
 2. `cargo xtask bindings finish-wheel` turns the Bazel wheel into the
