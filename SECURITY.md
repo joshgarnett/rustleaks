@@ -28,11 +28,16 @@ date.
   at once, and running out of memory can still end the process. See
   [Resource limits](docs/user/resource-limits.md).
 - Rustleaks code uses no unsafe Rust, except the C ABI crate
-  `rustleaks-ffi` that the Go and Python bindings call. Its unsafe code
-  reads and writes only through the pointers that callers pass, frees the
-  handles it made, and marks the pointer views and handles it owns as safe
-  to share between threads. Detection stays in safe code. Some dependencies
-  use unsafe Rust; see [Dependencies](docs/dev/dependencies.md).
+  `rustleaks-ffi` that the Go and Python bindings call, with its tests and
+  test harness. Its exported functions check that each pointer that a
+  caller passes is aligned, and not null where a value is required, read
+  and write only through those pointers, and free only handles that the
+  library made. It marks its
+  pointer views, and the harness marks its engine and cancel wrappers, as
+  safe to share between threads. Detection stays in safe code. The Go
+  package calls the library through cgo, Go's `unsafe` package and, on
+  Windows, `syscall`; the Python package calls it through `ctypes`. Some
+  dependencies use unsafe Rust; see [Dependencies](docs/dev/dependencies.md).
 
 Findings and reports hold secrets:
 

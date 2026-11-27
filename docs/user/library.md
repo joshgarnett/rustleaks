@@ -6,7 +6,8 @@ engine, scanning, limits, findings, ignore files and baselines, choosing
 rule files and review records.
 
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
-To scan from Go, see [Using the Go package](go.md).
+To scan from Go or Python, see [Using the Go package](go.md) or
+[Using Rustleaks from Python](python.md).
 
 ## Add the library
 
@@ -284,7 +285,7 @@ invalid UTF-8) or `to_string_lossy()`.
 | `secret()`, `match_text()` | The secret, and the full text the rule matched. |
 | `location()` | `start_line()`, `end_line()`, `start_column()` and `end_column()`, with the same values as the CLI report fields. See [Line and column numbers](reports.md#line-and-column-numbers). |
 | `secret_range()`, `match_range()` | `FindingRange::Exact(ByteRange)` with exact byte offsets into the fragment, or `FindingRange::Unavailable` when no exact range exists, for example for decoded text. |
-| `line()` | The source line that holds the match. |
+| `line()` | The source line that holds the match. On every line after the first, it starts with the line break that ends the line before it. |
 | `file()`, `symlink_file()`, `commit()`, `author()`, `email()`, `date()`, `message()` | Values copied from the fragment. |
 | `link()` | A web link to the finding. The engine leaves it empty. The CLI adds it for Git history scans. |
 | `entropy()`, `tags()` | Shannon entropy of the secret, and rule and decoding tags. |

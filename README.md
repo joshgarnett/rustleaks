@@ -112,6 +112,11 @@ For Rust developers who use the library:
 - [Using rustleaks-core](docs/user/library.md)
 - [Review records](docs/user/review-records.md)
 
+For Go and Python developers who scan from their own programs:
+
+- [Using the Go package](docs/user/go.md)
+- [Using Rustleaks from Python](docs/user/python.md)
+
 For people who work on Rustleaks, start with [Contributing](CONTRIBUTING.md)
 and the [developer documentation](docs/dev/README.md). Changes are listed in
 the [changelog](CHANGELOG.md).

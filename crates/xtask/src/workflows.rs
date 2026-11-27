@@ -783,6 +783,13 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
         "[[ \"${DRY_RUN_ID}\" =~ ^[0-9]+$ ]]",
         "test \"$(jq -r '.event' <<<\"${run_json}\")\" = \"workflow_dispatch\"",
         "test \"$(jq -r '.status' <<<\"${run_json}\")\" = \"completed\"",
+        "release_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}\")\"",
+        "test \"$(jq -r '.draft' <<<\"${release_json}\")\" = false",
+        "source_archive=\"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
+        "select(.name == $name and .state == \"uploaded\")] | length' <<<\"${release_json}\")\" = 1",
+        "ref_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}\")\"",
+        "test \"$(jq -r '.object.type' <<<\"${ref_json}\")\" = commit",
+        "test \"$(jq -r '.object.sha' <<<\"${ref_json}\")\" = \"${CANDIDATE}\"",
     ] {
         if !source.contains(required) {
             return Err(format!("{context} omits required boundary {required:?}"));
@@ -1975,6 +1982,11 @@ mod tests {
                 ("persist-credentials: false", "persist-credentials: true"),
                 ("find . -type f ! -name 'SHA256SUMS*'", "find . -type f"),
                 ("        required: true\n", "        required: false\n"),
+                (
+                    "test \"$(jq -r '.object.sha' <<<\"${ref_json}\")\" = \"${CANDIDATE}\"",
+                    "true",
+                ),
+                ("-corresponding-source.tar.gz\"", "-source.tar.gz\""),
             ] {
                 assert!(source.contains(before), "{file} omits {before:?}");
                 let changed = source.replacen(before, after, 1);

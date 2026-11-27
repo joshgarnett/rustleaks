@@ -785,7 +785,7 @@ ASCII and bytes:
 - Consumed delimiters belong to the match, not the secret. Match trimming
   removes leading or trailing LF and keeps CR; neither changes the secret
   bytes. Raw byte ranges and decoded ranges keep the normal engine rules.
-  `Fragment::new` starts locations at line zero, and the location helper
+  `Fragment::new` starts locations at line one, and the location helper
   includes the LF before a line in its byte column origin.
 
 Entropy:

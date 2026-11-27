@@ -2828,7 +2828,7 @@
         "inputs": [
           "libunwind.static"
         ],
-        "text": "Static LLVM unwind implementation in the selected Linux binaries. Native musl linker maps identify UnwindLevel1, UnwindLevel1-gcc-ext, UnwindRegistersSave, UnwindRegistersRestore and libunwind object contributions from this provider. The GNU artifact and selected-source review also identifies static LLVM unwind. This record does not claim that every archive member is incorporated."
+        "text": "Static LLVM unwind implementation in the selected GNU Linux binaries. GNU linker maps at candidate d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5 take the CLI's unwind members from this provider's libunwind.a, and those of the binding shared library from libunwind.static. On musl the unwind members come from Rust's self-contained libunwind.a instead; the musl targets keep this notice conservatively for the supplied toolchain input. This record does not claim that every archive member is incorporated."
       },
       "disposition": "embedded-runtime",
       "documents": [
@@ -5792,7 +5792,7 @@
           "Rust target self-contained crtbegin/crtend objects",
           "Rust target self-contained libunwind.a"
         ],
-        "text": "Rust self-contained musl CRT begin/end objects come from the LLVM revision pinned by Rust 1.95.0. Native musl linker maps select the hermetic LLVM 22.1.8 unwind implementation. The Rust libunwind license is retained conservatively for the supplied Rust distribution archive, without asserting that its unwind implementation is incorporated. Both source license files retain the LLVM exception and historical terms."
+        "text": "Rust self-contained musl CRT begin objects and libunwind.a come from the LLVM revision pinned by Rust 1.95.0. Native musl linker maps at candidate d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5 take the five unwind members UnwindLevel1, UnwindLevel1-gcc-ext, UnwindRegistersSave, UnwindRegistersRestore and libunwind from that libunwind.a. Both source license files retain the LLVM exception and historical terms."
       },
       "disposition": "embedded-runtime",
       "documents": [
@@ -6034,15 +6034,16 @@
     "crates/rustleaks-sources/Cargo.toml": "33bf1c702e38ede4f97da0916c642ebd9082e20dcc6a32eb8afd996ae33cf8fb",
     "platforms/BUILD.bazel": "4fc390dd4f93983b36dc369336ff0a657cafcb5adc8ca9bc45289b29574edb39",
     "release/notice-inputs/packages/catalog.json": "193ae78951cf9184699ea6cf670b3fb80b711c2f0276ff2b94474b5205b7bdfe",
-    "release/notice-inputs/runtime/catalog.json": "4548c0f36cea06b98a25b04ed684b94d238348a0d7f115f840246944dd3f0be6",
+    "release/notice-inputs/runtime/catalog.json": "a68050dfc38d531f70a8c9b8389d0218b22344fb4cd3d15fd5fb6c4ab3608de3",
     "rust-toolchain.toml": "e3a213e0d222e94d213cafbc20932eb3f76c643b4dd63756acf95192df2aa310"
   },
   "runtime_target_coverage": [
     {
       "evidence": {
-        "observed": "Retained Mach-O imports identify external system libraries. The cached optimized Rustc action explicitly supplies hermetic libclang_rt.builtins.static.a.",
-        "reference_binary_sha256": "e7967563da6a7e19901799ec0c5f366d4cab130fb1de90ba7252c1ecc521a1a9",
-        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "observed": "Mach-O load commands import /usr/lib/libiconv.2.dylib, /usr/lib/libSystem.B.dylib, /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation and /usr/lib/libc++.1.dylib. The optimized Rustc action of the release configuration passes the hermetic LLVM 23.1.2 libclang_rt.builtins.static.a as a link argument. Rust distribution and compiler-builtins notices cover the Rust runtime. Import observations do not imply absence of static runtime code.",
+        "reference_binary_sha256": "d15e2efb1270fcd7a1ffdb0309fafb059e841a11d685c258387ab011f071a7f6",
+        "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
+        "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build and an aquery of its Rustc action on a macOS arm64 host.",
         "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination."
       },
       "status": "complete",
@@ -6069,9 +6070,11 @@
     },
     {
       "evidence": {
-        "observed": "Retained ELF program headers, dynamic dependencies and symbols identify Rust, static unwind, glibc startup and nonshared wrappers. The pinned hermetic module source defines the covered compiler-rt and libc_nonshared inputs; source notices also cover the supplied static C++ runtime libraries.",
-        "reference_binary_sha256": "790ce3ed48fe3602a542d01da24a8b8cca415da8a2effb2eb76abf3187e38fb1",
-        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "observed": "The linker map identifies the glibc startup objects Scrt1.o and crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6. The native AArch64 relink baseline built from the corresponding source has the same digest.",
+        "reference_binary_sha256": "d58e535afca4bc24ef24d9b8d5536ef7e046f55587c14aa44ef9b5cd0dcc5129",
+        "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
+        "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
+        "reference_link_map_sha256": "97262dab3036c18dfb621b7eeecf251b3ac0c884c607fab2dafa0b9047589f5f",
         "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
         "source_terms": "Individual GNU source linking exceptions are retained only where present. The aarch64 startup source and csu/init.c do not contain the x86_64 startup exception."
       },
@@ -6080,35 +6083,30 @@
     },
     {
       "evidence": {
-        "collection_result": "The corrected native diagnostic completed without collection or command errors. It retained hashes for 75 resolved link-input files and member lists for every selected archive. All extracted members were reconciled against those lists. The five required Rust distribution notice files and four hermetic LLVM runtime license files match the curated bytes. Disposable Rustc-generated objects are explicitly classified separately. This is runtime-input evidence, not repaired-candidate release qualification.",
-        "observed": "Native linker commands, maps and extraction records identify Rust target self-contained libc.a and crt1.o, crti.o, crtbegin.o, crtend.o and crtn.o, plus five extracted hermetic LLVM 22.1.8 unwind members. Rust bootstrap/source identifies musl 1.2.5 and Rust LLVM 22.1.2 CRT begin/end sources. The diagnostic binary matches the reference binary digest. ELF headers contain no PT_INTERP or DT_NEEDED.",
-        "reference_binary_sha256": "fa695a05209a60800169ffaf9c709a9baaa4bf34ead98de44bbfe4be8699571c",
-        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
-        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43246826252",
-        "reference_extraction_record_sha256": "91225c4f9854226a8291e4a4f013ba17b1516f095451abac42690776f9bc9442",
-        "reference_input_inventory_sha256": "f5a06e742f3d16165ecdd2d3a3eb7c5528d6c2ac8f943ef0e3bad775a25dca60",
-        "reference_link_map_sha256": "08e8545f44233ad84003e660140a3a1c5b257cdbee94206fda29c323827ceb3c",
-        "reference_notice_inventory_sha256": "0cf586f8e75e39e874726ebeb37079e30b0548f4ddf82917d21a68754027b56a",
+        "observed": "The linker map identifies Rust target self-contained libc.a and crt1.o, crti.o, crtbegin.o and crtn.o, and the five unwind members UnwindLevel1, UnwindLevel1-gcc-ext, UnwindRegistersSave, UnwindRegistersRestore and libunwind from Rust's self-contained libunwind.a. No member of a hermetic LLVM runtime archive is linked. Rust bootstrap/source identifies musl 1.2.5 and Rust LLVM 22.1.2 for these objects. The binary is a static executable with no PT_INTERP and no DT_NEEDED.",
+        "reference_binary_sha256": "641601f657ba28cecbf22535988cf647b20798a1ddfb4aab89cb51fc21c1098e",
+        "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
+        "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
+        "reference_link_map_sha256": "6d73c2ad6f697fd81ac6412dd45f1b66bb4b0bfe6fbfa9dcecfad3913a447d94",
         "runtime_input_sha256": {
           "Rust self-contained/crt1.o": "2c8595cff75b182ad59c0278d5f81bed2cf1e51b5bf9324db52142c89dd6479f",
           "Rust self-contained/crtbegin.o": "522c4ac7628b80df407f1873be18b6b9b398db5be7f9f5586835cdfd189f6a9e",
-          "Rust self-contained/crtend.o": "9fd9518f8a0ba537a77c5d5c638ec30efa388a9458c21ad84f5607c535547adb",
           "Rust self-contained/crti.o": "b49a67e2e36eed4836023fc26ff9da617e2020a2317aadfeb7971e4cbe612bf7",
           "Rust self-contained/crtn.o": "b2f52a98df83f38814f34f7477aeb629d5e1fb1c1379ef2739cad91ab9ab8734",
           "Rust self-contained/libc.a": "b03473b6f1efb72f700f561b4407a88885b37e0edb5cdb2a64de0df5499e813f",
-          "hermetic LLVM/liblibunwind.static.a": "70b95c1172f662f4e5f8aa9b19de65a9d67bfd6908322678797d0ad6ff0cbeb0"
+          "Rust self-contained/libunwind.a": "ac598cab8db9dfdd190ac79575e4b5a1b992c2b24a01eea595bf9080762382a6"
         },
-        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
-        "supplied_shared_inputs": "The trace also names hermetic glibc libpthread.so.0 and libdl.so.2 shared ABI stubs. Provider definitions, complete static-contribution maps and dynamic tables show no incorporated contribution or runtime dependency from those shared inputs."
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination."
       },
       "status": "complete",
       "target": "aarch64-unknown-linux-musl"
     },
     {
       "evidence": {
-        "observed": "Retained x86_64 Mach-O load commands import /usr/lib/libSystem.B.dylib, /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation and /usr/lib/libc++.1.dylib. The selected Darwin toolchain supplies the covered hermetic compiler-rt runtime input; Rust distribution and compiler-builtins notices cover the Rust runtime. Import observations do not imply absence of static runtime code.",
-        "reference_binary_sha256": "3e65523dd8120ac94ad8898bdfe6a413f3420cfc41535d2525c09aaae011e1f1",
-        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "observed": "Mach-O load commands import /usr/lib/libSystem.B.dylib, /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation and /usr/lib/libc++.1.dylib. The optimized Rustc action of the release configuration passes the hermetic LLVM 23.1.2 libclang_rt.builtins.static.a as a link argument. Rust distribution and compiler-builtins notices cover the Rust runtime. Import observations do not imply absence of static runtime code.",
+        "reference_binary_sha256": "4a8b8e55f804b7a0b859ed2779a5d896564a30be98abfce7389684fcfc5e3cd9",
+        "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
+        "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build and an aquery of its Rustc action on a macOS arm64 host.",
         "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination."
       },
       "status": "complete",
@@ -6135,9 +6133,11 @@
     },
     {
       "evidence": {
-        "observed": "Retained ELF program headers, dynamic dependencies and symbols identify Rust, static unwind, glibc startup and nonshared wrappers. The pinned hermetic module source defines the covered compiler-rt and libc_nonshared inputs; source notices also cover the supplied static C++ runtime libraries.",
-        "reference_binary_sha256": "8d139c2712c233b33c1172f22d6c1954c0c79a4dd53e5fd4a5cb064751d0ac7a",
-        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
+        "observed": "The linker map identifies the glibc startup objects Scrt1.o and crtbeginS.o, the libc_nonshared.a members elf-init-2.31, stat64, fstat64 and lstat64, and unwind members of the hermetic LLVM 23.1.2 libunwind.a. The dynamic dependencies are librt.so.1, libpthread.so.0, libm.so.6, libdl.so.2 and libc.so.6.",
+        "reference_binary_sha256": "a864176aa937c1cec8ddcf64b5fa25eb869af5fd16be9d6d61998d35a108c65a",
+        "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
+        "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
+        "reference_link_map_sha256": "3babe2b8ec66a992adfbf5abc62aa617c223d6b7fa57931088b37f457af56eb1",
         "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
         "source_terms": "Individual GNU source linking exceptions are retained only where present. The aarch64 startup source and csu/init.c do not contain the x86_64 startup exception."
       },
@@ -6146,26 +6146,20 @@
     },
     {
       "evidence": {
-        "collection_result": "The corrected native diagnostic completed without collection or command errors. It retained hashes for 74 resolved link-input files and member lists for every selected archive. All extracted members were reconciled against those lists. The five required Rust distribution notice files and four hermetic LLVM runtime license files match the curated bytes. Disposable Rustc-generated objects are explicitly classified separately. This is runtime-input evidence, not repaired-candidate release qualification.",
-        "observed": "Native linker commands, maps and extraction records identify Rust target self-contained libc.a and rcrt1.o, crti.o, crtbeginS.o, crtendS.o and crtn.o, plus five extracted hermetic LLVM 22.1.8 unwind members. Rust bootstrap/source identifies musl 1.2.5 and Rust LLVM 22.1.2 CRT begin/end sources. The diagnostic binary matches the reference binary digest. ELF headers contain no PT_INTERP or DT_NEEDED.",
-        "reference_binary_sha256": "753f569874b60dd6d37b9a4b2a2863cac05470a33fca350cb0c622b189306fda",
-        "reference_candidate": "c74f50f9da4a21641d1c397a3280874b52f802ca",
-        "reference_diagnostic_run": "https://github.com/joshgarnett/rustleaks/actions/runs/43246826252",
-        "reference_extraction_record_sha256": "912252e74111f2723571be9a0b96994a209aa02bc6762be72495016c08b0b5cd",
-        "reference_input_inventory_sha256": "11ddeff33c368969834419d3b7daf2ad983eb665647f693665d24a391b44d443",
-        "reference_link_map_sha256": "52f59a52c2a8a561b6ae597e94d1b93a7565baebcd3554bbf8caa90dfbbe16e3",
-        "reference_notice_inventory_sha256": "05f19ad878fd87a0c5218efec23a499a27c9ed928f9b311aaf97dea2c1cbe666",
+        "observed": "The linker map identifies Rust target self-contained libc.a and rcrt1.o, crti.o, crtbeginS.o and crtn.o, and the five unwind members UnwindLevel1, UnwindLevel1-gcc-ext, UnwindRegistersSave, UnwindRegistersRestore and libunwind from Rust's self-contained libunwind.a. No member of a hermetic LLVM runtime archive is linked. Rust bootstrap/source identifies musl 1.2.5 and Rust LLVM 22.1.2 for these objects. The binary is a static PIE with no PT_INTERP and no DT_NEEDED.",
+        "reference_binary_sha256": "f6e71df01d056ce95932f7286653cfd3329a07ad0a33f533e7b0c639c3c06a73",
+        "reference_candidate": "d5f62ac2fbeb9e91dc46e99bf509a7d1d93b11f5",
+        "reference_collection": "Collected at the candidate with llvm module 0.8.27 (LLVM 23.1.2) and Rust 1.95.0: a release-configuration build cross-linked on a macOS arm64 host, with a -Map linker argument for the CLI crate only. The binary matches the release-configuration build without that argument.",
+        "reference_link_map_sha256": "4729f7b3adf5ce34c6ce1f321889ec78ec10e82e76d70f90953344cf3f49fece",
         "runtime_input_sha256": {
           "Rust self-contained/crtbeginS.o": "297960e338581a38bbfcbee45169a847bcdc5527ccaf68abe95b72b3b0856bed",
-          "Rust self-contained/crtendS.o": "0d11009c048ae289cdf184d726b767debc2972321e143838d28d7b6802b69c7c",
           "Rust self-contained/crti.o": "5343749d306ea3578a4ae5c796be362100273f3314cec283be621bbe4a8ec720",
           "Rust self-contained/crtn.o": "794abd4b28db5de5f993b1445460d90fa3191cc9556a8b8881d5d34a5e8dfa87",
           "Rust self-contained/libc.a": "e699c64b0c6b427d89ad5bf767bf78beb30c19930c5dedff635951636e8f9f70",
-          "Rust self-contained/rcrt1.o": "7998a49f23b463b1bf59aecd8fde59df5d0f0bf819d1272d92c6f00ae81fc429",
-          "hermetic LLVM/liblibunwind.static.a": "560cc77b0e2220944d715f087fbe081e9d5188beda16c58e3757eab960dbdef3"
+          "Rust self-contained/libunwind.a": "eb16569e611a5d6cdda2e7604fd6402a3ad810817dd8d63ed50baa2ce8070aaa",
+          "Rust self-contained/rcrt1.o": "7998a49f23b463b1bf59aecd8fde59df5d0f0bf819d1272d92c6f00ae81fc429"
         },
-        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination.",
-        "supplied_shared_inputs": "The trace also names hermetic glibc libpthread.so.0 and libdl.so.2 shared ABI stubs. Provider definitions, complete static-contribution maps and dynamic tables show no incorporated contribution or runtime dependency from those shared inputs."
+        "scope": "Finite selected runtime input coverage. This is not native release qualification or a blanket license-compliance determination."
       },
       "status": "complete",
       "target": "x86_64-unknown-linux-musl"
