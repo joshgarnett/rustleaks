@@ -46,13 +46,6 @@ the secret in the input. It is `null` when the secret has no exact range, as
 for decoded text and path-only rules. Every finding of a case has the case's
 `path`.
 
-The cases `unterminated-last-line` and `match-over-the-last-line-end` leave
-out `line`. When a match starts on, or runs to, a last line that has no line
-break, core currently reports the text from the start of the input as the
-line, not the last line alone. The intended `line` is the last line, so
-these cases do not pin the current value. Add `line` back when core reports
-the last line.
-
 A segment is a JSON string, which stands for its UTF-8 bytes, or an object
 `{"hex": "..."}` with an even number of hex digits, which stands for those
 bytes. A list of segments stands for their bytes joined in order. Segments
