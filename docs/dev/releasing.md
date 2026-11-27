@@ -147,9 +147,12 @@ crates.io credential.
       `Update Package Managers` from `packages.yml` with the version and
       `publish` set. See
       [Updating the package managers](#updating-the-package-managers).
-- [ ] Dispatch `Publish Go Module` from `publish-go.yml` and
-      `Publish Python Package` from `publish-python.yml` with the candidate
-      commit, version and dry run ID. See
+- [ ] After the GitHub release, with its
+      `rustleaks-VERSION-corresponding-source.tar.gz`, is published and while
+      `main` is still the candidate, dispatch `Publish Go Module` from
+      `publish-go.yml` and `Publish Python Package` from
+      `publish-python.yml` with the candidate commit, version and dry run
+      ID. Both refuse a version without that release. See
       [Publishing the Go and Python packages](#publishing-the-go-and-python-packages).
 
 ### 7. Verify
@@ -363,6 +366,14 @@ GNU lane builds from that source, checks that its binary matches the release
 binary, changes the startup code, rebuilds and runs a smoke test. Packaging
 fails if this proof is missing or does not match.
 
+The same source archive covers `librustleaks_ffi.so` in the two
+`manylinux_2_28` wheels of the version, which links the glibc
+`libc_nonshared.a` members of `io/stat64.c` and `io/fstat64.c`. The
+[reconstruction instructions](../../release/corresponding-source/README.md)
+also show how to relink that library. The binding publish workflows require
+the GitHub release with this archive first (see
+[Publishing the Go and Python packages](#publishing-the-go-and-python-packages)).
+
 The signed notice index of the native archive binds the source archive and
 `source-relink.json`. The manifest, checksum file and provenance repeat those
 bindings. The
@@ -571,6 +582,16 @@ toolchain link LLVM runtime code under `Apache-2.0 WITH LLVM-exception`.
 `finish-wheel` fails when the two differ. Review the expression when the
 library's dependencies change.
 
+As with the `.deb` and `.rpm` packages, whose `license` field is `MIT`, the
+expression names the licenses of the project and of the Rust code and LLVM
+runtime that every wheel links. It does not list every term of every
+component. The runtime components that the notice catalog lists without an
+SPDX expression keep their terms in the wheel's `licenses/` tree, which
+`License-File` names. These are the glibc nonshared support on GNU, the
+Microsoft C runtime on Windows, and the standard library's bundled
+attributions. The GNU wheels' glibc code also has the corresponding source
+above.
+
 ### Publishing the Go and Python packages
 
 Before the first binding release, pull request #216 (the core fix for the
@@ -578,10 +599,16 @@ last line of an input without a final line break) must be merged. Until
 then `Finding.Line` (Go) and `line` (Python) can hold the whole input for a
 finding on such a last line.
 
-Dispatch `Publish Go Module` and `Publish Python Package` from `main` with
-the candidate commit, version and dry run ID. Each one first requires that
-the candidate is the clean current `main`, that the binding files name the
-version and that the dry run passed for that commit. Then it checks the
+Publish the binding packages of a version only after its
+[GitHub release](#publishing-the-github-release), while `main` is still the
+release commit. Dispatch `Publish Go Module` and `Publish Python Package`
+from `main` with the candidate commit, version and dry run ID. Each one
+first requires that the candidate is the clean current `main` and that the
+binding files name the version. Then it requires that the GitHub release
+`vVERSION` is published, is not a pre-release, holds
+`rustleaks-VERSION-corresponding-source.tar.gz`, and that its tag names the
+candidate, so a package version always names the released commit. Last, it
+requires that the dry run passed for that commit. Then it checks the
 `rustleaks-bindings-<version>-packages` artifact as described in
 [Binding packages](#binding-packages): the attestation of `SHA256SUMS`
 against `bindings.yml` and the candidate commit, every checksum, and the

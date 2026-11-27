@@ -22,11 +22,13 @@
   `rustleaks` command. Before, the default was 0. `Fragment::new`,
   `Fragment::builder` and `Fragment::default` all start at line 1. Line
   numbers in findings, and the fingerprints that sessions build from them,
-  are 1 higher for fragments that did not set a start line. Call
+  are 1 higher for fragments that did not set a start line. A baseline
+  recorded from such findings matches by start line, so its entries no
+  longer match until you record it again. Call
   `FragmentBuilder::start_line(0)` to keep the old numbers. A finding of a
   rule that has only a `path` pattern still has line 0. The `rustleaks`
   command already set the start line of every fragment, so its findings,
-  reports and exit codes do not change.
+  reports, baselines and exit codes do not change.
 - Git history scans with several detection threads finish sooner. The first
   `git log` batches start while `git rev-list` still lists the commits, and
   their results wait until the list is complete. On the rails history with 12

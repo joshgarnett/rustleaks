@@ -79,10 +79,14 @@ compilation.
   `NOTICE` attribution for copied configuration and fixtures.
 - Use only synthetic values or reviewed upstream fixtures in tests, examples,
   fuzz seeds and issues. Treat findings and crash artifacts as sensitive.
-- Owned crates forbid unsafe Rust, except `rustleaks-ffi`. There every
-  unsafe block has a `SAFETY:` comment and only checks or converts what a C
-  caller passes, and every `unsafe impl Send` or `Sync` says why its pointer
-  views or handles can be shared between threads. Detection stays in safe
+- Owned crates forbid unsafe Rust, except `rustleaks-ffi`. Its exports are
+  `unsafe extern "C"` functions marked `#[unsafe(no_mangle)]`. Their unsafe
+  code checks, reads and writes only the pointers that a C caller passes,
+  and frees only handles that the library made. Its `harness` module, its
+  tests and the link test library `tests/linktest/other.rs` call or define
+  exports with unsafe code. Every unsafe block there has a `SAFETY:`
+  comment, and every `unsafe impl Send` or `Sync` says why its pointer views
+  or handles can be shared between threads. Detection stays in safe
   `rustleaks-core` code. The Go
   `unsafe`, cgo and `syscall` code and the Python ctypes code under
   `bindings/` are part of the same reviewed boundary. Apply the
