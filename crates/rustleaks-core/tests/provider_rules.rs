@@ -74,7 +74,7 @@ fn synthetic_positives_have_independent_exact_spans_and_locations() {
         );
         assert_eq!(finding.secret_range(), range(7, 7 + secret.len()));
         assert_eq!(finding.match_range(), range(7, 8 + secret.len()));
-        // Fragment::new starts at line 0, and columns count from the LF
+        // Fragment::new starts at line 1, and columns count from the LF
         // before the line.
         assert_eq!(
             finding.location(),
