@@ -246,25 +246,53 @@ func TestLockFileIsExclusive(t *testing.T) {
 // A lock file that a stopped process left behind is not held, because the
 // system releases the lock with the process, so it does not block.
 func TestExtractLibraryRemovesLeftoverTemporaryFiles(t *testing.T) {
-	root := cacheRoot(t)
-	lib := fakeLibrary(t, []byte("library after a crash"))
-	dir := filepath.Dir(lockPath(t, root, lib))
-	leftover := filepath.Join(dir, ".rustleaks-123.tmp")
-	if err := os.WriteFile(leftover, []byte("half a library"), 0o400); err != nil {
-		t.Fatal(err)
+	// The second cache path holds glob pattern characters. A cleanup that
+	// used the path as a pattern would match the decoy folder instead.
+	// Windows does not allow * in a name.
+	special := "cache[1]*"
+	if runtime.GOOS == "windows" {
+		special = "cache[1]"
 	}
-	other := filepath.Join(dir, "notes.txt")
-	if err := os.WriteFile(other, []byte("not ours"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := extractLibraryWait(root, lib, 0); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(leftover); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the leftover temporary file is still there: %v", err)
-	}
-	if _, err := os.Stat(other); err != nil {
-		t.Errorf("a file that is not a temporary file was removed: %v", err)
+	for _, name := range []string{"cache", special} {
+		t.Run(name, func(t *testing.T) {
+			base := cacheRoot(t)
+			root := filepath.Join(base, name)
+			lib := fakeLibrary(t, []byte("library after a crash"))
+			dir := filepath.Dir(lockPath(t, root, lib))
+			relative, err := filepath.Rel(root, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoyDir := filepath.Join(base, "cache1-decoy", relative)
+			for _, folder := range []string{dir, decoyDir} {
+				if err := os.MkdirAll(folder, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			leftover := filepath.Join(dir, ".rustleaks-123.tmp")
+			decoy := filepath.Join(decoyDir, ".rustleaks-123.tmp")
+			for _, file := range []string{leftover, decoy} {
+				if err := os.WriteFile(file, []byte("half a library"), 0o400); err != nil {
+					t.Fatal(err)
+				}
+			}
+			other := filepath.Join(dir, "notes.txt")
+			if err := os.WriteFile(other, []byte("not ours"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := extractLibraryWait(root, lib, 0); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(leftover); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("the leftover temporary file is still there: %v", err)
+			}
+			if _, err := os.Stat(other); err != nil {
+				t.Errorf("a file that is not a temporary file was removed: %v", err)
+			}
+			if _, err := os.Stat(decoy); err != nil {
+				t.Errorf("a temporary file outside the cache folder was removed: %v", err)
+			}
+		})
 	}
 }
 

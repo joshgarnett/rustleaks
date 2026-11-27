@@ -177,16 +177,26 @@ func gunzip(compressed []byte) ([]byte, error) {
 // tempPattern is the name pattern of the temporary files of writeReadOnly.
 const tempPattern = ".rustleaks-*.tmp"
 
-// removeTemporaryFiles removes the temporary files in dir. Failures are
-// ignored, because a file that stays only takes space.
+// removeTemporaryFiles removes the temporary files in dir. It matches
+// tempPattern against each entry name only, so pattern characters such as
+// [ or * in dir change nothing, and it skips everything that is not a
+// regular file, so it never follows a link. Failures are ignored, because a
+// file that stays only takes space.
 func removeTemporaryFiles(dir string) {
-	names, err := filepath.Glob(filepath.Join(dir, tempPattern))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	for _, name := range names {
-		_ = os.Chmod(name, 0o600)
-		_ = os.Remove(name)
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		if matched, err := filepath.Match(tempPattern, entry.Name()); err != nil || !matched {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		_ = os.Chmod(path, 0o600)
+		_ = os.Remove(path)
 	}
 }
 
