@@ -6,8 +6,10 @@ import array
 import base64
 import copy
 import dataclasses
+import gc
 import pathlib
 import pickle
+import sys
 import traceback
 import unittest
 
@@ -114,6 +116,12 @@ class OptionsTest(unittest.TestCase):
                 rustleaks.Engine(config=config)
             self.assertEqual(caught.exception.kind, "config")
             self.assertTrue(str(caught.exception))
+
+    def test_lone_surrogates_in_engine_text(self) -> None:
+        for options in ({"config": MARKER_CONFIG + "#\ud800\n"}, {"rules": ["\ud800"]}):
+            with self.subTest(options), self.assertRaises(rustleaks.TextEncodingError) as caught:
+                rustleaks.Engine(**options)  # type: ignore[arg-type]
+            self.assertIsNone(caught.exception.__context__)
 
     def test_unknown_rule_is_a_selection_error(self) -> None:
         with self.assertRaises(rustleaks.ConfigError) as caught:
@@ -255,6 +263,14 @@ class OptionsTest(unittest.TestCase):
         self.assertIsInstance(error.usage, rustleaks.Usage)
         self.assertGreater(error.usage.work_units, 0)
         self.assertNotIn(MARKER_SECRET, exception_text(error))
+
+    def test_very_long_timeouts(self) -> None:
+        # Longer than the library's nanosecond deadline holds; the scan runs
+        # as without a timeout.
+        with rustleaks.Engine(config=MARKER_CONFIG) as engine:
+            for timeout in (sys.float_info.max, 10**400, 2**64):
+                with self.subTest(timeout=timeout):
+                    self.assertEqual(len(engine.scan(marker_input(), timeout=timeout)), 1)
 
     def test_bad_scan_arguments(self) -> None:
         cases = [
@@ -464,20 +480,44 @@ class LifecycleTest(unittest.TestCase):
             self.assertEqual(len(engine.scan(marker_input())), 1)
         self.assertTrue(engine.closed)
 
-    def test_garbage_collected_engine(self) -> None:
-        engine = rustleaks.Engine(config=MARKER_CONFIG)
-        del engine
+    def test_garbage_collected_engine_is_freed(self) -> None:
+        library = _native.library()
+        free = library.rustleaks_engine_free
+        freed: list[int] = []
+
+        def counting_free(handle: object) -> int:
+            if handle:
+                freed.append(1)
+            return free(handle)
+
+        library.rustleaks_engine_free = counting_free
+        try:
+            engine = rustleaks.Engine(config=MARKER_CONFIG)
+            engine.scan(marker_input())
+            del engine
+            gc.collect()
+            self.assertEqual(len(freed), 1)
+            # A closed engine is freed by close, not again when collected.
+            engine = rustleaks.Engine(config=MARKER_CONFIG)
+            engine.close()
+            del engine
+            gc.collect()
+            self.assertEqual(len(freed), 2)
+        finally:
+            library.rustleaks_engine_free = free
 
     def test_engines_and_tokens_cannot_be_pickled_or_copied(self) -> None:
         with rustleaks.Engine(config=MARKER_CONFIG) as engine:
             token = rustleaks.CancelToken()
             for value in (engine, token):
                 with self.subTest(type(value).__name__):
-                    with self.assertRaises(TypeError):
-                        pickle.dumps(value)
-                    with self.assertRaises(TypeError):
+                    name = type(value).__name__
+                    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                        with self.assertRaisesRegex(TypeError, f"^cannot pickle a rustleaks {name}$"):
+                            pickle.dumps(value, protocol)
+                    with self.assertRaisesRegex(TypeError, f"^cannot copy a rustleaks {name}$"):
                         copy.copy(value)
-                    with self.assertRaises(TypeError):
+                    with self.assertRaisesRegex(TypeError, f"^cannot copy a rustleaks {name}$"):
                         copy.deepcopy(value)
 
     def test_token(self) -> None:

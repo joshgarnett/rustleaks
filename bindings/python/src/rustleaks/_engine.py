@@ -71,12 +71,19 @@ _BUDGET_NAMES = {
     _native.BUDGET_NORMALIZATION_BYTES: "normalization_bytes",
 }
 
-# How often a scan that waits for a worker checks its cancel token and
-# whether the engine closed, and how often close checks for an interrupt.
-_POLL_SECONDS = 0.05
+# A scan that waits for a worker, and close while it waits for scans, poll:
+# first after the shortest wait, then after twice as long each time, up to
+# the longest. The waits use no Python lock, because an interrupt raised in
+# the Python code of a lock or condition object can leave it held.
+_SHORTEST_WAIT = 0.0005
+_LONGEST_WAIT = 0.005
+
+# The longest timeout that fits the library's nanosecond deadline. A longer
+# one is the same as no deadline for any real scan, so it is cut to this.
+_LONGEST_TIMEOUT = (2**64 - 1) / 1e9
 
 
-def _no_pickle(value: object) -> NoReturn:
+def _no_pickle(value: object, protocol: object = None) -> NoReturn:
     raise TypeError(f"cannot pickle a rustleaks {type(value).__name__}")
 
 
@@ -119,10 +126,14 @@ def _check_timeout(value: object) -> float | None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"timeout must be a number or None, not {type(value).__name__}")
-    seconds = float(value)
+    try:
+        seconds = float(value)
+    except OverflowError:
+        # An int too large for a float.
+        seconds = _LONGEST_TIMEOUT
     if not math.isfinite(seconds) or seconds < 0:
         raise ValueError("timeout must be a finite number of seconds, 0 or more")
-    return seconds
+    return min(seconds, _LONGEST_TIMEOUT)
 
 
 def _encode_text(name: str, value: str) -> bytes:
@@ -314,11 +325,14 @@ class Engine:
         )
         self._max_input_bytes = limit.value
         self._rules = _read_rules(library, self._handle)
+        # Guards the check and the registration of a scan, and close. It is
+        # only ever entered with ``with``, which takes and releases it in C,
+        # so an interrupt cannot leave it held.
         self._lock = threading.Lock()
-        self._idle = threading.Condition(self._lock)
-        # One entry for each scan that holds a worker. Adding or removing an
-        # entry is one step, so an interrupt cannot leave a count wrong.
-        self._active: dict[object, None] = {}
+        # One entry for each scan that holds a worker, from its key to the
+        # thread that runs it. Adding or removing an entry is one step, so an
+        # interrupt cannot leave a scan half registered.
+        self._active: dict[object, int] = {}
         self._closed = False
         _live_engines.add(self)
 
@@ -439,16 +453,24 @@ class Engine:
 
         New scans raise ``ClosedError``. Running scans are not cancelled:
         ``close`` waits until they return. Calling ``close`` again does
-        nothing.
+        nothing. Calling it on a thread that is inside a scan of this engine,
+        for example from a signal handler, raises ``RuntimeError``, because
+        it would wait for itself.
         """
-        lock = getattr(self, "_lock", None)
-        if lock is None:
+        if getattr(self, "_lock", None) is None:
             return
-        with self._idle:
+        if threading.get_ident() in self._active.values():
+            raise RuntimeError(
+                "close() was called on a thread that is inside a scan of this "
+                "engine, for example from a signal handler; it would wait forever"
+            )
+        with self._lock:
             self._closed = True
-            while self._active:
-                # A short wait lets an interrupt reach this thread.
-                self._idle.wait(_POLL_SECONDS)
+        wait = _SHORTEST_WAIT
+        while self._active:
+            time.sleep(wait)
+            wait = min(wait * 2, _LONGEST_WAIT)
+        with self._lock:
             handle = self._handle
             if handle:
                 self._handle = POINTER(_native.Engine)()
@@ -501,7 +523,6 @@ class Engine:
         # thread of the parent.
         self._handle = POINTER(_native.Engine)()
         self._lock = threading.Lock()
-        self._idle = threading.Condition(self._lock)
         self._active = {}
         self._closed = True
 
@@ -513,12 +534,14 @@ class Engine:
     def _acquire(self, key: object, deadline: float | None, cancel: CancelToken | None) -> None:
         """Waits for a free worker and registers ``key`` as a running scan.
 
-        Call it inside the ``try`` whose ``finally`` calls ``_leave(key)``.
-        The registration is one dictionary store, so an interrupt leaves the
-        scan either registered or not, and ``_leave`` handles both.
+        Call it inside the ``try`` whose ``finally`` removes ``key`` from
+        ``_active``. The registration is one dictionary store under the
+        lock, so an interrupt leaves the scan either registered or not, and
+        the removal handles both.
         """
-        with self._idle:
-            while True:
+        wait = _SHORTEST_WAIT
+        while True:
+            with self._lock:
                 if self._closed:
                     raise ClosedError("the engine is closed")
                 if cancel is not None and cancel.cancelled:
@@ -530,26 +553,20 @@ class Engine:
                 # A free worker is taken even when the timeout has passed;
                 # the scan then gets a deadline of 0.
                 if len(self._active) < self._workers:
-                    self._active[key] = None
+                    self._active[key] = threading.get_ident()
                     return
-                wait = _POLL_SECONDS
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise ScanTimeoutError(
-                            "the timeout passed while the scan waited for a worker",
-                            termination="timeout",
-                            usage=Usage(),
-                        )
-                    wait = min(wait, remaining)
-                # A short wait lets the scan see its token and timeout.
-                self._idle.wait(wait)
-
-    def _leave(self, key: object) -> None:
-        """Removes ``key`` if it is registered and wakes waiting threads."""
-        with self._idle:
-            if self._active.pop(key, self) is None:
-                self._idle.notify_all()
+            pause = wait
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ScanTimeoutError(
+                        "the timeout passed while the scan waited for a worker",
+                        termination="timeout",
+                        usage=Usage(),
+                    )
+                pause = min(pause, remaining)
+            time.sleep(pause)
+            wait = min(wait * 2, _LONGEST_WAIT)
 
     def _run(self, payload: bytes, request: _ScanRequest) -> list[Finding]:
         if self._closed:
@@ -567,7 +584,9 @@ class Engine:
             handle = self._handle
             return self._scan_native(handle, payload, request, deadline)
         finally:
-            self._leave(key)
+            # One call with no Python frame in between, so an interrupt
+            # cannot skip it.
+            self._active.pop(key, None)
 
     def _scan_native(
         self,
