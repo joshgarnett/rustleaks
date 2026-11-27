@@ -11,6 +11,10 @@ load(
 # crates set it as `CARGO_PKG_VERSION`.
 RUSTLEAKS_VERSION = "0.2.0"
 
+# The PEP 440 form of RUSTLEAKS_VERSION, which the Python wheel uses: a
+# pre-release such as 0.3.0-alpha.1 is 0.3.0a1.
+RUSTLEAKS_PYTHON_VERSION = "0.2.0"
+
 _DOC_TEST_INCOMPATIBLE = select({
     "@platforms//os:windows": ["@platforms//:incompatible"],
     # rules_rust 0.72.0's stable-channel doctest writer strips every path

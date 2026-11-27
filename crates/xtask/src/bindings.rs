@@ -9,6 +9,8 @@
 //! - `dry-run` builds and runs a Go program from the proxy, and installs the
 //!   wheel into a new virtual environment without network access and runs a
 //!   scan.
+//! - `python-version` prints the PEP 440 form of a release version, which
+//!   the Python package and its wheel file names use.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -26,7 +28,13 @@ mod wheel;
 mod zip;
 
 /// Subcommands accepted after `bindings`.
-pub(crate) const SUBCOMMANDS: &[&str] = &["go-layout", "go-proxy", "finish-wheel", "dry-run"];
+pub(crate) const SUBCOMMANDS: &[&str] = &[
+    "go-layout",
+    "go-proxy",
+    "finish-wheel",
+    "dry-run",
+    "python-version",
+];
 
 /// The published Go module path.
 const GO_MODULE: &str = "github.com/joshgarnett/rustleaks-go";
@@ -189,6 +197,10 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
                 pythons,
             )
         }
+        [command, version] if command == "python-version" => {
+            println!("{}", python_version(version)?);
+            Ok(())
+        }
         _ => Err(usage()),
     }
 }
@@ -204,7 +216,8 @@ fn usage() -> String {
 const USAGE_LINES: &str = "cargo xtask bindings go-layout <version> <libraries-dir> <output-dir>\n       \
      cargo xtask bindings go-proxy <layout-dir> <proxy-dir>\n       \
      cargo xtask bindings finish-wheel <config> <wheel> <output-dir>\n       \
-     cargo xtask bindings dry-run <config> <go-root> <proxy-dir> <wheel> <work-dir> <python>...";
+     cargo xtask bindings dry-run <config> <go-root> <proxy-dir> <wheel> <work-dir> <python>...\n       \
+     cargo xtask bindings python-version <version>";
 
 fn platform_for_config(config: &str) -> Result<&'static Platform, String> {
     let config = config.strip_prefix("release-").unwrap_or(config);
@@ -214,10 +227,59 @@ fn platform_for_config(config: &str) -> Result<&'static Platform, String> {
         .ok_or_else(|| format!("no binding platform for Bazel config {config}"))
 }
 
+/// Requires a release version that Go accepts as a module version and that
+/// a module proxy serves without escaping: a semantic version without build
+/// metadata or capital letters.
 fn check_version(version: &str) -> Result<(), String> {
-    semver::Version::parse(version)
-        .map(|_| ())
-        .map_err(|error| format!("version {version:?} is not a semantic version: {error}"))
+    let parsed = semver::Version::parse(version)
+        .map_err(|error| format!("version {version:?} is not a semantic version: {error}"))?;
+    if !parsed.build.is_empty() {
+        return Err(format!("version {version:?} has build metadata"));
+    }
+    if version.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(format!("version {version:?} has a capital letter"));
+    }
+    Ok(())
+}
+
+/// Returns the PEP 440 form of a release version, which the Python package
+/// uses: `X.Y.Z` stays `X.Y.Z`, and the pre-releases `X.Y.Z-alpha.N`,
+/// `X.Y.Z-beta.N` and `X.Y.Z-rc.N` become `X.Y.ZaN`, `X.Y.ZbN` and
+/// `X.Y.ZrcN`. Any other suffix, and build metadata, is an error.
+pub(crate) fn python_version(version: &str) -> Result<String, String> {
+    let parsed = semver::Version::parse(version)
+        .map_err(|error| format!("version {version:?} is not a semantic version: {error}"))?;
+    if !parsed.build.is_empty() {
+        return Err(format!(
+            "version {version:?} has build metadata, which a Python version cannot hold"
+        ));
+    }
+    let release = format!("{}.{}.{}", parsed.major, parsed.minor, parsed.patch);
+    if parsed.pre.is_empty() {
+        return Ok(release);
+    }
+    let unsupported = || {
+        format!(
+            "version {version:?} has a pre-release suffix other than -alpha.N, -beta.N or -rc.N, \
+             which has no Python version"
+        )
+    };
+    let (kind, number) = parsed
+        .pre
+        .as_str()
+        .split_once('.')
+        .ok_or_else(unsupported)?;
+    let kind = match kind {
+        "alpha" => "a",
+        "beta" => "b",
+        "rc" => "rc",
+        _ => return Err(unsupported()),
+    };
+    // Semantic versions already reject a number with a leading zero.
+    if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(unsupported());
+    }
+    Ok(format!("{release}{kind}{number}"))
 }
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
@@ -1257,7 +1319,54 @@ mod tests {
     }
 
     #[test]
+    fn python_version_maps_release_and_pre_release_versions() {
+        for (version, expected) in [
+            ("0.3.0", "0.3.0"),
+            ("10.20.30", "10.20.30"),
+            ("0.3.0-alpha.1", "0.3.0a1"),
+            ("0.3.0-alpha.12", "0.3.0a12"),
+            ("1.0.0-beta.2", "1.0.0b2"),
+            ("1.0.0-rc.0", "1.0.0rc0"),
+        ] {
+            assert_eq!(python_version(version).unwrap(), expected, "{version}");
+        }
+        for version in [
+            "0.3.0-alpha",
+            "0.3.0-alpha.1.2",
+            "0.3.0-alpha.x",
+            "0.3.0-alpha.01",
+            "0.3.0-Alpha.1",
+            "0.3.0-dev.1",
+            "0.3.0-pre.1",
+            "0.3.0-rc1",
+            "0.3.0+build.1",
+            "0.3.0-rc.1+build.1",
+            "0.3",
+            "v0.3.0",
+            "",
+        ] {
+            assert!(python_version(version).is_err(), "{version}");
+        }
+    }
+
+    #[test]
+    fn go_versions_need_no_proxy_escaping() {
+        for version in ["0.3.0", "0.3.0-alpha.1", "1.0.0-rc.2"] {
+            check_version(version).unwrap();
+        }
+        for version in ["0.3.0-RC.1", "0.3.0+build.1", "0.3", "v0.3.0"] {
+            assert!(check_version(version).is_err(), "{version}");
+        }
+    }
+
+    #[test]
     fn layout_and_proxy_agree_on_hashes() {
+        for version in ["1.2.3", "1.2.3-alpha.1"] {
+            layout_and_proxy_agree_on_hashes_at(version);
+        }
+    }
+
+    fn layout_and_proxy_agree_on_hashes_at(version: &str) {
         let root = crate::workspace_root().unwrap();
         let temp = ScopedTempDir::new("bindings-layout").unwrap();
         let libraries = temp.path.join("libraries");
@@ -1273,7 +1382,6 @@ mod tests {
             )
             .unwrap();
         }
-        let version = "1.2.3";
         let source = temp.path.join("source");
         write(
             &source.join("go.mod"),
@@ -1282,7 +1390,7 @@ mod tests {
         .unwrap();
         write(
             &source.join("library.go"),
-            b"package rustleaks\n\nconst packageVersion = \"1.2.3\"\n",
+            format!("package rustleaks\n\nconst packageVersion = \"{version}\"\n").as_bytes(),
         )
         .unwrap();
         write(&source.join("library_test.go"), b"package rustleaks\n").unwrap();
@@ -1302,6 +1410,7 @@ mod tests {
         assert!(layout.join("library.go").is_file());
         assert!(!layout.join("library_test.go").exists());
         let windows = read_text(&layout.join("lib/windows-amd64/lib.go")).unwrap();
+        assert!(windows.contains(&format!("\tVersion = \"{version}\"\n")));
         assert!(windows.contains(&format!(
             "DLLSHA256 = \"{}\"",
             sha256_bytes(b"synthetic windows-amd64")
@@ -1351,6 +1460,16 @@ mod tests {
         for line in sums {
             assert!(hashes.contains(&line), "{line}");
         }
+        assert!(
+            hashes
+                .iter()
+                .any(|line| line.starts_with(&format!("{GO_MODULE} v{version} h1:"))),
+            "{hashes:?}"
+        );
+        assert_eq!(
+            read_text(&proxy.join(format!("{GO_MODULE}/@v/list"))).unwrap(),
+            format!("v{version}\n")
+        );
         assert!(
             proxy
                 .join(format!("{GO_MODULE}/lib/darwin-arm64/@v/v{version}.zip"))

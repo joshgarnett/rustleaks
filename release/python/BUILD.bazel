@@ -16,7 +16,7 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel:pick_file.bzl", "pick_file")
-load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION")
+load("//bazel:rust_crate.bzl", "RUSTLEAKS_PYTHON_VERSION")
 
 # The C library each wheel is built against: glibc 2.28 is the hermetic LLVM
 # toolchain's default, musl 1.2 is the musl ABI, and 14.0 is the macOS
@@ -112,7 +112,7 @@ py_wheel(
     ],
     summary = "Scan bytes and text for secrets with the Rustleaks engine",
     target_compatible_with = _COMPATIBLE,
-    version = RUSTLEAKS_VERSION,
+    version = RUSTLEAKS_PYTHON_VERSION,
     deps = [":package"] + select({
         "@platforms//os:linux": [":library_linux"],
         "@platforms//os:macos": [":library_macos"],

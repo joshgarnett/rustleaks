@@ -1,6 +1,6 @@
 //! Cargo-to-Bazel build contract validation.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -349,9 +349,10 @@ fn root_rust_targets(root: &Path) -> Result<String, String> {
         .ok_or_else(|| "BUILD.bazel omits the _RUST_TARGETS list".to_owned())
 }
 
-/// Requires the `RUSTLEAKS_VERSION` that Bazel targets use and the
-/// `module()` version in `MODULE.bazel` to equal the Cargo workspace package
-/// version.
+/// Requires the `RUSTLEAKS_VERSION` that Bazel targets use, the
+/// `module()` version in `MODULE.bazel` and the Go package version to equal
+/// the Cargo workspace package version, and `RUSTLEAKS_PYTHON_VERSION` and
+/// the Python package version to equal its PEP 440 form.
 fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
     let cargo = workspace
         .get("workspace")
@@ -364,14 +365,7 @@ fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
     let module = fs::read_to_string(root.join("MODULE.bazel"))
         .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
     check_version_text(cargo, &rules, &module)?;
-    for (path, version) in crate::bindings::binding_versions(root)? {
-        if version != cargo {
-            return Err(format!(
-                "{path} names version {version}, not the Cargo workspace version {cargo}"
-            ));
-        }
-    }
-    Ok(())
+    check_binding_versions(cargo, &crate::bindings::binding_versions(root)?)
 }
 
 fn check_version_text(cargo: &str, rules: &str, module: &str) -> Result<(), String> {
@@ -380,11 +374,40 @@ fn check_version_text(cargo: &str, rules: &str, module: &str) -> Result<(), Stri
         &format!("\nRUSTLEAKS_VERSION = \"{cargo}\"\n"),
         "bazel/rust_crate.bzl workspace version",
     )?;
+    let python = crate::bindings::python_version(cargo)?;
+    require_contains(
+        rules,
+        &format!("\nRUSTLEAKS_PYTHON_VERSION = \"{python}\"\n"),
+        "bazel/rust_crate.bzl Python version",
+    )?;
     let found = module_version(module).ok_or("MODULE.bazel module() has no version")?;
     if found != cargo {
         return Err(format!(
             "MODULE.bazel module() version {found} differs from the Cargo workspace version {cargo}"
         ));
+    }
+    Ok(())
+}
+
+/// Requires the Go package to name the Cargo version and the Python package
+/// to name its PEP 440 form.
+fn check_binding_versions(
+    cargo: &str,
+    versions: &BTreeMap<&'static str, String>,
+) -> Result<(), String> {
+    let python = crate::bindings::python_version(cargo)?;
+    for (path, version) in versions {
+        let expected = if path.starts_with("bindings/python/") {
+            python.as_str()
+        } else {
+            cargo
+        };
+        if version != expected {
+            return Err(format!(
+                "{path} names version {version}, not {expected}, the binding form of the \
+                 Cargo workspace version {cargo}"
+            ));
+        }
     }
     Ok(())
 }
@@ -953,11 +976,14 @@ fn require_not_contains(haystack: &str, needle: &str, context: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{check_bazel_ignore, check_test_membership, check_version_text};
+    use super::{
+        check_bazel_ignore, check_binding_versions, check_test_membership, check_version_text,
+    };
 
     #[test]
     fn version_check_requires_bazel_rules_and_module_to_match_cargo() {
-        let rules = "load(\"x\")\nRUSTLEAKS_VERSION = \"1.2.3\"\n";
+        let rules =
+            "load(\"x\")\nRUSTLEAKS_VERSION = \"1.2.3\"\n\nRUSTLEAKS_PYTHON_VERSION = \"1.2.3\"\n";
         let module = "module(\n    name = \"rustleaks\",\n    version = \"1.2.3\",\n)\n\nbazel_dep(name = \"git\", version = \"2.55.0\")\n";
         assert!(check_version_text("1.2.3", rules, module).is_ok());
         let stale_module = module.replace("\"1.2.3\"", "\"1.2.2\"");
@@ -970,6 +996,60 @@ mod tests {
         assert!(check_version_text("1.2.3", rules, no_version).is_err());
         let stale_rules = rules.replace("1.2.3", "1.2.2");
         assert!(check_version_text("1.2.3", &stale_rules, module).is_err());
+
+        // A pre-release: Bazel and Cargo use the semantic version, the
+        // Python wheel its PEP 440 form.
+        let rules =
+            "RUSTLEAKS_VERSION = \"1.2.3-alpha.1\"\nRUSTLEAKS_PYTHON_VERSION = \"1.2.3a1\"\n";
+        let module = module.replace("\"1.2.3\"", "\"1.2.3-alpha.1\"");
+        let rules = format!("load(\"x\")\n{rules}");
+        assert!(check_version_text("1.2.3-alpha.1", &rules, &module).is_ok());
+        let semver_python = rules.replace("\"1.2.3a1\"", "\"1.2.3-alpha.1\"");
+        assert!(
+            check_version_text("1.2.3-alpha.1", &semver_python, &module)
+                .unwrap_err()
+                .contains("Python version")
+        );
+        assert!(check_version_text("1.2.3-dev.1", &rules, &module).is_err());
+    }
+
+    #[test]
+    fn binding_versions_use_the_go_and_python_forms() {
+        let versions = |go: &str, python: &str| {
+            std::collections::BTreeMap::from([
+                ("bindings/go/library.go", go.to_owned()),
+                ("bindings/python/pyproject.toml", python.to_owned()),
+                (
+                    "bindings/python/src/rustleaks/_version.py",
+                    python.to_owned(),
+                ),
+            ])
+        };
+        assert!(check_binding_versions("1.2.3", &versions("1.2.3", "1.2.3")).is_ok());
+        let cargo = "1.2.3-alpha.1";
+        assert!(check_binding_versions(cargo, &versions(cargo, "1.2.3a1")).is_ok());
+        for (go, python) in [
+            (cargo, cargo),
+            ("1.2.3a1", "1.2.3a1"),
+            ("1.2.3", "1.2.3a1"),
+            (cargo, "1.2.3"),
+            (cargo, "1.2.3.alpha1"),
+        ] {
+            assert!(
+                check_binding_versions(cargo, &versions(go, python)).is_err(),
+                "{go} {python}"
+            );
+        }
+        let mut mixed = versions(cargo, "1.2.3a1");
+        mixed.insert(
+            "bindings/python/src/rustleaks/_version.py",
+            cargo.to_owned(),
+        );
+        assert!(
+            check_binding_versions(cargo, &mixed)
+                .unwrap_err()
+                .contains("_version.py")
+        );
     }
 
     #[test]

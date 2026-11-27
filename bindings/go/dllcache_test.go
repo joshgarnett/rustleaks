@@ -96,6 +96,21 @@ func TestExtractLibraryWritesAPrivateReadOnlyFile(t *testing.T) {
 	}
 }
 
+func TestExtractLibraryAcceptsAPreReleaseVersion(t *testing.T) {
+	root := cacheRoot(t)
+	data := []byte("fake library bytes")
+	lib := fakeLibrary(t, data)
+	lib.version = "0.3.0-alpha.1"
+	path, err := extractLibrary(root, lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "0.3.0-alpha.1-"+lib.dllSHA256[:16], "rustleaks_ffi.dll")
+	if path != want {
+		t.Fatalf("path %s, want %s", path, want)
+	}
+}
+
 func TestExtractLibraryReusesAFileWithTheRightHash(t *testing.T) {
 	root := cacheRoot(t)
 	lib := fakeLibrary(t, []byte("first"))

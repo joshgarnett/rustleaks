@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 import sys
 import threading
 from ctypes import (
@@ -288,6 +289,28 @@ def _declare(library: ctypes.CDLL) -> None:
         function.restype = c_int32
 
 
+_RELEASE_VERSION = re.compile(
+    r"((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?"
+)
+_PRE_RELEASE = {"alpha": "a", "beta": "b", "rc": "rc"}
+
+
+def python_version(version: str) -> str | None:
+    """Returns the PEP 440 form of a Rustleaks release version, which this
+    package's ``__version__`` holds: ``0.3.0`` stays ``0.3.0``, and
+    ``0.3.0-alpha.1``, ``0.3.0-beta.1`` and ``0.3.0-rc.1`` become
+    ``0.3.0a1``, ``0.3.0b1`` and ``0.3.0rc1``. Returns None for any other
+    version. ``cargo xtask bindings python-version`` uses the same mapping.
+    """
+    match = _RELEASE_VERSION.fullmatch(version)
+    if match is None:
+        return None
+    release, kind, number = match.groups()
+    if kind is None:
+        return release
+    return f"{release}{_PRE_RELEASE[kind]}{number}"
+
+
 def _check_identity(library: ctypes.CDLL, path: str) -> None:
     abi = c_uint32()
     if library.rustleaks_abi_version(ctypes.byref(abi)) != OK:
@@ -302,7 +325,7 @@ def _check_identity(library: ctypes.CDLL, path: str) -> None:
     if library.rustleaks_version(ctypes.byref(pointer), ctypes.byref(length)) != OK:
         raise LibraryError(f"cannot read the version of {path}", "version")
     version = ctypes.string_at(pointer.value or 0, length.value).decode("utf-8", "replace")
-    if version != __version__:
+    if python_version(version) != __version__:
         raise LibraryError(
             f"{path} has version {version}, but this package has version {__version__}",
             "version",

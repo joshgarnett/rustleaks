@@ -213,7 +213,60 @@ class LibraryTest(unittest.TestCase):
         pointer = ctypes.c_void_p()
         length = c_size_t()
         self.assertEqual(library.rustleaks_version(byref(pointer), byref(length)), _native.OK)
-        self.assertEqual(ctypes.string_at(pointer.value, length.value).decode(), rustleaks.__version__)
+        version = ctypes.string_at(pointer.value, length.value).decode()
+        self.assertEqual(_native.python_version(version), rustleaks.__version__)
+
+    def test_python_version_of_release_versions(self) -> None:
+        for version, expected in [
+            ("0.3.0", "0.3.0"),
+            ("0.3.0-alpha.1", "0.3.0a1"),
+            ("0.3.0-alpha.12", "0.3.0a12"),
+            ("1.0.0-beta.2", "1.0.0b2"),
+            ("1.0.0-rc.0", "1.0.0rc0"),
+        ]:
+            self.assertEqual(_native.python_version(version), expected, version)
+        for version in [
+            "0.3.0a1",
+            "0.3.0-alpha",
+            "0.3.0-alpha.01",
+            "0.3.0-dev.1",
+            "0.3.0-rc1",
+            "0.3.0+build.1",
+            "00.3.0",
+            "0.3",
+            "",
+        ]:
+            self.assertIsNone(_native.python_version(version), version)
+
+    def test_pre_release_library_matches_its_package_version(self) -> None:
+        # A library reports its semantic version, and the package holds the
+        # PEP 440 form of it.
+        def identity(native: str) -> Any:
+            text = ctypes.create_string_buffer(native.encode())
+
+            class Library:
+                def rustleaks_abi_version(self, abi: Any) -> int:
+                    abi._obj.value = _native.ABI_VERSION
+                    return _native.OK
+
+                def rustleaks_version(self, pointer: Any, length: Any) -> int:
+                    pointer._obj.value = ctypes.addressof(text)
+                    length._obj.value = len(native)
+                    return _native.OK
+
+            return Library()
+
+        version = _native.__version__
+        try:
+            _native.__version__ = "0.3.0a1"
+            _native._check_identity(identity("0.3.0-alpha.1"), "library")
+            for native in ["0.3.0a1", "0.3.0", "0.3.0-alpha.2", "0.3.0-beta.1"]:
+                with self.assertRaises(rustleaks.LibraryError, msg=native) as caught:
+                    _native._check_identity(identity(native), "library")
+                self.assertEqual(caught.exception.kind, "version")
+                self.assertIn(native, str(caught.exception))
+        finally:
+            _native.__version__ = version
 
     def test_package_metadata(self) -> None:
         with open(support.runfile(os.environ["RUSTLEAKS_TEST_PYPROJECT"]), "rb") as file:
