@@ -751,20 +751,29 @@ fn owned_safety_check() -> Result<(), String> {
             return Err(format!("{relative} uses unsafe Rust in a test"));
         }
     }
-    let outside = rust_files_outside_crates(&root)?;
-    for relative in &outside {
+    // A crate root forbids unsafe code only for the files that the compiler
+    // reaches from it, and a Bazel target can name a root that the list
+    // above does not know. So every Rust file outside the FFI crate is also
+    // searched for unsafe code and for includes the search cannot follow.
+    let searched = rust_files_outside_unsafe_crate(&root)?;
+    for relative in &searched {
         let source = std::fs::read_to_string(root.join(relative))
             .map_err(|error| format!("cannot read {relative}: {error}"))?;
-        if mentions_unsafe(&source) {
+        if mentions_unsafe(&source) || mentions_unsafe_attribute(&source) {
             return Err(format!(
                 "{relative} uses unsafe Rust outside {UNSAFE_CRATE}; move it into crates/rustleaks-ffi"
             ));
         }
+        if let Some(include) = non_rust_include(&source) {
+            return Err(format!(
+                "{relative} includes {include:?}, which the unsafe search does not read; include only .rs files"
+            ));
+        }
     }
     println!(
-        "every owned crate root forbids unsafe code except {UNSAFE_CRATE_ROOT}, which denies undocumented unsafe code; {} Rust files under {} use no unsafe Rust",
-        outside.len(),
-        RUST_OUTSIDE_CRATES.join(" and ")
+        "every owned crate root forbids unsafe code except {UNSAFE_CRATE_ROOT}, which denies undocumented unsafe code; {} Rust files outside crates/{UNSAFE_CRATE}, under crates/ and {}, use no unsafe Rust",
+        searched.len(),
+        RUST_OUTSIDE_CRATES.join(", ")
     );
     Ok(())
 }
@@ -773,8 +782,9 @@ fn owned_safety_check() -> Result<(), String> {
 /// never in the unsafe inventory, so it must not use unsafe Rust at all.
 const RUST_OUTSIDE_CRATES: &[&str] = &["bazel", "bindings", "release"];
 
-/// Lists the Rust files under [`RUST_OUTSIDE_CRATES`], relative to `root`.
-fn rust_files_outside_crates(root: &Path) -> Result<Vec<String>, String> {
+/// Lists the Rust files under `crates/`, except those of [`UNSAFE_CRATE`],
+/// and under [`RUST_OUTSIDE_CRATES`], relative to `root`.
+fn rust_files_outside_unsafe_crate(root: &Path) -> Result<Vec<String>, String> {
     fn walk(root: &Path, directory: &Path, files: &mut Vec<String>) -> Result<(), String> {
         let Ok(entries) = std::fs::read_dir(directory) else {
             return Ok(());
@@ -795,8 +805,55 @@ fn rust_files_outside_crates(root: &Path) -> Result<Vec<String>, String> {
     for directory in RUST_OUTSIDE_CRATES {
         walk(root, &root.join(directory), &mut files)?;
     }
+    let crates = std::fs::read_dir(root.join("crates"))
+        .map_err(|error| format!("cannot list crates/: {error}"))?;
+    for entry in crates {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() && !path.ends_with(UNSAFE_CRATE) {
+            walk(root, &path, &mut files)?;
+        }
+    }
     files.sort();
     Ok(files)
+}
+
+/// Attributes that are unsafe without the `unsafe` keyword before edition
+/// 2024.
+const UNSAFE_ATTRIBUTES: [&str; 3] = ["no_mangle", "export_name", "link_section"];
+
+/// Reports whether Rust source uses an attribute in [`UNSAFE_ATTRIBUTES`] in
+/// code.
+fn mentions_unsafe_attribute(source: &str) -> bool {
+    code_only(source)
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .any(|word| UNSAFE_ATTRIBUTES.contains(&word))
+}
+
+/// Returns the first `include!` or `#[path = ...]` target in Rust source that
+/// is not a literal `.rs` path, since the unsafe search reads only `.rs`
+/// files.
+fn non_rust_include(source: &str) -> Option<String> {
+    let code = code_only(source);
+    let compact = code.split_whitespace().collect::<String>();
+    if !compact.contains("include!(") && !compact.contains("#[path=") {
+        return None;
+    }
+    let compact_source = source.split_whitespace().collect::<String>();
+    for opener in ["include!(", "#[path="] {
+        for (offset, _) in compact_source.match_indices(opener) {
+            let rest = &compact_source[offset + opener.len()..];
+            let target = rest
+                .strip_prefix('"')
+                .and_then(|literal| literal.split_once('"'))
+                .map(|(path, _)| path);
+            match target {
+                Some(path) if path.ends_with(".rs") => {}
+                Some(path) => return Some(path.to_owned()),
+                None => return Some(rest.chars().take(40).collect()),
+            }
+        }
+    }
+    None
 }
 
 /// Returns the code of Rust source with comments (nested block comments
@@ -1195,6 +1252,33 @@ mod tests {
             "fn f<'a>() { let _: &'a u8; unsafe { g() } }\n"
         ));
         assert!(!mentions_unsafe("const S: &str = cr#\"unsafe\"#;\n"));
+        // Unsafe attributes from before edition 2024 count, in code only.
+        assert!(super::mentions_unsafe_attribute(
+            "#[no_mangle]\npub extern \"C\" fn f() {}\n"
+        ));
+        assert!(super::mentions_unsafe_attribute(
+            "#[link_section = \".x\"]\nstatic X: u8 = 0;\n"
+        ));
+        assert!(!super::mentions_unsafe_attribute(
+            "// #[no_mangle]\nconst S: &str = \"export_name\";\n"
+        ));
+        // Includes must name .rs files, which the search reads too.
+        assert_eq!(super::non_rust_include("include!(\"tables.rs\");\n"), None);
+        assert_eq!(
+            super::non_rust_include("const S: &str = include_str!(\"x.txt\");\n"),
+            None
+        );
+        assert_eq!(
+            super::non_rust_include("include!(\"x.inc\");\n").as_deref(),
+            Some("x.inc")
+        );
+        assert_eq!(
+            super::non_rust_include("#[path = \"x.txt\"]\nmod x;\n").as_deref(),
+            Some("x.txt")
+        );
+        assert!(
+            super::non_rust_include("include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"));\n").is_some()
+        );
         // An identifier that ends in r is not a raw string prefix.
         assert!(mentions_unsafe(
             "fn f() { let r = 1; let br = \"x\"; unsafe { g() } }\n"
