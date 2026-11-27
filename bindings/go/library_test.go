@@ -76,6 +76,23 @@ func TestLibraryErrorKinds(t *testing.T) {
 	}
 }
 
+func TestClosedStatusIsErrClosed(t *testing.T) {
+	if err := statusError("test", errorClosed); err != ErrClosed {
+		t.Errorf("statusError: %v, want ErrClosed", err)
+	}
+	if err := scanError(errorClosed, "the engine was made in another process"); !errors.Is(err, ErrClosed) {
+		t.Errorf("scanError: %v, want ErrClosed", err)
+	}
+	var sizeErr *inputSizeError
+	if err := scanError(errorInputTooLarge, "too large"); !errors.As(err, &sizeErr) {
+		t.Errorf("scanError input size: %v", err)
+	}
+	var libErr *LibraryError
+	if err := scanError(errorPanic, "panic"); !errors.As(err, &libErr) || libErr.Kind != LibraryPanic {
+		t.Errorf("scanError panic: %v", err)
+	}
+}
+
 func TestNoEmbeddedLibraryInThisRepository(t *testing.T) {
 	if embeddedLibrary != nil {
 		t.Fatal("embeddedLibrary is set; only the release generator sets it")

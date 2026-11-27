@@ -9,7 +9,8 @@ import (
 )
 
 // ErrClosed is returned by a scan on an engine that Close has closed or is
-// closing.
+// closing, and when the library refuses an engine that another process
+// made.
 var ErrClosed = errors.New("rustleaks: engine is closed")
 
 // ErrInputTooLarge is returned, wrapped with the sizes, for an input longer
@@ -206,9 +207,26 @@ func (e *LibraryError) Error() string {
 // Unwrap returns the underlying error.
 func (e *LibraryError) Unwrap() error { return e.Err }
 
-// statusError turns a status without an error handle into an error.
+// statusError turns a status without an error handle into an error. The
+// library returns errorClosed for an engine made in another process, which
+// is ErrClosed here.
 func statusError(op string, status int32) error {
+	if status == errorClosed {
+		return ErrClosed
+	}
 	return &LibraryError{Kind: libraryKind(status), Op: op, Message: statusText(status)}
+}
+
+// scanError turns the error kind and message of a failed scan into an error.
+func scanError(kind int32, message string) error {
+	switch kind {
+	case errorInputTooLarge:
+		return &inputSizeError{message: message}
+	case errorClosed:
+		return ErrClosed
+	default:
+		return &LibraryError{Kind: libraryKind(kind), Op: "scan", Message: message}
+	}
 }
 
 // libraryKind is the LibraryErrorKind of a native status or error kind.

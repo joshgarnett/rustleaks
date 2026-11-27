@@ -17,6 +17,7 @@ const (
 	errorRuleSelection   = 4
 	errorEngine          = 5
 	errorInputTooLarge   = 6
+	errorClosed          = 7
 	errorPanic           = 8
 )
 

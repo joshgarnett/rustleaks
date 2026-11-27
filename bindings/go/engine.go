@@ -414,10 +414,7 @@ func (e *Engine) scanNative(ctx context.Context, input unsafe.Pointer, n int, se
 	runtime.KeepAlive(settings)
 	if status != statusOK {
 		kind, message := takeError(failure, status)
-		if kind == errorInputTooLarge {
-			return nil, &inputSizeError{message: message}
-		}
-		return nil, &LibraryError{Kind: libraryKind(kind), Op: "scan", Message: message}
+		return nil, scanError(kind, message)
 	}
 	defer func() {
 		handle := result

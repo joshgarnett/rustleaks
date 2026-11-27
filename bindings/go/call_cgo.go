@@ -67,6 +67,8 @@ const (
 	_ = uint(optionWorkers - C.RUSTLEAKS_OPTION_WORKERS)
 	_ = uint(C.RUSTLEAKS_ERROR_PANIC - errorPanic)
 	_ = uint(errorPanic - C.RUSTLEAKS_ERROR_PANIC)
+	_ = uint(C.RUSTLEAKS_ERROR_CLOSED - errorClosed)
+	_ = uint(errorClosed - C.RUSTLEAKS_ERROR_CLOSED)
 )
 
 func bytePtr(p unsafe.Pointer) *C.uint8_t { return (*C.uint8_t)(p) }
