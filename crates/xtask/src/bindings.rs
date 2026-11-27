@@ -1059,9 +1059,12 @@ fn python_dry_run(
 
 /// Checks that the installed shared library needs only system libraries:
 /// glibc 2.28 or older symbols on GNU Linux, only `libc.so` on musl, and
-/// only system libraries on macOS.
+/// only system libraries and an `LC_UUID` load command on macOS.
 fn check_library_dependencies(platform: &Platform, library: &Path) -> Result<(), String> {
     if platform.config.starts_with("macos") {
+        let bytes = fs::read(library)
+            .map_err(|error| format!("cannot read {}: {error}", library.display()))?;
+        crate::release_artifact::check_mach_o_library(platform.target, &bytes)?;
         // The wheel tag names the oldest macOS the library runs on; the
         // library's own deployment target must not be newer.
         let load_commands = command_output(Command::new("otool").arg("-l").arg(library))?;

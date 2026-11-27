@@ -228,7 +228,7 @@ jobs:
           TEST_COMPILATION_MODE: ${{ matrix.test_compilation_mode }}
         run: |
           bazelisk build --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" //:build
-          if [[ "${TARGET}" == *-linux-* ]]; then
+          if [[ "${TARGET}" == *-linux-* || "${TARGET}" == *-apple-darwin ]]; then
             cli="$(bazelisk cquery --config="${BAZEL_CONFIG}" --host_platform="${PLATFORM}" --output=files //crates/rustleaks-cli:rustleaks)"
             cargo xtask release-artifact check-executable "${TARGET}" "${cli}"
           fi

@@ -55,6 +55,9 @@
 - The Linux and macOS release binaries are 25 to 30 percent smaller, and
   start with about 10 percent fewer instructions. They are built with
   link-time optimization. Scan speed does not change.
+- The macOS release binaries have a Mach-O UUID (`LC_UUID`). They are
+  linked against a newer macOS SDK, and dyld on recent macOS refuses to
+  start such a binary without a UUID. Earlier releases left the UUID out.
 - Scans use less CPU time, and scans of large folder trees with many
   detection threads use less memory. Each detection thread now keeps its own
   pattern search caches. All threads together keep an estimated 128 MiB of

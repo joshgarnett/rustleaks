@@ -302,10 +302,20 @@ entry. `release-artifact prepare` also checks the ELF type of each Linux
 binary: the GNU binaries must be PIE (`ET_DYN`) with an interpreter, and the
 x86_64 musl binary must be a static PIE. Rust's `aarch64-unknown-linux-musl`
 target links a static executable that is not PIE (`ET_EXEC`), so the check
-requires only static linking there and accepts either type. The
-native Linux CI lanes run the same check, `release-artifact check-executable`,
-on their CLI build. macOS builds leave out the nondeterministic Mach-O UUID before the
-linker adds any ad-hoc signature. No other difference is normalized.
+requires only static linking there and accepts either type.
+
+For macOS binaries the same check requires a thin 64-bit Mach-O executable
+for the target's CPU with one `LC_UUID` load command. dyld on recent macOS
+refuses to start an executable that is linked against a recent SDK and has
+no UUID, and the hosted macOS runners do not enforce that, so a binary
+without one passes every smoke test there. The hermetic `ld64.lld` derives
+the UUID from a hash of the linked output, so the two isolated builds keep
+the same UUID and stay byte identical. No build difference is normalized.
+
+The native Linux and macOS CI lanes run the same check,
+`release-artifact check-executable`, on their CLI build, and the macOS
+release lanes run it on the first build before the smoke test. The bindings
+dry run applies the `LC_UUID` check to the installed macOS library.
 
 #### Linux packages
 
@@ -524,10 +534,11 @@ the checksums.
 
 1. On each native lane it builds `//release/native:all` and
    `//release/python:wheel` with the lane's `release-bindings-*` config from
-   `.bazelrc`. Those configs are the lane's release settings, with two
-   differences: musl lanes build for `//platforms:linux_<cpu>_musl_c`, so the
-   shared library links the shared musl libc, and macOS libraries keep their
-   Mach-O UUID, because dyld does not load a dylib without one. The Go
+   `.bazelrc`. Those configs are the lane's release settings, with one
+   difference: musl lanes build for `//platforms:linux_<cpu>_musl_c`, so the
+   shared library links the shared musl libc. macOS libraries keep their
+   Mach-O UUID like the executables, because dyld does not load a dylib
+   without one. The Go
    archive leaves out the LLVM bitcode sections that Rust's standard library
    objects carry, because Go refuses a cgo library with bitcode.
 2. `cargo xtask bindings finish-wheel` turns the Bazel wheel into the
