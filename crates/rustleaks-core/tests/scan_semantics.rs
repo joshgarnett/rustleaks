@@ -173,9 +173,9 @@ fn empty_matches_keep_invalid_byte_progression_and_budget_charges() {
     assert_eq!(complete.usage().decoded_bytes(), 0);
     assert_eq!(complete.findings().len(), 3);
     for (finding, (range, coordinates)) in complete.findings().iter().zip([
-        (0..0, (0, 0, 1, 0)),
-        (1..4, (0, 0, 2, 4)),
-        (5..5, (1, 1, 1, 0)),
+        (0..0, (1, 1, 1, 0)),
+        (1..4, (1, 1, 2, 4)),
+        (5..5, (2, 2, 1, 0)),
     ]) {
         assert_eq!(finding.rule_id().as_bytes(), b"empty");
         assert_eq!(finding.match_range().exact().unwrap().as_range(), range);

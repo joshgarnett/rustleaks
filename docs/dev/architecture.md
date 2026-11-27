@@ -7,8 +7,11 @@ between them, and where to make common changes. For using the library, see
 ## Design rules
 
 - Detection is synchronous and works on bytes in memory. The engine reads no
-  files, starts no threads, uses no async runtime, writes no logs and keeps
-  no process-wide state.
+  files, uses no async runtime, writes no logs and keeps no process-wide
+  state. It starts one thread only to compile a pattern with more than 200
+  groups, with a 32 MiB stack, and waits for it. Other patterns are checked
+  on the thread that loads the configuration and compiled on the thread
+  that runs the first search.
 - An `Engine` is immutable, `Send` and `Sync`. Callers decide how to share it
   and how to schedule scans.
 - `rustleaks-core` does not depend on archives, Git, reports, the CLI, async
@@ -19,7 +22,8 @@ between them, and where to make common changes. For using the library, see
 - Regex types do not appear in the public API of `rustleaks-core`.
   Configuration and baseline parse errors carry the `toml` and `serde_json`
   error as their source.
-- Owned crates forbid unsafe Rust.
+- Owned crates forbid unsafe Rust, except `rustleaks-ffi`. See
+  [Dependencies](dependencies.md#unsafe-code-in-rustleaks-ffi).
 - Every limit is explicit. See [Engine internals](engine-internals.md) and
   [Resource limits](../user/resource-limits.md).
 
@@ -31,13 +35,15 @@ between them, and where to make common changes. For using the library, see
 | `rustleaks-sources` | Files, directories, standard input, archives, Git, links to findings, cancellation and the bounded source runner | No |
 | `rustleaks-report` | JSON, CSV, JUnit, SARIF and safe template reports | No |
 | `rustleaks-cli` | The `rustleaks` command: arguments, configuration discovery, running a scan, output and exit codes | No |
+| `rustleaks-ffi` | The private C ABI that the Go and Python bindings call: options, engines, scans, results, errors and cancellation, with `include/rustleaks.h` | No |
 | `rustleaks-eval` | Quality evaluation and performance workloads | No |
 | `xtask` | Repository checks, generators, release, security, fuzz and performance tools | No |
 | `rustleaks-bzip2`, `rustleaks-rar-codec`, `rustleaks-sevenz` | Safe forks of archive decoders, used only by `rustleaks-sources` (and `rustleaks-sevenz` uses `rustleaks-bzip2`) | No |
 
 Dependencies point one way: `rustleaks-sources` and `rustleaks-report` depend
-on `rustleaks-core`, and `rustleaks-cli` depends on all three. Nothing depends
-on `rustleaks-cli`, `rustleaks-eval` or `xtask`.
+on `rustleaks-core`, `rustleaks-cli` depends on all three, and `rustleaks-ffi`
+depends only on `rustleaks-core`. Nothing depends on `rustleaks-cli`,
+`rustleaks-ffi`, `rustleaks-eval` or `xtask`.
 
 The archive decoders sit behind the `archives` feature of
 `rustleaks-sources`. No decoder type crosses the source API, and no decoder
@@ -119,6 +125,20 @@ reads those files. For library users, `Baseline::load_go_json(path)` reads a
 baseline file and parses it. `rustleaks-report` writes findings through the
 `Reporter` trait. It does not change detection state.
 
+### C ABI
+
+`rustleaks-ffi` is the C ABI that the Go and Python bindings call. It copies
+each input into a `Fragment`, scans it with
+`Engine::scan_fragment_with_scratch` and returns the `ScanOutcome` as views
+of pointers and lengths, which the wrappers copy before they free the
+result. It builds each engine on a new thread with an 8 MiB stack. By
+default it also runs scans on threads that the engine owns, with the same
+stack. A caller such as a Go program on musl can call it on a thread with a
+128 KiB stack, which is too small for some patterns. `crates/rustleaks-ffi/include/rustleaks.h` declares the
+ABI, and a unit test checks it against the exports. The ABI is private: a
+wrapper ships with a library of the same version and checks the exact ABI
+number.
+
 ## Names
 
 The project uses the name `rustleaks`, including the tool name in SARIF and
@@ -165,6 +185,20 @@ identify the product.
    output written by hand, and a CLI test in
    `crates/rustleaks-cli/tests/cli/reports.rs`.
 5. Document the format in the user [reports guide](../user/reports.md).
+
+### A C ABI function or field
+
+1. Add the export to `crates/rustleaks-ffi/src/exports.rs` or the field to
+   `abi.rs`. Keep the detection logic in `rustleaks-core` and the conversion
+   in `handles.rs`.
+2. Declare it in `crates/rustleaks-ffi/include/rustleaks.h`. The header
+   test fails until the names, parameter types, constants and struct layouts
+   match.
+3. Raise `ABI_VERSION` when a function, a layout or the meaning of a value
+   changes.
+4. Add unit tests, extend the fuzz harness in `harness.rs` and, for a
+   behavior that every binding must share, add a case to
+   [`testdata/bindings/`](../../testdata/bindings/README.md).
 
 ### A CLI flag
 

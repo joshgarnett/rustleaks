@@ -6,6 +6,11 @@ filegroup(
 )
 
 filegroup(
+    name = "bindings",
+    srcs = glob(["bindings/**"]),
+)
+
+filegroup(
     name = "corpora",
     srcs = glob([
         "allowlist-corpus/**",

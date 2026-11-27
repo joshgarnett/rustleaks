@@ -86,8 +86,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The value above is synthetic test data. The engine is synchronous and starts
-no threads. It reads files only through two helpers that you call yourself.
+The value above is synthetic test data. The engine is synchronous and starts a
+thread only to compile a pattern with more than 200 groups. It reads files
+only through two helpers that you call yourself.
 See [Using
 rustleaks-core](docs/user/library.md) and the [API
 documentation](https://docs.rs/rustleaks-core).
@@ -110,6 +111,11 @@ For Rust developers who use the library:
 
 - [Using rustleaks-core](docs/user/library.md)
 - [Review records](docs/user/review-records.md)
+
+For Go and Python developers who scan from their own programs:
+
+- [Using the Go package](docs/user/go.md)
+- [Using Rustleaks from Python](docs/user/python.md)
 
 For people who work on Rustleaks, start with [Contributing](CONTRIBUTING.md)
 and the [developer documentation](docs/dev/README.md). Changes are listed in

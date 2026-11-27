@@ -741,7 +741,9 @@ fn run_fixture(fixture: &Fixture, iterations: usize) -> Result<Vec<Phase>, Box<d
         config_bytes,
     );
     build.outcome_fnv1a64.clone_from(&compile.outcome_fnv1a64);
-    let fragment = Fragment::builder(fixture.input.clone()).build();
+    let fragment = Fragment::builder(fixture.input.clone())
+        .start_line(0)
+        .build();
     let options = ScanOptions::builder()
         .max_decode_depth(fixture.depth)
         .build();
@@ -807,7 +809,9 @@ mod tests {
             .build()
             .unwrap()
             .scan_fragment_controlled(
-                &Fragment::builder(fixture.input.clone()).build(),
+                &Fragment::builder(fixture.input.clone())
+                    .start_line(0)
+                    .build(),
                 &ScanOptions::builder()
                     .max_decode_depth(fixture.depth)
                     .build(),

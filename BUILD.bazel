@@ -8,6 +8,8 @@ exports_files([
     "LICENSE",
     "NOTICE",
     "cargo-bazel-lock.json",
+    # The Python binding tests run the examples in its guide.
+    "docs/user/python.md",
 ])
 
 filegroup(
@@ -43,9 +45,13 @@ filegroup(
         "justfile",
         "rust-toolchain.toml",
         "//bazel:build_contract_files",
+        "//bindings/go:library.go",
+        "//bindings/python:pyproject.toml",
+        "//bindings/python:src/rustleaks/_version.py",
         "//crates/rustleaks-bzip2:build_contract_files",
         "//crates/rustleaks-cli:build_contract_files",
         "//crates/rustleaks-eval:build_contract_files",
+        "//crates/rustleaks-ffi:build_contract_files",
         "//crates/rustleaks-core:build_contract_files",
         "//crates/rustleaks-rar-codec:build_contract_files",
         "//crates/rustleaks-report:build_contract_files",
@@ -63,6 +69,7 @@ filegroup(
         "//crates/rustleaks-bzip2:rustleaks_bzip2",
         "//crates/rustleaks-eval:rustleaks_eval",
         "//crates/rustleaks-core:rustleaks_core",
+        "//crates/rustleaks-ffi:rustleaks_ffi",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
         "//crates/rustleaks-report:rustleaks_report",
         "//crates/rustleaks-sevenz:rustleaks_sevenz",
@@ -81,6 +88,8 @@ filegroup(
         "//crates/rustleaks-cli:rustleaks_cli",
         "//crates/rustleaks-eval:rustleaks_perf",
         "//crates/rustleaks-eval:rustleaks_quality",
+        "//crates/rustleaks-ffi:rustleaks_ffi_shared",
+        "//crates/rustleaks-ffi:rustleaks_ffi_static",
         "//crates/rustleaks-sources:panic_abort_policy",
         "//crates/xtask:xtask",
     ],
@@ -134,6 +143,7 @@ filegroup(
         "//crates/rustleaks-bzip2:rustleaks_bzip2_docs",
         "//crates/rustleaks-cli:rustleaks_cli_docs",
         "//crates/rustleaks-core:rustleaks_core_docs",
+        "//crates/rustleaks-ffi:rustleaks_ffi_docs",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec_docs",
         "//crates/rustleaks-report:rustleaks_report_docs",
         "//crates/rustleaks-sevenz:rustleaks_sevenz_docs",
@@ -150,6 +160,7 @@ _RUST_TARGETS = [
     "//crates/rustleaks-cli:rustleaks",
     "//crates/rustleaks-cli:rustleaks_cli",
     "//crates/rustleaks-cli:rustleaks_cli_unit_test",
+    "//crates/rustleaks-eval:rustleaks_binding_reference",
     "//crates/rustleaks-eval:rustleaks_cli_fixture",
     "//crates/rustleaks-eval:rustleaks_eval",
     "//crates/rustleaks-eval:rustleaks_eval_unit_test",
@@ -190,6 +201,12 @@ _RUST_TARGETS = [
     "//crates/rustleaks-core:shared_rule_deltas_test",
     "//crates/rustleaks-core:special_coverage_test",
     "//crates/rustleaks-core:triage_test",
+    "//crates/rustleaks-ffi:contract_test",
+    "//crates/rustleaks-ffi:differential_test",
+    "//crates/rustleaks-ffi:exports_fuzz_test",
+    "//crates/rustleaks-ffi:linktest_other_static",
+    "//crates/rustleaks-ffi:rustleaks_ffi",
+    "//crates/rustleaks-ffi:rustleaks_ffi_unit_test",
     "//crates/rustleaks-rar-codec:rustleaks_rar_codec",
     "//crates/rustleaks-rar-codec:rustleaks_rar_codec_unit_test",
     "//crates/rustleaks-report:report_corpus_test",
@@ -240,14 +257,21 @@ rust_clippy_test(
     transitive = True,
 )
 
+# The Go and Python binding tests run natively on every lane. They are not in
+# the cross-compile check above, which cannot link a program or shared library
+# for another system.
 test_suite(
     name = "test",
     tests = [
+        "//bindings/go:all_tests",
+        "//bindings/python:all_tests",
+        "//release/python:upload_test",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_doc_test",
         "//crates/rustleaks-bzip2:rustleaks_bzip2_unit_test",
         "//crates/rustleaks-cli:all_tests",
         "//crates/rustleaks-eval:all_tests",
         "//crates/rustleaks-core:all_tests",
+        "//crates/rustleaks-ffi:all_tests",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec_doc_test",
         "//crates/rustleaks-rar-codec:rustleaks_rar_codec_unit_test",
         "//crates/rustleaks-report:all_tests",

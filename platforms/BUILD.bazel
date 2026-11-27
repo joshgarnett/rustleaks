@@ -58,6 +58,43 @@ platform(
     ],
 )
 
+# The musl platforms above keep the LLVM C toolchain's default libc, so Rust
+# executables link as static PIE with Rust's own musl objects. Code that
+# compiles C for musl, such as cgo in the Go binding tests, needs the LLVM
+# toolchain's musl mode. These platforms select it, with PIE off because Go
+# links executables with -no-pie. Only the binding tests use them, through
+# //bazel:musl_c.bzl.
+platform(
+    name = "linux_x86_64_musl_c",
+    constraint_values = [
+        "@llvm//constraints/libc:musl",
+        "@llvm//constraints/pie:off",
+    ],
+    parents = [":linux_x86_64_musl"],
+)
+
+platform(
+    name = "linux_aarch64_musl_c",
+    constraint_values = [
+        "@llvm//constraints/libc:musl",
+        "@llvm//constraints/pie:off",
+    ],
+    parents = [":linux_aarch64_musl"],
+)
+
+config_setting(
+    name = "musl_any_libc",
+    constraint_values = [":musl"],
+)
+
+config_setting(
+    name = "musl_c_libc",
+    constraint_values = [
+        ":musl",
+        "@llvm//constraints/libc:musl",
+    ],
+)
+
 # Musl executables run natively on their matching Linux hosts, but host-side
 # build tools and proc macros must use the GNU execution toolchain.
 toolchain(

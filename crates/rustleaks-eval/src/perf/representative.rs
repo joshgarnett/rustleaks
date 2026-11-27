@@ -547,7 +547,9 @@ pub fn run(id: &str, iterations: usize) -> Result<Vec<Phase>, Box<dyn Error>> {
         fixture.config.as_bytes(),
     );
     build.outcome_fnv1a64.clone_from(&compile.outcome_fnv1a64);
-    let fragment = Fragment::builder(fixture.input.clone()).build();
+    let fragment = Fragment::builder(fixture.input.clone())
+        .start_line(0)
+        .build();
     let options = ScanOptions::builder()
         .max_decode_depth(fixture.depth)
         .build();
@@ -758,11 +760,13 @@ mod tests {
         let fixture = Fixture::new("core-mixed-1-kib").unwrap();
         let detector = Engine::builder(fixture.compile().unwrap()).build().unwrap();
         let skipped = detector.scan_fragment(
-            &Fragment::builder(&b""[..]).build(),
+            &Fragment::builder(&b""[..]).start_line(0).build(),
             &ScanOptions::default(),
         );
         assert!(fixture.validate(&skipped).is_err());
-        let fragment = Fragment::builder(fixture.input.clone()).build();
+        let fragment = Fragment::builder(fixture.input.clone())
+            .start_line(0)
+            .build();
         let partial = detector.scan_fragment_controlled(
             &fragment,
             &ScanOptions::default(),

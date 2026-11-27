@@ -67,9 +67,10 @@ issues.
 
 Install Bazelisk and Just 1.53.0, as in CI. The Rust toolchain comes from
 `rust-toolchain.toml`, and `.bazelversion` pins Bazel. `just doctor` reports
-the selected versions and changes nothing. No Go installation or Gitleaks
-checkout is needed. Security checks need the exact tools listed in
-[Security checks](docs/dev/security-checks.md).
+the selected versions and changes nothing. Bazel downloads the Go SDK for the
+Go package tests, so no Go installation or Gitleaks checkout is needed.
+Security checks need the exact tools listed in [Security
+checks](docs/dev/security-checks.md).
 
 Just is the public command interface, and Bazel is the build authority. Run
 `just --list` to see the recipes. Start with a focused Bazel target, for
@@ -88,6 +89,7 @@ Then run the broader command that fits the change:
 | Documentation only | `just docs-check` |
 | Prose, links, Clippy, Rustdoc, build and the eight-target compile check | `just check` |
 | Any code | `just test` |
+| Go or Python binding, the C ABI crate or the binding package tools | `just test-go` and `just test-python`, then `just test` |
 | Timers, cancellation, subprocesses, directory traversal, temporary paths or concurrency | `just flake-check` (all ten runs must pass) |
 | Public API, manifests, features, packaged assets or release inputs | `just package-check` |
 | Publish metadata or package contents | `just release-dry-run` (it includes `just package-check`) |
@@ -188,7 +190,8 @@ Choose the narrowest type:
 | `chore` | Narrow maintenance that fits no other type. |
 
 When useful, choose the narrowest stable lowercase scope: `core`, `sources`,
-`report`, `cli`, `eval`, `xtask`, `bazel`, `deps`, `docs`, `ci`,
+`report`, `cli`, `ffi` (the C ABI crate), `go` (the Go package), `python`
+(the Python package), `eval`, `xtask`, `bazel`, `deps`, `docs`, `ci`,
 `security` (the security policy and checks) or `release`. Omit the scope for
 a change that crosses many areas. Never use a goal, agent, review round,
 ticket or temporary task as a scope.

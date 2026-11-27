@@ -154,7 +154,9 @@ mod tests {
             let fixture = build(KIB, shape, depth);
             let engine = Engine::builder(fixture.compile().unwrap()).build().unwrap();
             let outcome = engine.scan_fragment_controlled(
-                &Fragment::new(fixture.input.clone()),
+                &Fragment::builder(fixture.input.clone())
+                    .start_line(0)
+                    .build(),
                 &ScanOptions::builder().max_decode_depth(depth).build(),
                 &ScanControl::unlimited().with_budget(
                     ScanBudget::unlimited()

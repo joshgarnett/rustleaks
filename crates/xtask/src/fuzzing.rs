@@ -85,6 +85,12 @@ pub(crate) const TARGETS: &[Target] = &[
         max_len: 8192,
         features: &["default"],
     },
+    Target {
+        workspace: "rustleaks-ffi",
+        name: "exports",
+        max_len: 8192,
+        features: &["default"],
+    },
 ];
 
 /// The crates that own a standalone fuzz workspace, in [`TARGETS`] order.
@@ -624,6 +630,7 @@ pub(crate) fn observe_identity(
         "crates/rustleaks-core/fuzz/Cargo.lock",
         "crates/rustleaks-sources/fuzz/Cargo.lock",
         "crates/rustleaks-report/fuzz/Cargo.lock",
+        "crates/rustleaks-ffi/fuzz/Cargo.lock",
     ] {
         locks.insert(path, sha256_file(&root.join(path))?);
     }
@@ -678,7 +685,7 @@ fn source_inventory<'a>(root: &Path, paths: &'a str) -> Result<BTreeMap<&'a str,
 }
 
 fn build(root: &Path, directory: &Path, deadline: Deadline) -> Result<(), String> {
-    for workspace in ["rustleaks-core", "rustleaks-sources", "rustleaks-report"] {
+    for workspace in workspaces() {
         captured(
             root,
             directory,

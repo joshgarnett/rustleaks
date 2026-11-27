@@ -1,0 +1,173 @@
+name: Publish Python Package
+
+# Uploads the eight wheels that a successful release dry run built and
+# checked to PyPI, with PyPI trusted publishing. It builds nothing: the
+# wheels are the dry run's files, checked against its SHA256SUMS.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full current main-branch commit ID to publish.
+        required: true
+        type: string
+      dry_run_id:
+        description: Successful Release Dry Run workflow run ID.
+        required: true
+        type: string
+      version:
+        description: Exact rustleaks Python package version to publish.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-rustleaks-python-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the rustleaks wheels
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the current protected branch version
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          TRIGGER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
+          test "${TRIGGER_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${CANDIDATE}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "${CANDIDATE}"
+          test -z "$(git status --short)"
+          actual_version="$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' bindings/python/pyproject.toml)"
+          test "${actual_version}" = "${EXPECTED_VERSION}"
+      - name: Require the GitHub release of this commit
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A package version names one released commit. The GNU libraries
+          # link glibc support code, so the release that offers its
+          # corresponding source must exist before any package does.
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.draft' <<<"${release_json}")" = false
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          source_archive="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
+          test "$(jq --arg name "${source_archive}" '[.assets[] | select(.name == $name and .state == "uploaded")] | length' <<<"${release_json}")" = 1
+          # release.yml creates a lightweight tag; the tag is what users fetch.
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.object.type' <<<"${ref_json}")" = commit
+          test "$(jq -r '.object.sha' <<<"${ref_json}")" = "${CANDIDATE}"
+      - name: Require the successful dry run and download its wheels
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${DRY_RUN_ID}" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}")"
+          test "$(jq -r '.path' <<<"${run_json}")" = ".github/workflows/release-dry-run.yml"
+          test "$(jq -r '.event' <<<"${run_json}")" = "workflow_dispatch"
+          test "$(jq -r '.head_sha' <<<"${run_json}")" = "${CANDIDATE}"
+          test "$(jq -r '.status' <<<"${run_json}")" = "completed"
+          test "$(jq -r '.conclusion' <<<"${run_json}")" = "success"
+          packages="${RUNNER_TEMP}/packages"
+          gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
+          (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
+          for tag in manylinux_2_28_x86_64 manylinux_2_28_aarch64 musllinux_1_2_x86_64 musllinux_1_2_aarch64 \
+            macosx_14_0_x86_64 macosx_14_0_arm64 win_amd64 win_arm64; do
+            test -f "${packages}/wheels/rustleaks-${EXPECTED_VERSION}-py3-none-${tag}.whl"
+          done
+          test "$(find "${packages}/wheels" -type f | wc -l)" = 8
+      # PyPI trusted publishing: GitHub signs an identity token for this
+      # workflow and environment, and PyPI exchanges it for an upload token
+      # that lasts a few minutes. No credential is stored in the repository.
+      - name: Upload the wheels to PyPI
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          identity="$(curl --fail --silent --show-error \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=pypi" | jq -r '.value')"
+          token="$(jq -n --arg token "${identity}" '{token: $token}' \
+            | curl --fail --silent --show-error --request POST --data @- https://pypi.org/_/oidc/mint-token \
+            | jq -r '.token')"
+          echo "::add-mask::${token}"
+          # PyPI builds the release metadata from the upload form, and keeps
+          # the first upload's for good. upload.py sends every core metadata
+          # field of the wheel and refuses a wheel whose metadata differs
+          # from pyproject.toml.
+          for wheel in "${RUNNER_TEMP}"/packages/wheels/*.whl; do
+            PYPI_TOKEN="${token}" python3 -I release/python/upload.py upload \
+              "${wheel}" bindings/python/pyproject.toml https://upload.pypi.org/legacy/
+            printf 'Uploaded %s\n' "$(basename "${wheel}")" >> "${GITHUB_STEP_SUMMARY}"
+          done
+      - name: Verify the published files
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          metadata="${RUNNER_TEMP}/pypi.json"
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --location \
+              --user-agent rustleaks-release-verifier/0.1 \
+              "https://pypi.org/pypi/rustleaks/${EXPECTED_VERSION}/json" --output "${metadata}"; then
+              break
+            fi
+            test "${attempt}" -lt 20
+            sleep 3
+          done
+          test "$(jq -r '.info.version' "${metadata}")" = "${EXPECTED_VERSION}"
+          expected() {
+            python3 -I -c 'import sys, tomllib; print(tomllib.load(open("bindings/python/pyproject.toml", "rb"))["project"][sys.argv[1]])' "$1"
+          }
+          test "$(jq -r '.info.requires_python' "${metadata}")" = "$(expected requires-python)"
+          test "$(jq -r '.info.summary' "${metadata}")" = "$(expected description)"
+          test "$(jq -r '.info.license_expression' "${metadata}")" = "$(expected license)"
+          # PyPI must list the license files that every wheel names.
+          wheel_license_files="$(python3 -I -c 'import email.parser, sys, zipfile
+          archive = zipfile.ZipFile(sys.argv[1])
+          name = next(entry for entry in archive.namelist() if entry.endswith(".dist-info/METADATA"))
+          metadata = email.parser.Parser().parsestr(archive.read(name).decode())
+          print("\n".join(sorted(metadata.get_all("License-File") or [])))' "$(ls "${RUNNER_TEMP}"/packages/wheels/*.whl | head -n 1)")"
+          test -n "${wheel_license_files}"
+          test "$(jq -r '.info.license_files // [] | sort | .[]' "${metadata}")" = "${wheel_license_files}"
+          for wheel in "${RUNNER_TEMP}"/packages/wheels/*.whl; do
+            name="$(basename "${wheel}")"
+            digest="$(sha256sum "${wheel}" | awk '{print $1}')"
+            test "$(jq -r --arg name "${name}" '.urls[] | select(.filename == $name) | .digests.sha256' "${metadata}")" = "${digest}"
+          done

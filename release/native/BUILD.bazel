@@ -1,0 +1,39 @@
+# The native library files of a binding release, for one target per build.
+# Build them with the lane's release config, and on musl also select the
+# musl C platform:
+#
+#   bazelisk build --config=release-linux-x86_64-musl \
+#     --platforms=//platforms:linux_x86_64_musl_c //release/native:all
+#
+# `cargo xtask bindings go-layout` takes the files from one folder per
+# platform.
+
+load("//bazel:pick_file.bzl", "pick_file")
+
+# Rust's precompiled standard library embeds LLVM bitcode in its objects,
+# and a Rust static library carries those objects. Go refuses a cgo library
+# with bitcode sections, so the Go archive drops them. The code is unchanged.
+genrule(
+    name = "go_archive",
+    srcs = ["//crates/rustleaks-ffi:rustleaks_ffi_static"],
+    outs = ["librustleaks_ffi_static.a"],
+    cmd = "$(execpath @llvm//tools:llvm-objcopy) " + select({
+        "@platforms//os:macos": "--remove-section=__LLVM,__bitcode --remove-section=__LLVM,__cmdline",
+        "//conditions:default": "--remove-section=.llvmbc --remove-section=.llvmcmd",
+    }) + " $< $@",
+    target_compatible_with = select({
+        "//platforms:musl_c_libc": [],
+        "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = ["@llvm//tools:llvm-objcopy"],
+)
+
+pick_file(
+    name = "dll",
+    src = "//crates/rustleaks-ffi:rustleaks_ffi_shared",
+    extension = ".dll",
+    out = "rustleaks_ffi.dll",
+    target_compatible_with = ["@platforms//os:windows"],
+)

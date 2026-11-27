@@ -32,7 +32,7 @@ just fuzz run --targets template --output /private/tmp/rustleaks-report-fuzz-run
 The output folder must be new and outside the checkout. Treat crash inputs
 and diagnostics as sensitive. Direct `cargo fuzz` commands print raw crash
 bytes, so use `just fuzz`. `just fuzz-build` and `just fuzz-smoke` cover
-every fuzz target in the three crates. See
+every fuzz target in the four crates. See
 [Fuzzing](../../../docs/dev/security-checks.md#fuzzing) for replay,
 minimizing and corpus promotion.
 For inputs above these limits, see the [larger structured

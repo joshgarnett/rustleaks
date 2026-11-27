@@ -397,7 +397,9 @@ fn run_workload(id: &str, iterations: usize) -> Result<(u128, Metric), Box<dyn E
         "regex-hostile-miss" => run_scan(
             iterations,
             engine(HOSTILE_CONFIG)?,
-            Fragment::builder(vec![b'a'; HOSTILE_INPUT_BYTES]).build(),
+            Fragment::builder(vec![b'a'; HOSTILE_INPUT_BYTES])
+                .start_line(0)
+                .build(),
             ScanOptions::default(),
         ),
         "regex-capture-entropy" => run_capture_entropy(iterations),
@@ -405,7 +407,7 @@ fn run_workload(id: &str, iterations: usize) -> Result<(u128, Metric), Box<dyn E
         "decode-large-base64-like" => run_scan(
             iterations,
             engine(SIMPLE_CONFIG)?,
-            Fragment::builder(base64_like_input()).build(),
+            Fragment::builder(base64_like_input()).start_line(0).build(),
             ScanOptions::builder().max_decode_depth(5).build(),
         ),
         "source-directory-1" => run_source(iterations, 1),
@@ -515,7 +517,7 @@ fn run_default_keyword(
         return Err(format!("keyword fixture matched {matched}, expected {required}").into());
     }
     let detector = Engine::builder(config).build()?;
-    let fragment = Fragment::builder(input).build();
+    let fragment = Fragment::builder(input).start_line(0).build();
     if matches!(case, KeywordCase::None) {
         run_controlled_scan(iterations, detector, fragment, ScanOptions::default())
     } else {
@@ -561,7 +563,9 @@ fn run_default_positive(iterations: usize) -> Result<(u128, Metric), Box<dyn Err
     run_scan(
         iterations,
         Engine::builder(config).build()?,
-        Fragment::builder(PRIVATE_KEY_SAMPLE.as_bytes()).build(),
+        Fragment::builder(PRIVATE_KEY_SAMPLE.as_bytes())
+            .start_line(0)
+            .build(),
         ScanOptions::default(),
     )
 }
@@ -576,7 +580,7 @@ fn run_capture_entropy(iterations: usize) -> Result<(u128, Metric), Box<dyn Erro
     run_scan(
         iterations,
         engine(CAPTURE_ENTROPY_CONFIG)?,
-        Fragment::builder(input).build(),
+        Fragment::builder(input).start_line(0).build(),
         ScanOptions::default(),
     )
 }
@@ -592,7 +596,7 @@ fn run_decode_five(iterations: usize) -> Result<(u128, Metric), Box<dyn Error>> 
     run_scan(
         iterations,
         engine(SIMPLE_CONFIG)?,
-        Fragment::builder(input).build(),
+        Fragment::builder(input).start_line(0).build(),
         ScanOptions::builder().max_decode_depth(5).build(),
     )
 }
@@ -790,6 +794,7 @@ fn run_bm_commit(
         iterations,
         || {
             let fragment = Fragment::builder(b"probe".as_slice())
+                .start_line(0)
                 .commit(candidate)
                 .build();
             Ok(detector
@@ -927,7 +932,9 @@ regex = '''(?s).+'''
 fn regex_allowed_by_engine(detector: &Engine, candidate: &str) -> bool {
     detector
         .scan_fragment(
-            &Fragment::builder(candidate.as_bytes()).build(),
+            &Fragment::builder(candidate.as_bytes())
+                .start_line(0)
+                .build(),
             &ScanOptions::default(),
         )
         .findings()

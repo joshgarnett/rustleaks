@@ -1,0 +1,143 @@
+# The platform wheel for the Python package, for one target per build.
+#
+# Build it with the lane's binding release config, which on musl also
+# selects the musl C platform so the library links the shared musl libc:
+#
+#   bazelisk build --config=release-bindings-linux-x86_64-musl //release/python:wheel
+#
+# The wheel holds the Python package, the shared library under
+# rustleaks/_native/, and LICENSE and NOTICE. It is not the release wheel
+# yet: `cargo xtask bindings finish-wheel` adds the third-party notices of
+# the linked library and writes core metadata 2.4 with the license
+# expression, and `release/python/upload.py check` compares the result with
+# bindings/python/pyproject.toml.
+
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//bazel:pick_file.bzl", "pick_file")
+load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION")
+
+# The C library each wheel is built against: glibc 2.28 is the hermetic LLVM
+# toolchain's default, musl 1.2 is the musl ABI, and 14.0 is the macOS
+# deployment target of the toolchain's SDK.
+_PLATFORM_TAG = select({
+    "//platforms:aarch64-apple-darwin": "macosx_14_0_arm64",
+    "//platforms:aarch64-pc-windows-msvc": "win_arm64",
+    "//platforms:aarch64-unknown-linux-gnu": "manylinux_2_28_aarch64",
+    "//platforms:aarch64-unknown-linux-musl": "musllinux_1_2_aarch64",
+    "//platforms:x86_64-apple-darwin": "macosx_14_0_x86_64",
+    "//platforms:x86_64-pc-windows-msvc": "win_amd64",
+    "//platforms:x86_64-unknown-linux-gnu": "manylinux_2_28_x86_64",
+    "//platforms:x86_64-unknown-linux-musl": "musllinux_1_2_x86_64",
+})
+
+# A musl wheel must be built for the musl C platform; see the comment above.
+_COMPATIBLE = select({
+    "//platforms:musl_c_libc": [],
+    "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+pick_file(
+    name = "library_linux",
+    src = "//crates/rustleaks-ffi:rustleaks_ffi_shared",
+    extension = ".so",
+    out = "wheel/rustleaks/_native/librustleaks_ffi.so",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+pick_file(
+    name = "library_macos",
+    src = "//crates/rustleaks-ffi:rustleaks_ffi_shared",
+    extension = ".dylib",
+    out = "wheel/rustleaks/_native/librustleaks_ffi.dylib",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+pick_file(
+    name = "library_windows",
+    src = "//crates/rustleaks-ffi:rustleaks_ffi_shared",
+    extension = ".dll",
+    out = "wheel/rustleaks/_native/rustleaks_ffi.dll",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+py_package(
+    name = "package",
+    deps = ["//bindings/python:rustleaks"],
+)
+
+py_wheel(
+    name = "wheel",
+    abi = "none",
+    classifiers = [
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "Operating System :: MacOS",
+        "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
+        "Programming Language :: Python :: 3.15",
+        "Programming Language :: Python :: Implementation :: CPython",
+        "Programming Language :: Rust",
+        "Topic :: Security",
+        "Typing :: Typed",
+    ],
+    description_content_type = "text/markdown",
+    description_file = "//bindings/python:README.md",
+    distribution = "rustleaks",
+    extra_distinfo_files = {
+        "//:LICENSE": "licenses/LICENSE",
+        "//:NOTICE": "licenses/NOTICE",
+    },
+    license = "MIT AND BSD-3-Clause AND Apache-2.0 AND Apache-2.0 WITH LLVM-exception",
+    platform = _PLATFORM_TAG,
+    project_urls = {
+        "Changelog": "https://github.com/joshgarnett/rustleaks/blob/main/CHANGELOG.md",
+        "Documentation": "https://github.com/joshgarnett/rustleaks/blob/main/docs/user/python.md",
+        "Homepage": "https://github.com/joshgarnett/rustleaks",
+        "Issues": "https://github.com/joshgarnett/rustleaks/issues",
+        "Source": "https://github.com/joshgarnett/rustleaks/tree/main/bindings/python",
+    },
+    python_requires = ">=3.12",
+    python_tag = "py3",
+    strip_path_prefixes = [
+        "bindings/python/src",
+        "release/python/wheel",
+    ],
+    summary = "Scan bytes and text for secrets with the Rustleaks engine",
+    target_compatible_with = _COMPATIBLE,
+    version = RUSTLEAKS_VERSION,
+    deps = [":package"] + select({
+        "@platforms//os:linux": [":library_linux"],
+        "@platforms//os:macos": [":library_macos"],
+        "@platforms//os:windows": [":library_windows"],
+    }),
+)
+
+# Prints the interpreter that Bazel selected for the current
+# --@rules_python//python/config_settings:python_version, for the Windows
+# binding dry run.
+py_binary(
+    name = "interpreter",
+    srcs = ["interpreter.py"],
+    main = "interpreter.py",
+)
+
+# Pins the PyPI upload form: the field names PyPI reads and the values taken
+# from a wheel's METADATA.
+py_test(
+    name = "upload_test",
+    size = "small",
+    srcs = [
+        "upload.py",
+        "upload_test.py",
+    ],
+    main = "upload_test.py",
+    visibility = ["//visibility:public"],
+)

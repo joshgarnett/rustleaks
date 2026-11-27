@@ -54,7 +54,11 @@ jobs:
           install-just: "false"
       - name: Produce the combined Bazel coverage report
         working-directory: rustleaks
-        run: bazelisk coverage //:test --combined_report=lcov
+        # The Python binding tests load the Rust library, whose profiles use
+        # Rust's LLVM profile format. Bazel merges a py_test's profiles with
+        # the LLVM toolchain's llvm-profdata, which reads only its own newer
+        # format, so those tests run in CI but not under coverage.
+        run: bazelisk coverage --combined_report=lcov -- //:test -//bindings/python:all
       - name: Retain the coverage report for review
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -62,3 +66,39 @@ jobs:
           path: rustleaks/bazel-out/_coverage/_coverage_report.dat
           if-no-files-found: error
           retention-days: 7
+
+  binding-version:
+    name: Binding package version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out Rustleaks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the workspace version
+        id: version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          test -n "${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+  # Builds the Go and Python packages on the eight native lanes and installs
+  # them as a user would, with CPython 3.12, 3.13, 3.14 and 3.15. Pull
+  # requests test 3.12 and 3.15 in //:test; this covers the other two.
+  bindings:
+    name: Binding packages
+    needs: binding-version
+    # The called layout job declares the attestation permissions; the weekly
+    # run leaves its attest input unset and attests nothing.
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/bindings.yml
+    with:
+      candidate: ${{ github.sha }}
+      version: ${{ needs.binding-version.outputs.version }}

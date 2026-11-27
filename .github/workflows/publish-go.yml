@@ -1,0 +1,257 @@
+name: Publish Go Module
+
+# Writes the rustleaks-go layout that a successful release dry run built and
+# checked to joshgarnett/rustleaks-go as one commit, and tags that commit
+# v<version> and lib/<platform>/v<version>. It builds nothing: the layout is
+# the dry run's, checked against its SHA256SUMS. A published Go version
+# cannot be replaced, so the check job refuses a version whose tag exists.
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full current main-branch commit ID to publish.
+        required: true
+        type: string
+      dry_run_id:
+        description: Successful Release Dry Run workflow run ID.
+        required: true
+        type: string
+      version:
+        description: Exact rustleaks-go version to publish, without the v.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-rustleaks-go
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the candidate, the dry run and rustleaks-go
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      head: ${{ steps.remote.outputs.head }}
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the current protected branch version
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          TRIGGER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
+          test "${TRIGGER_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${CANDIDATE}"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "${CANDIDATE}"
+          test -z "$(git status --short)"
+          grep -qx "const packageVersion = \"${EXPECTED_VERSION}\"" bindings/go/library.go
+      - name: Require the GitHub release of this commit
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A package version names one released commit. The GNU libraries
+          # link glibc support code, so the release that offers its
+          # corresponding source must exist before any package does.
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.draft' <<<"${release_json}")" = false
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          source_archive="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
+          test "$(jq --arg name "${source_archive}" '[.assets[] | select(.name == $name and .state == "uploaded")] | length' <<<"${release_json}")" = 1
+          # release.yml creates a lightweight tag; the tag is what users fetch.
+          ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}")"
+          test "$(jq -r '.object.type' <<<"${ref_json}")" = commit
+          test "$(jq -r '.object.sha' <<<"${ref_json}")" = "${CANDIDATE}"
+      - name: Require the successful dry run
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${DRY_RUN_ID}" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DRY_RUN_ID}")"
+          test "$(jq -r '.path' <<<"${run_json}")" = ".github/workflows/release-dry-run.yml"
+          test "$(jq -r '.event' <<<"${run_json}")" = "workflow_dispatch"
+          test "$(jq -r '.head_sha' <<<"${run_json}")" = "${CANDIDATE}"
+          test "$(jq -r '.status' <<<"${run_json}")" = "completed"
+          test "$(jq -r '.conclusion' <<<"${run_json}")" = "success"
+          packages="${RUNNER_TEMP}/packages"
+          gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
+          (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
+          grep -q "^github.com/joshgarnett/rustleaks-go v${EXPECTED_VERSION} h1:" "${packages}/proxy/hashes.txt"
+      - name: Require that rustleaks-go has no tag for the version
+        id: remote
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          refs="$(git ls-remote https://github.com/joshgarnett/rustleaks-go.git)"
+          if grep -E "refs/tags/(lib/[a-z0-9-]+/)?v${EXPECTED_VERSION//./\\.}(\^\{\})?$" <<<"${refs}"; then
+            echo "rustleaks-go already has a tag for v${EXPECTED_VERSION}" >&2
+            exit 1
+          fi
+          head="$(awk '$2 == "refs/heads/main" {print $1}' <<<"${refs}")"
+          [[ "${head}" =~ ^[0-9a-f]{40}$ ]]
+          printf 'head=%s\n' "${head}" >> "${GITHUB_OUTPUT}"
+
+  publish:
+    name: Push the commit and tags
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+    # Only Git, the GitHub CLI and the pinned token action run in this job.
+    # It checks out no Rustleaks code and runs no setup action or Cargo, so
+    # no build code shares the runner with the App key or token.
+    steps:
+      - name: Download and check the dry run layout
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          packages="${RUNNER_TEMP}/packages"
+          gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
+          (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
+      - name: Prepare the release commit on the checked head
+        env:
+          EXPECTED_HEAD: ${{ needs.check.outputs.head }}
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/rustleaks-go"
+          git clone --branch main https://github.com/joshgarnett/rustleaks-go.git "${checkout}"
+          # A main that moved after the check stops the push.
+          test "$(git -C "${checkout}" rev-parse HEAD)" = "${EXPECTED_HEAD}"
+          git -C "${checkout}" rm -r --quiet --ignore-unmatch -- .
+          cp -R "${RUNNER_TEMP}/packages/rustleaks-go/." "${checkout}/"
+          git -C "${checkout}" add --all
+      - name: Create a one-hour token for rustleaks-go
+        id: token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ vars.PACKAGING_APP_ID }}
+          private-key: ${{ secrets.PACKAGING_APP_PRIVATE_KEY }}
+          owner: joshgarnett
+          repositories: |
+            rustleaks-go
+          permission-contents: write
+      # The commit and every tag go in one atomic push, so the module and its
+      # platform modules are published together or not at all.
+      - name: Push the commit and tags
+        env:
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          checkout="${RUNNER_TEMP}/rustleaks-go"
+          gh auth setup-git
+          bot_id="$(gh api "users/${APP_SLUG}%5Bbot%5D" --jq '.id')"
+          author=(-c user.name="${APP_SLUG}[bot]" -c user.email="${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com")
+          git -C "${checkout}" "${author[@]}" commit --allow-empty \
+            --message "rustleaks-go v${EXPECTED_VERSION}" \
+            --message "Written from joshgarnett/rustleaks ${CANDIDATE}."
+          tags=("v${EXPECTED_VERSION}")
+          for platform in linux-amd64 linux-arm64 linux-amd64-musl linux-arm64-musl darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
+            test -f "${checkout}/lib/${platform}/go.mod"
+            tags+=("lib/${platform}/v${EXPECTED_VERSION}")
+          done
+          refs=(HEAD:refs/heads/main)
+          for tag in "${tags[@]}"; do
+            git -C "${checkout}" "${author[@]}" tag --annotate --message "rustleaks-go ${tag}" "${tag}"
+            refs+=("refs/tags/${tag}")
+          done
+          git -C "${checkout}" push --atomic origin "${refs[@]}"
+          printf 'Pushed rustleaks-go v%s and %d tags\n' "${EXPECTED_VERSION}" "${#tags[@]}" >> "${GITHUB_STEP_SUMMARY}"
+
+  verify:
+    name: Verify the module through the Go checksum database
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Compare the checksum database with the dry run hashes
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          DRY_RUN_ID: ${{ inputs.dry_run_id }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          packages="${RUNNER_TEMP}/packages"
+          gh run download "${DRY_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${packages}"
+          (cd "${packages}" && sha256sum --check --strict SHA256SUMS)
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          gh attestation verify "${packages}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${packages}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
+          modules=(github.com/joshgarnett/rustleaks-go)
+          for platform in linux-amd64 linux-arm64 linux-amd64-musl linux-arm64-musl darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
+            modules+=("github.com/joshgarnett/rustleaks-go/lib/${platform}")
+          done
+          for module in "${modules[@]}"; do
+            lookup="${RUNNER_TEMP}/lookup.txt"
+            for attempt in {1..30}; do
+              if curl --fail --silent --show-error --user-agent rustleaks-release-verifier/0.1 \
+                "https://sum.golang.org/lookup/${module}@v${EXPECTED_VERSION}" --output "${lookup}"; then
+                break
+              fi
+              test "${attempt}" -lt 30
+              sleep 10
+            done
+            for line in "${module} v${EXPECTED_VERSION} " "${module} v${EXPECTED_VERSION}/go.mod "; do
+              expected="$(grep -F "${line}" "${packages}/proxy/hashes.txt")"
+              grep -qxF "${expected}" "${lookup}"
+            done
+          done

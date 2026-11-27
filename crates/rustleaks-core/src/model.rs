@@ -348,8 +348,9 @@ impl FindingRange {
 
 /// A finding's line and byte-column coordinates, as in Gitleaks reports.
 ///
-/// Lines and columns can be zero: direct scans start at line zero, and file
-/// fragments usually start at line one.
+/// Line numbers count from the fragment's start line, which is 1 unless the
+/// fragment sets another line with [`FragmentBuilder::start_line`]. A finding
+/// of a rule that has only a `path` pattern has line and column 0.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Location {
     start_line: usize,
@@ -567,7 +568,10 @@ impl CommitMetadataBuilder {
 }
 
 /// A byte fragment and optional source metadata presented to the engine.
-#[derive(Clone, Default, Eq, PartialEq)]
+///
+/// A fragment starts at line 1 unless [`FragmentBuilder::start_line`] sets
+/// another line, so findings number lines like the CLI.
+#[derive(Clone, Eq, PartialEq)]
 pub struct Fragment {
     content: ByteText,
     file_path: ByteText,
@@ -577,6 +581,21 @@ pub struct Fragment {
     start_line: usize,
     commit_metadata: Option<CommitMetadata>,
     inherited_from_finding: bool,
+}
+
+impl Default for Fragment {
+    fn default() -> Self {
+        Self {
+            content: ByteText::default(),
+            file_path: ByteText::default(),
+            symlink_file: ByteText::default(),
+            windows_file_path: ByteText::default(),
+            commit: ByteText::default(),
+            start_line: 1,
+            commit_metadata: None,
+            inherited_from_finding: false,
+        }
+    }
 }
 
 impl fmt::Debug for Fragment {
@@ -661,7 +680,7 @@ impl Fragment {
         &self.commit
     }
 
-    /// Returns the line number on which this fragment starts.
+    /// Returns the line number of the first line. The default is 1.
     #[must_use]
     pub const fn start_line(&self) -> usize {
         self.start_line
@@ -744,7 +763,7 @@ impl FragmentBuilder {
         self
     }
 
-    /// Sets the fragment's starting line. Zero is valid for direct scans.
+    /// Sets the line number of the first line. The default is 1.
     #[must_use]
     pub const fn start_line(mut self, value: usize) -> Self {
         self.fragment.start_line = value;

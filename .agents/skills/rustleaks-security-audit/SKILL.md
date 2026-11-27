@@ -22,10 +22,15 @@ a hash, and reduce it to a synthetic reproducer that does not work as a
 credential before adding a test. Do not test a suspected credential by using
 it.
 
-Owned crates must continue to forbid unsafe Rust. Treat dependency unsafe
-inventory as a change signal, not proof of safety or reachability. Review any
-new source, build script, native link, license, advisory, vet exemption,
-exception review condition, feature, or target-specific edge. Accepting an
+Owned crates must continue to forbid unsafe Rust, except `rustleaks-ffi`.
+Review its unsafe code together with the Go `unsafe`, cgo and `syscall` code
+and the Python ctypes code under `bindings/`, as one boundary; see [Unsafe
+code in
+rustleaks-ffi](../../../docs/dev/dependencies.md#unsafe-code-in-rustleaks-ffi).
+Treat dependency unsafe inventory as a change signal, not proof of safety or
+reachability. Review any new source, build script, native link, license,
+advisory, vet exemption, exception review condition, feature, or
+target-specific edge. Accepting an
 advisory, vetting, unsafe, or native exception, or a change that the
 repository contract reserves for the maintainer, needs maintainer approval.
 See [Approval boundaries](../../../AGENTS.md#approval-boundaries).

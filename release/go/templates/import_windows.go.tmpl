@@ -1,0 +1,16 @@
+//go:build {{build}}
+
+package rustleaks
+
+import lib "github.com/joshgarnett/rustleaks-go/lib/{{platform}}"
+
+// The platform module embeds the DLL. The package writes it to the user
+// cache folder and loads it on first use.
+func init() {
+	embeddedLibrary = &embeddedDLL{
+		version:    lib.Version,
+		dllSHA256:  lib.DLLSHA256,
+		gzipSHA256: lib.DLLGzipSHA256,
+		gzipped:    lib.DLLGzip,
+	}
+}

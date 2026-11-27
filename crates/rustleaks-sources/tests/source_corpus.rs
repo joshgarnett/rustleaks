@@ -359,17 +359,18 @@ fn replay(request: &Request, expected: &Outcome) {
 
 fn issue_fragment(issue: &SourceIssue, mapping: Option<&PathMapping>) -> Fragment {
     let fragment = issue.path().map_or_else(
-        || Fragment::new(Vec::<u8>::new()),
+        || Fragment::builder(Vec::<u8>::new()).start_line(0).build(),
         |path| {
             let logical = LogicalPath::from_native(path);
             // A read-error fragment keeps the native spelling in FilePath
             // and leaves WindowsFilePath empty, as FileSource::error_fragment
-            // does.
+            // does, and starts at line 0.
             let file = logical
                 .windows_original()
                 .unwrap_or_else(|| logical.normalized());
             Fragment::builder(Vec::<u8>::new())
                 .file_path(file.as_bytes())
+                .start_line(0)
                 .build()
         },
     );

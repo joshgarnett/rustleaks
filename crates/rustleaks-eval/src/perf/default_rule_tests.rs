@@ -205,7 +205,7 @@ fn near_miss_candidates_are_killed_only_by_their_filter() {
         assert_eq!(raw.len(), lines * 64);
         let suppressed = Scan {
             expected: ctx.expected(&raw, Vec::new(), lines).unwrap(),
-            fragment: Fragment::builder(raw.clone()).build(),
+            fragment: Fragment::builder(raw.clone()).start_line(0).build(),
         };
         check(&detector, &ctx.rules, &suppressed);
 
@@ -223,7 +223,7 @@ fn near_miss_candidates_are_killed_only_by_their_filter() {
         };
         let positive = Scan {
             expected: ctx.expected(&raw, vec![plant], lines).unwrap(),
-            fragment: Fragment::builder(raw).build(),
+            fragment: Fragment::builder(raw).start_line(0).build(),
         };
         check(&detector, &ctx.rules, &positive);
     }
@@ -287,7 +287,7 @@ fn validation_rejects_skipped_budget_terminated_and_altered_outcomes() {
         detector.scan_fragment_controlled(&scan.fragment, &options, &budget(&scan.expected));
     validate(&ctx.rules, &scan, &complete).unwrap();
 
-    let skipped = detector.scan_fragment(&Fragment::new(b""), &options);
+    let skipped = detector.scan_fragment(&Fragment::builder(b"").start_line(0).build(), &options);
     assert!(validate(&ctx.rules, &scan, &skipped).is_err());
 
     let work = scan.expected.work.unwrap();
@@ -350,9 +350,10 @@ fn ordinary_profile_reuses_the_exact_representative_operation_and_validator() {
     assert_eq!(worker.identity()["budget"]["decoded_bytes"], 0);
     worker.scan().unwrap();
 
-    let skipped = worker
-        .detector
-        .scan_fragment(&Fragment::new(b""), &worker.options);
+    let skipped = worker.detector.scan_fragment(
+        &Fragment::builder(b"").start_line(0).build(),
+        &worker.options,
+    );
     assert!(worker.validate_outcome(&skipped).is_err());
     let partial = worker.detector.scan_fragment_controlled(
         &scan.fragment,

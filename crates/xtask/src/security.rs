@@ -481,7 +481,11 @@ fn validate_owned_unsafe_package(
     forbids_unsafe: bool,
 ) -> Result<(), String> {
     let source = &id["source"];
-    if (source.is_null() || source.get("Path").is_some()) && (used_unsafe != 0 || !forbids_unsafe) {
+    let owned = source.is_null() || source.get("Path").is_some();
+    if owned && id["name"].as_str() == Some(UNSAFE_CRATE) {
+        return Ok(());
+    }
+    if owned && (used_unsafe != 0 || !forbids_unsafe) {
         return Err(format!(
             "owned package {}@{} does not have a zero-unsafe forbid inventory",
             id["name"].as_str().unwrap_or("unknown"),
@@ -630,7 +634,7 @@ fn owned_crate_roots(root: &Path) -> Result<Vec<String>, String> {
                 roots.push(format!("crates/{name}/{file}"));
             }
         }
-        for directory in ["src/bin", "examples", "fuzz/fuzz_targets"] {
+        for directory in ["src/bin", "examples", "fuzz/fuzz_targets", "tests"] {
             for file in rust_files(&path.join(directory))? {
                 roots.push(format!("crates/{name}/{directory}/{file}"));
             }
@@ -643,6 +647,61 @@ fn owned_crate_roots(root: &Path) -> Result<Vec<String>, String> {
     Ok(roots)
 }
 
+/// The only owned crate that may use unsafe Rust: the C ABI of the Go and
+/// Python bindings. See `docs/dev/dependencies.md`.
+const UNSAFE_CRATE: &str = "rustleaks-ffi";
+/// The crate root of [`UNSAFE_CRATE`]. Its other roots, such as fuzz
+/// targets, still forbid unsafe code.
+const UNSAFE_CRATE_ROOT: &str = "crates/rustleaks-ffi/src/lib.rs";
+/// Lints that [`UNSAFE_CRATE`] must deny, in its root and its manifest.
+const UNSAFE_CRATE_LINTS: [&str; 3] = [
+    "unsafe_op_in_unsafe_fn",
+    "clippy::undocumented_unsafe_blocks",
+    "clippy::missing_safety_doc",
+];
+
+/// Checks the root of the one crate that may use unsafe code: it denies the
+/// unsafe lints and refuses to build without unwinding, which its
+/// `catch_unwind` boundary needs.
+fn validate_unsafe_crate_root(source: &str) -> Result<(), String> {
+    let deny = source
+        .split("#![deny(")
+        .nth(1)
+        .and_then(|tail| tail.split(")]").next())
+        .ok_or_else(|| format!("{UNSAFE_CRATE_ROOT} has no #![deny(...)] lint list"))?;
+    for lint in UNSAFE_CRATE_LINTS {
+        if !deny.split(',').any(|entry| entry.trim() == lint) {
+            return Err(format!("{UNSAFE_CRATE_ROOT} does not deny {lint}"));
+        }
+    }
+    if !source.contains("#[cfg(not(panic = \"unwind\"))]\ncompile_error!(") {
+        return Err(format!(
+            "{UNSAFE_CRATE_ROOT} must fail to compile without panic=unwind"
+        ));
+    }
+    Ok(())
+}
+
+/// Checks that the manifest of [`UNSAFE_CRATE`] denies the unsafe lints
+/// for Cargo builds.
+fn validate_unsafe_crate_manifest(manifest: &str) -> Result<(), String> {
+    if manifest.contains("[lints]\nworkspace = true") {
+        return Err(format!(
+            "{UNSAFE_CRATE} cannot inherit the workspace forbid"
+        ));
+    }
+    for line in [
+        "unsafe_op_in_unsafe_fn = \"deny\"",
+        "undocumented_unsafe_blocks = \"deny\"",
+        "missing_safety_doc = \"deny\"",
+    ] {
+        if !manifest.lines().any(|entry| entry == line) {
+            return Err(format!("{UNSAFE_CRATE} manifest lacks `{line}`"));
+        }
+    }
+    Ok(())
+}
+
 fn owned_safety_check() -> Result<(), String> {
     let root = workspace_root()?;
     let workspace = std::fs::read_to_string(root.join("Cargo.toml"))
@@ -651,9 +710,19 @@ fn owned_safety_check() -> Result<(), String> {
         return Err("workspace must forbid unsafe code for inheriting owned crates".into());
     }
     let crate_roots = owned_crate_roots(&root)?;
+    if !crate_roots
+        .iter()
+        .any(|relative| relative == UNSAFE_CRATE_ROOT)
+    {
+        return Err(format!("{UNSAFE_CRATE_ROOT} is missing"));
+    }
     for relative in &crate_roots {
         let source = std::fs::read_to_string(root.join(relative))
             .map_err(|error| format!("cannot read owned crate root {relative}: {error}"))?;
+        if relative == UNSAFE_CRATE_ROOT {
+            validate_unsafe_crate_root(&source)?;
+            continue;
+        }
         if !source
             .lines()
             .take(50)
@@ -664,7 +733,505 @@ fn owned_safety_check() -> Result<(), String> {
             ));
         }
     }
-    println!("workspace, fork, executable, example, and standalone fuzz roots forbid unsafe code");
+    let manifest = std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml"))
+        .map_err(|error| format!("cannot read the {UNSAFE_CRATE} manifest: {error}"))?;
+    validate_unsafe_crate_manifest(&manifest)?;
+    // Test crate roots forbid unsafe code like other roots. Test modules in
+    // subfolders inherit their root's forbid, and the link test library is
+    // the one named exception.
+    for relative in test_folder_rust_files(&root)? {
+        if crate_roots.contains(&relative) {
+            continue;
+        }
+        let source = std::fs::read_to_string(root.join(&relative))
+            .map_err(|error| format!("cannot read {relative}: {error}"))?;
+        if relative == LINKTEST_ROOT {
+            validate_linktest_root(&source)?;
+        } else if mentions_unsafe(&source) {
+            return Err(format!("{relative} uses unsafe Rust in a test"));
+        }
+    }
+    // A crate root forbids unsafe code only for the files that the compiler
+    // reaches from it, and a Bazel target can name a root that the list
+    // above does not know. So every Rust file outside the FFI crate is also
+    // searched for unsafe code and for includes the search cannot follow.
+    let searched = rust_files_outside_unsafe_crate(&root)?;
+    for relative in &searched {
+        let source = std::fs::read_to_string(root.join(relative))
+            .map_err(|error| format!("cannot read {relative}: {error}"))?;
+        if mentions_unsafe(&source) || mentions_unsafe_attribute(&source) {
+            return Err(format!(
+                "{relative} uses unsafe Rust outside {UNSAFE_CRATE}; move it into crates/rustleaks-ffi"
+            ));
+        }
+        if let Some(include) = non_rust_include(&source) {
+            return Err(format!(
+                "{relative} includes {include:?}, which the unsafe search does not read; include only .rs files"
+            ));
+        }
+    }
+    println!(
+        "every owned crate root forbids unsafe code except {UNSAFE_CRATE_ROOT}, which denies undocumented unsafe code; {} Rust files outside crates/{UNSAFE_CRATE}, under crates/ and {}, use no unsafe Rust",
+        searched.len(),
+        RUST_OUTSIDE_CRATES.join(", ")
+    );
+    Ok(())
+}
+
+/// Folders outside `crates/` that Bazel builds Rust from. Rust there is
+/// never in the unsafe inventory, so it must not use unsafe Rust at all.
+const RUST_OUTSIDE_CRATES: &[&str] = &["bazel", "bindings", "release"];
+
+/// Lists the Rust files under `crates/`, except those of [`UNSAFE_CRATE`],
+/// and under [`RUST_OUTSIDE_CRATES`], relative to `root`.
+fn rust_files_outside_unsafe_crate(root: &Path) -> Result<Vec<String>, String> {
+    fn walk(root: &Path, directory: &Path, files: &mut Vec<String>) -> Result<(), String> {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return Ok(());
+        };
+        for entry in entries {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk(root, &path, files)?;
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let relative = path.strip_prefix(root).map_err(|error| error.to_string())?;
+                files.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    for directory in RUST_OUTSIDE_CRATES {
+        walk(root, &root.join(directory), &mut files)?;
+    }
+    let crates = std::fs::read_dir(root.join("crates"))
+        .map_err(|error| format!("cannot list crates/: {error}"))?;
+    for entry in crates {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() && !path.ends_with(UNSAFE_CRATE) {
+            walk(root, &path, &mut files)?;
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Attributes that are unsafe without the `unsafe` keyword before edition
+/// 2024.
+const UNSAFE_ATTRIBUTES: [&str; 3] = ["no_mangle", "export_name", "link_section"];
+
+/// Macros that run assembly. `global_asm!` needs no `unsafe` keyword.
+const ASSEMBLY_MACROS: [&str; 3] = ["asm", "global_asm", "naked_asm"];
+
+/// Reports whether Rust source uses, in code, an attribute in
+/// [`UNSAFE_ATTRIBUTES`] or a macro in [`ASSEMBLY_MACROS`].
+fn mentions_unsafe_attribute(source: &str) -> bool {
+    let code = code_only(source).chars().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < code.len() {
+        if !is_identifier(code[index]) {
+            index += 1;
+            continue;
+        }
+        let end = identifier_end(&code, index);
+        let word = code[index..end].iter().collect::<String>();
+        if UNSAFE_ATTRIBUTES.contains(&word.as_str())
+            || (ASSEMBLY_MACROS.contains(&word.as_str())
+                && next_code(&code, end).is_some_and(|next| code[next] == '!'))
+        {
+            return true;
+        }
+        index = end;
+    }
+    false
+}
+
+/// Returns the first `include!` or path attribute target in Rust source that
+/// is not a literal `.rs` path, since the unsafe search reads only `.rs`
+/// files. It finds `include!` with any delimiter, `#[path = ...]` and
+/// `path = ...` inside any attribute, such as `cfg_attr`, with comments or
+/// whitespace between the tokens.
+fn non_rust_include(source: &str) -> Option<String> {
+    let tokens = literal_marked(source);
+    let code = |index: usize| {
+        tokens
+            .get(index)
+            .filter(|(_, literal)| !literal)
+            .map(|(c, _)| *c)
+    };
+    let next = |mut index: usize| {
+        while let Some(&(character, literal)) = tokens.get(index) {
+            if literal || !is_rust_whitespace(character) {
+                return Some(index);
+            }
+            index += 1;
+        }
+        None
+    };
+    let word_at = |index: usize| {
+        let mut end = index;
+        while code(end).is_some_and(is_identifier) {
+            end += 1;
+        }
+        let starts = index == 0 || !code(index - 1).is_some_and(is_identifier);
+        (starts && end > index).then(|| {
+            (
+                tokens[index..end]
+                    .iter()
+                    .map(|(c, _)| c)
+                    .collect::<String>(),
+                end,
+            )
+        })
+    };
+    // The target after `at`: a literal path, or the start of whatever else
+    // is there.
+    let target = |at: Option<usize>| -> Result<(), String> {
+        let Some(at) = at.filter(|&at| tokens[at].1) else {
+            let rest = at.map_or(String::new(), |at| {
+                tokens[at..].iter().take(40).map(|(c, _)| c).collect()
+            });
+            return Err(rest);
+        };
+        let mut end = at;
+        while tokens.get(end).is_some_and(|(_, literal)| *literal) {
+            end += 1;
+        }
+        let literal = tokens[at..end].iter().map(|(c, _)| c).collect::<String>();
+        let path = literal
+            .split_once('"')
+            .and_then(|(_, rest)| rest.rsplit_once('"'))
+            .map_or(literal.as_str(), |(path, _)| path);
+        if path.ends_with(".rs") {
+            Ok(())
+        } else {
+            Err(path.to_owned())
+        }
+    };
+    let mut attribute_depth = 0_usize;
+    let mut index = 0;
+    while index < tokens.len() {
+        let Some(character) = code(index) else {
+            index += 1;
+            continue;
+        };
+        if character == '#' {
+            let mut open = next(index + 1);
+            if open.and_then(code) == Some('!') {
+                open = open.and_then(|open| next(open + 1));
+            }
+            if let Some(open) = open.filter(|&open| code(open) == Some('[')) {
+                attribute_depth = 1;
+                index = open + 1;
+                continue;
+            }
+        }
+        if attribute_depth > 0 {
+            match character {
+                '[' | '(' => attribute_depth += 1,
+                ']' | ')' => attribute_depth -= 1,
+                _ => {}
+            }
+        }
+        if let Some((word, end)) = word_at(index) {
+            let after = next(end);
+            if word == "include" && after.and_then(code) == Some('!') {
+                let open = after.and_then(|after| next(after + 1));
+                if open
+                    .and_then(code)
+                    .is_some_and(|open| matches!(open, '(' | '[' | '{'))
+                    && let Err(found) = target(open.and_then(|open| next(open + 1)))
+                {
+                    return Some(found);
+                }
+            }
+            if word == "path"
+                && attribute_depth > 0
+                && after.and_then(code) == Some('=')
+                && let Err(found) = target(after.and_then(|after| next(after + 1)))
+            {
+                return Some(found);
+            }
+            index = end;
+            continue;
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Returns the next index at or after `index` in `code` that is not
+/// whitespace.
+fn next_code(code: &[char], index: usize) -> Option<usize> {
+    (index..code.len()).find(|&index| !is_rust_whitespace(code[index]))
+}
+
+/// Whether Rust's lexer treats `character` as whitespace. Rust uses the
+/// Unicode `Pattern_White_Space` set, which also holds the left-to-right and
+/// right-to-left marks that `char::is_whitespace` does not.
+fn is_rust_whitespace(character: char) -> bool {
+    character.is_whitespace() || matches!(character, '\u{200E}' | '\u{200F}')
+}
+
+/// Returns the characters of Rust source without comments, each marked as
+/// part of a string or character literal or not. Comments become one space.
+fn literal_marked(source: &str) -> Vec<(char, bool)> {
+    let mut tokens = Vec::with_capacity(source.len());
+    scan_rust(source, &mut |piece: &[char], literal: bool| {
+        tokens.extend(piece.iter().map(|&character| (character, literal)));
+    });
+    tokens
+}
+
+/// Returns the code of Rust source with comments (nested block comments
+/// included), string literals (raw, byte and C strings included) and
+/// character literals blanked, so that a search for a keyword sees only
+/// code. Identifiers, raw identifiers, lifetimes and labels are read as whole
+/// tokens and stay code, so that the `r` at the end of `'r` or `r#r` never
+/// starts a raw string.
+fn code_only(source: &str) -> String {
+    let mut code = String::with_capacity(source.len());
+    scan_rust(source, &mut |piece: &[char], literal: bool| {
+        if literal {
+            code.push(' ');
+        } else {
+            code.extend(piece);
+        }
+    });
+    code
+}
+
+/// Splits Rust source into code and literals, without comments, and passes
+/// each piece to `emit` with whether it is a literal. A comment is passed as
+/// one space of code.
+fn scan_rust(source: &str, emit: &mut dyn FnMut(&[char], bool)) {
+    let characters = source.chars().collect::<Vec<_>>();
+    let space = [' '];
+    let mut index = 0;
+    while let Some(&character) = characters.get(index) {
+        let next = characters.get(index + 1).copied();
+        if character == '/' && next == Some('/') {
+            while index < characters.len() && characters[index] != '\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if character == '/' && next == Some('*') {
+            let mut depth = 0_usize;
+            while index < characters.len() {
+                match (characters[index], characters.get(index + 1)) {
+                    ('/', Some('*')) => {
+                        depth += 1;
+                        index += 2;
+                    }
+                    ('*', Some('/')) => {
+                        depth -= 1;
+                        index += 2;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => index += 1,
+                }
+            }
+            emit(&space, false);
+            continue;
+        }
+        if is_identifier(character) {
+            let end = identifier_end(&characters, index);
+            let word = characters[index..end].iter().collect::<String>();
+            if matches!(word.as_str(), "r" | "br" | "cr")
+                && let Some(end) = raw_string_end(&characters, end)
+            {
+                emit(&characters[index..end], true);
+                index = end;
+                continue;
+            }
+            // A raw identifier, such as `r#r`, is one token.
+            let end = raw_identifier_end(&characters, &word, end).unwrap_or(end);
+            emit(&characters[index..end], false);
+            index = end;
+            continue;
+        }
+        if character == '"' {
+            let start = index;
+            index += 1;
+            while let Some(&next) = characters.get(index) {
+                index += if next == '\\' { 2 } else { 1 };
+                if next == '"' {
+                    break;
+                }
+            }
+            index = index.min(characters.len());
+            emit(&characters[start..index], true);
+            continue;
+        }
+        if character == '\'' {
+            // A character literal is an escape, or one character and a
+            // closing quote. Anything else starts a lifetime or a label.
+            let end = if next == Some('\\') {
+                // The escaped character itself may be a quote.
+                characters
+                    .get(index + 3..)
+                    .and_then(|rest| rest.iter().position(|&next| next == '\''))
+                    .map(|offset| index + 4 + offset)
+            } else if characters.get(index + 2) == Some(&'\'') {
+                Some(index + 3)
+            } else {
+                None
+            };
+            if let Some(end) = end.map(|end: usize| end.min(characters.len())) {
+                emit(&characters[index..end], true);
+                index = end;
+                continue;
+            }
+            // A lifetime or a label, such as `'r` or `'r#r`, is one token.
+            let start = index + 1;
+            let mut end = identifier_end(&characters, start);
+            let word = characters[start..end].iter().collect::<String>();
+            end = raw_identifier_end(&characters, &word, end).unwrap_or(end);
+            emit(&characters[index..end], false);
+            index = end;
+            continue;
+        }
+        emit(&characters[index..=index], false);
+        index += 1;
+    }
+}
+
+fn is_identifier(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+/// Returns the index just past the identifier characters from `start`.
+fn identifier_end(characters: &[char], start: usize) -> usize {
+    characters.get(start..).map_or(start, |rest| {
+        start + rest.iter().take_while(|&&next| is_identifier(next)).count()
+    })
+}
+
+/// If `word`, which ends at `end`, is the `r` of a raw identifier such as
+/// `r#r`, returns the index just past the identifier.
+fn raw_identifier_end(characters: &[char], word: &str, end: usize) -> Option<usize> {
+    (word == "r"
+        && characters.get(end) == Some(&'#')
+        && characters
+            .get(end + 1)
+            .is_some_and(|&next| is_identifier(next)))
+    .then(|| identifier_end(characters, end + 1))
+}
+
+/// If the `r`, `br` or `cr` prefix that ends just before `open` starts a raw
+/// string literal (`r"…"`, `r#"…"#`, `br#"…"#` or `cr"…"`), returns the index
+/// just past the literal.
+fn raw_string_end(characters: &[char], open: usize) -> Option<usize> {
+    let hashes = characters
+        .get(open..)?
+        .iter()
+        .take_while(|&&next| next == '#')
+        .count();
+    let quote = open + hashes;
+    if characters.get(quote) != Some(&'"') {
+        return None;
+    }
+    let mut cursor = quote + 1;
+    while cursor < characters.len() {
+        if characters[cursor] == '"'
+            && characters[cursor + 1..]
+                .iter()
+                .take(hashes)
+                .filter(|&&next| next == '#')
+                .count()
+                == hashes
+        {
+            return Some(cursor + 1 + hashes);
+        }
+        cursor += 1;
+    }
+    Some(characters.len())
+}
+
+/// Reports whether Rust source uses the `unsafe` keyword in code: an unsafe
+/// block, function, impl or attribute such as `#[unsafe(no_mangle)]`.
+fn mentions_unsafe(source: &str) -> bool {
+    code_only(source)
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .any(|word| word == "unsafe")
+}
+
+/// The one Rust file outside `crates/rustleaks-ffi/src` that uses unsafe Rust:
+/// the second static library of the cgo link test. It is its own crate root
+/// with the same unsafe lint denials as the FFI crate, and its only unsafe
+/// Rust is `#[unsafe(no_mangle)]` on its C exports.
+const LINKTEST_ROOT: &str = "crates/rustleaks-ffi/tests/linktest/other.rs";
+
+/// Checks the link test library: the FFI crate's deny lints, and no unsafe
+/// Rust but `#[unsafe(no_mangle)]` attributes, each under a `SAFETY:`
+/// comment.
+fn validate_linktest_root(source: &str) -> Result<(), String> {
+    let denials = "#![deny(\n    unsafe_op_in_unsafe_fn,\n    clippy::undocumented_unsafe_blocks,\n    clippy::missing_safety_doc\n)]";
+    if !source.contains(denials) {
+        return Err(format!(
+            "{LINKTEST_ROOT} must deny the unsafe lints that crates/rustleaks-ffi denies"
+        ));
+    }
+    let without_attributes = source.replace("#[unsafe(no_mangle)]", "");
+    if mentions_unsafe(&without_attributes) {
+        return Err(format!(
+            "{LINKTEST_ROOT} may use unsafe Rust only as #[unsafe(no_mangle)]"
+        ));
+    }
+    let lines = source.lines().collect::<Vec<_>>();
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim() == "#[unsafe(no_mangle)]"
+            && !lines[..index]
+                .iter()
+                .rev()
+                .take_while(|previous| previous.trim_start().starts_with("//"))
+                .any(|previous| previous.trim_start().starts_with("// SAFETY:"))
+        {
+            return Err(format!(
+                "{LINKTEST_ROOT}:{} has #[unsafe(no_mangle)] without a SAFETY comment",
+                index + 1
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Lists the Rust files under `crates/*/tests/` folders, relative to `root`.
+fn test_folder_rust_files(root: &Path) -> Result<Vec<String>, String> {
+    let mut files = Vec::new();
+    let entries = std::fs::read_dir(root.join("crates"))
+        .map_err(|error| format!("cannot list crates: {error}"))?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        let tests = path.join("tests");
+        if tests.is_dir() {
+            collect_rust_files(root, &tests, &mut files)?;
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn collect_rust_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<String>,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(directory)
+        .map_err(|error| format!("cannot list {}: {error}", directory.display()))?;
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
+        if path.is_dir() {
+            collect_rust_files(root, &path, files)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            let relative = path.strip_prefix(root).map_err(|error| error.to_string())?;
+            files.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
     Ok(())
 }
 
@@ -706,6 +1273,41 @@ fn miri_check() -> Result<(), String> {
             "rustleaks-report",
             "go_json::tests::float32_format_uses_go_json_cutoffs_and_sign",
         ),
+        // The C ABI: null and misaligned pointer checks, rule views made
+        // before their owner moves, finding views read after a scan on a
+        // scan thread, and a panic that crosses that thread.
+        (
+            "rustleaks-ffi",
+            "tests::null_handles_and_out_pointers_are_invalid_arguments",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::findings_carry_every_field_and_the_given_path",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::views_have_null_pointers_for_empty_lists",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::a_panicking_scan_drops_its_scratch_and_returns_an_internal_error",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::misaligned_out_handle_argument_and_free_pointers_are_invalid",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::error_message_checks_both_out_pointers_before_writing",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::rules_list_every_reporting_rule_in_report_order",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::an_engine_from_another_process_is_closed_and_free_releases_nothing",
+        ),
     ];
     for (package, case) in cases {
         command_status_with_timeout(
@@ -729,7 +1331,7 @@ fn miri_check() -> Result<(), String> {
             &format!("Miri case {package}::{case}"),
         )?;
     }
-    println!("selected core, source, and report state transitions passed pinned Miri");
+    println!("selected core, source, report and C ABI state transitions passed pinned Miri");
     Ok(())
 }
 
@@ -763,11 +1365,161 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, owned_crate_roots, parse_civil_day,
-        reviewed_unsafe_packages, validate_compcol_exemption_scope, validate_dependency_boundaries,
-        validate_owned_unsafe_package, validate_supply_chain_exceptions,
-        validate_unsafe_package_set, validate_vet_exemption,
+        COMPCOL_EXEMPTION_SHA256, COMPCOL_EXEMPTION_TARGETS, mentions_unsafe, owned_crate_roots,
+        parse_civil_day, reviewed_unsafe_packages, validate_compcol_exemption_scope,
+        validate_dependency_boundaries, validate_owned_unsafe_package,
+        validate_supply_chain_exceptions, validate_unsafe_crate_manifest,
+        validate_unsafe_crate_root, validate_unsafe_package_set, validate_vet_exemption,
     };
+
+    #[test]
+    fn unsafe_rust_is_found_in_code_but_not_in_comments_or_lint_names() {
+        assert!(mentions_unsafe(
+            "#[unsafe(no_mangle)]\npub extern \"C\" fn f() {}\n"
+        ));
+        assert!(mentions_unsafe("fn f() { unsafe { g() } }\n"));
+        // A quote inside a character literal does not open a string.
+        assert!(mentions_unsafe("const Q: char = '\"'; unsafe fn f() {}\n"));
+        assert!(mentions_unsafe("const Q: u8 = b'\"'; unsafe fn f() {}\n"));
+        assert!(mentions_unsafe("const Q: char = '\\''; unsafe fn f() {}\n"));
+        // A quote inside a raw string does not end it early.
+        assert!(mentions_unsafe(
+            "const S: &str = r#\"a \" b\"#; unsafe fn f() {}\n"
+        ));
+        assert!(!mentions_unsafe("const S: &str = r#\"a \" unsafe\"#;\n"));
+        assert!(!mentions_unsafe("const S: &[u8] = br\"unsafe\";\n"));
+        assert!(!mentions_unsafe(
+            "const C: char = 'u'; /* /* unsafe */ unsafe */\n"
+        ));
+        // Lifetimes and labels are code, not character literals.
+        assert!(mentions_unsafe(
+            "fn f<'a>(x: &'a u8) { 'outer: loop { unsafe { g() } } }\n"
+        ));
+        // A lifetime or a raw identifier that ends in r is not a raw
+        // string prefix.
+        let lifetime_macro =
+            "macro_rules! m { ($l:lifetime $a:literal, $e:expr, $b:literal) => { $e } }\n";
+        assert!(mentions_unsafe(&format!(
+            "{lifetime_macro}let x = m!('r\"\\\"\", unsafe {{ std::ptr::read(&7u8) }}, \"\\\"\");\n"
+        )));
+        assert!(mentions_unsafe(&format!(
+            "{lifetime_macro}let x = m!('br\"\\\"\", unsafe {{ std::ptr::read(&7u8) }}, \"\\\"\");\n"
+        )));
+        assert!(mentions_unsafe(
+            "macro_rules! m { ($l:ident $a:literal, $e:expr, $b:literal) => { $e } }\n\
+             let x = m!(r#r\"\\\"\", unsafe { std::ptr::read(&7u8) }, \"\\\"\");\n"
+        ));
+        assert!(mentions_unsafe(
+            "fn f<'a>() { let _: &'a u8; unsafe { g() } }\n"
+        ));
+        assert!(!mentions_unsafe("const S: &str = cr#\"unsafe\"#;\n"));
+        // Unsafe attributes from before edition 2024 count, in code only.
+        assert!(super::mentions_unsafe_attribute(
+            "#[no_mangle]\npub extern \"C\" fn f() {}\n"
+        ));
+        assert!(super::mentions_unsafe_attribute(
+            "#[link_section = \".x\"]\nstatic X: u8 = 0;\n"
+        ));
+        assert!(!super::mentions_unsafe_attribute(
+            "// #[no_mangle]\nconst S: &str = \"export_name\";\n"
+        ));
+        // Includes must name .rs files, which the search reads too.
+        assert_eq!(super::non_rust_include("include!(\"tables.rs\");\n"), None);
+        assert_eq!(
+            super::non_rust_include("const S: &str = include_str!(\"x.txt\");\n"),
+            None
+        );
+        assert_eq!(
+            super::non_rust_include("include!(\"x.inc\");\n").as_deref(),
+            Some("x.inc")
+        );
+        // Rust also treats the left-to-right and right-to-left marks as
+        // whitespace between tokens.
+        assert_eq!(
+            super::non_rust_include("include\u{200E}!(\"x.inc\");\n").as_deref(),
+            Some("x.inc")
+        );
+        assert_eq!(
+            super::non_rust_include("#[path\u{200E}= \"x.txt\"]\nmod x;\n").as_deref(),
+            Some("x.txt")
+        );
+        assert_eq!(
+            super::non_rust_include("#\u{200F}[path = \"x.txt\"]\nmod x;\n").as_deref(),
+            Some("x.txt")
+        );
+        assert_eq!(
+            super::non_rust_include("#[path = \"x.txt\"]\nmod x;\n").as_deref(),
+            Some("x.txt")
+        );
+        assert!(
+            super::non_rust_include("include!(concat!(env!(\"OUT_DIR\"), \"/x.rs\"));\n").is_some()
+        );
+        // Any delimiter, comments between tokens, and path in any attribute.
+        for (source, found) in [
+            ("include!{\"x.inc\"}\n", "x.inc"),
+            ("include![\"x.inc\"]\n", "x.inc"),
+            ("include /* x */ ! /* y */ (\"x.inc\");\n", "x.inc"),
+            ("include // x\n!(\"x.inc\");\n", "x.inc"),
+            ("#[path /* x */ = \"x.txt\"]\nmod x;\n", "x.txt"),
+            ("#[cfg_attr(all(), path = \"x.txt\")]\nmod x;\n", "x.txt"),
+            ("#![cfg_attr(unix, path = \"x.txt\")]\n", "x.txt"),
+            ("#[path = r\"x.txt\"]\nmod x;\n", "x.txt"),
+        ] {
+            assert_eq!(
+                super::non_rust_include(source).as_deref(),
+                Some(found),
+                "{source}"
+            );
+        }
+        for source in [
+            "#[cfg_attr(unix, path = \"unix.rs\")]\nmod x;\n",
+            "fn f(path: &str) { let path = 1; }\n",
+            "#[derive(Debug)]\nstruct S { path: u8 }\nconst T: &str = \"include!(x)\";\n",
+            "// include!(\"x.inc\")\nfn f() {}\n",
+            "let x = my_include!(\"x.inc\");\n",
+        ] {
+            assert_eq!(super::non_rust_include(source), None, "{source}");
+        }
+        // Assembly macros, which need no unsafe keyword in global_asm!.
+        assert!(super::mentions_unsafe_attribute("global_asm!(\"nop\");\n"));
+        assert!(super::mentions_unsafe_attribute(
+            "global_asm\u{200F}!(\"nop\");\n"
+        ));
+        assert!(super::mentions_unsafe_attribute(
+            "core::arch::global_asm /* x */ !(\"nop\");\n"
+        ));
+        assert!(super::mentions_unsafe_attribute(
+            "fn f() { asm!(\"nop\") }\n"
+        ));
+        assert!(!super::mentions_unsafe_attribute(
+            "let asm = 1; // global_asm!\n"
+        ));
+        // An identifier that ends in r is not a raw string prefix.
+        assert!(mentions_unsafe(
+            "fn f() { let r = 1; let br = \"x\"; unsafe { g() } }\n"
+        ));
+        assert!(mentions_unsafe("pub unsafe extern \"C\" fn f() {}\n"));
+        assert!(!mentions_unsafe(
+            "#![forbid(unsafe_code)]\n// unsafe in a comment\n"
+        ));
+        assert!(!mentions_unsafe(
+            "let url = \"https://example.com/unsafe\"; /* unsafe */\n"
+        ));
+        assert!(mentions_unsafe(
+            "let url = \"https://example.com/\"; unsafe { f() }\n"
+        ));
+    }
+
+    #[test]
+    fn the_link_test_library_keeps_its_unsafe_boundary() {
+        let root = crate::workspace_root().unwrap();
+        let source = std::fs::read_to_string(root.join(super::LINKTEST_ROOT)).unwrap();
+        super::validate_linktest_root(&source).unwrap();
+        let block = source.replacen("text.len() as u64", "unsafe { text.len() as u64 }", 1);
+        assert!(super::validate_linktest_root(&block).is_err());
+        let undocumented = source.replacen("// SAFETY:", "// Note:", 1);
+        assert!(super::validate_linktest_root(&undocumented).is_err());
+    }
 
     #[test]
     fn owned_crate_roots_include_every_binary_example_and_fuzz_target() {
@@ -824,6 +1576,41 @@ mod tests {
 
         id["source"] = serde_json::json!({ "Registry": { "name": "crates.io" } });
         assert!(validate_owned_unsafe_package(&id, 1, false).is_ok());
+    }
+
+    #[test]
+    fn only_the_ffi_crate_may_use_unsafe_code() {
+        let ffi = serde_json::json!({
+            "name": "rustleaks-ffi",
+            "version": "0.2.0",
+            "source": { "Path": "file:///workspace/crates/rustleaks-ffi" },
+        });
+        assert!(validate_owned_unsafe_package(&ffi, 12, false).is_ok());
+        let other = serde_json::json!({
+            "name": "rustleaks-ffi-extra",
+            "version": "0.2.0",
+            "source": { "Path": "file:///workspace/crates/rustleaks-ffi-extra" },
+        });
+        assert!(validate_owned_unsafe_package(&other, 1, false).is_err());
+
+        let root = crate::workspace_root().unwrap();
+        let source = std::fs::read_to_string(root.join("crates/rustleaks-ffi/src/lib.rs")).unwrap();
+        assert!(validate_unsafe_crate_root(&source).is_ok());
+        assert!(validate_unsafe_crate_root("#![forbid(unsafe_code)]\n").is_err());
+        let weaker = source.replace("    clippy::undocumented_unsafe_blocks,\n", "");
+        assert!(validate_unsafe_crate_root(&weaker).is_err());
+        let abort = source.replace("#[cfg(not(panic = \"unwind\"))]", "");
+        assert!(validate_unsafe_crate_root(&abort).is_err());
+
+        let manifest =
+            std::fs::read_to_string(root.join("crates/rustleaks-ffi/Cargo.toml")).unwrap();
+        assert!(validate_unsafe_crate_manifest(&manifest).is_ok());
+        assert!(validate_unsafe_crate_manifest("[lints]\nworkspace = true\n").is_err());
+        let weaker = manifest.replace(
+            "missing_safety_doc = \"deny\"",
+            "missing_safety_doc = \"warn\"",
+        );
+        assert!(validate_unsafe_crate_manifest(&weaker).is_err());
     }
 
     #[test]

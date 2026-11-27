@@ -330,6 +330,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustleaks-ffi"
+version = "0.2.0"
+dependencies = [
+ "rustleaks-core",
+ "serde_json",
+]
+
+[[package]]
 name = "rustleaks-rar-codec"
 version = "0.9.3-rustleaks.1"
 

@@ -6,12 +6,26 @@ common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common --announce_rc
 common --show_timestamps
 
+# Python tests start the Bazel-downloaded interpreter from a shell script,
+# not from a host python3, and create no implicit __init__.py files.
+common --@rules_python//python/config_settings:bootstrap_impl=script
+common --incompatible_default_to_explicit_init_py
+
 build --verbose_failures
 test --test_output=errors
 
+# The LLVM toolchain adds -no-pie to executable links on GNU and unconstrained
+# Linux platforms unless force_pic is set. Rust links GNU executables as PIE and
+# x86_64 musl executables as static PIE, so these configs set force_pic to keep
+# that. Rust links aarch64 musl executables as static, not PIE.
+build:linux-x86_64-gnu --force_pic
+build:linux-aarch64-gnu --force_pic
+build:linux-x86_64-musl --force_pic
+build:linux-aarch64-musl --force_pic
 build:linux-x86_64-gnu --platforms=//platforms:linux_x86_64_gnu
 build:linux-aarch64-gnu --platforms=//platforms:linux_aarch64_gnu
 build:linux-x86_64-musl --platforms=//platforms:linux_x86_64_musl
+build:linux-x86_64-musl --@rules_python//python/config_settings:py_linux_libc=musl
 build:linux-x86_64-musl --extra_toolchains=@rust_musl_linux_aarch64__x86_64-unknown-linux-musl__stable//:toolchain
 build:linux-x86_64-musl --extra_toolchains=@rust_musl_linux_x86_64__x86_64-unknown-linux-musl__stable//:toolchain
 build:linux-x86_64-musl --extra_toolchains=@rust_musl_macos_aarch64__x86_64-unknown-linux-musl__stable//:toolchain
@@ -19,6 +33,7 @@ build:linux-x86_64-musl --extra_toolchains=@rust_musl_macos_x86_64__x86_64-unkno
 build:linux-x86_64-musl --extra_toolchains=@rust_musl_windows_aarch64_x86_64//:toolchain
 build:linux-x86_64-musl --extra_toolchains=@rust_musl_windows_x86_64_x86_64//:toolchain
 build:linux-aarch64-musl --platforms=//platforms:linux_aarch64_musl
+build:linux-aarch64-musl --@rules_python//python/config_settings:py_linux_libc=musl
 build:linux-aarch64-musl --extra_toolchains=@rust_musl_linux_aarch64__aarch64-unknown-linux-musl__stable//:toolchain
 build:linux-aarch64-musl --extra_toolchains=@rust_musl_linux_x86_64__aarch64-unknown-linux-musl__stable//:toolchain
 build:linux-aarch64-musl --extra_toolchains=@rust_musl_macos_aarch64__aarch64-unknown-linux-musl__stable//:toolchain
@@ -48,3 +63,16 @@ build:release-macos-x86_64 --config=macos-x86_64 --config=release-opt --config=r
 build:release-macos-aarch64 --config=macos-aarch64 --config=release-opt --config=release-lto --@rules_rust//rust/settings:extra_rustc_flag=-Clink-arg=-Wl,-no_uuid
 build:release-windows-x86_64-msvc --config=windows-x86_64-msvc --config=release-opt
 build:release-windows-aarch64-msvc --config=windows-aarch64-msvc --config=release-opt
+
+# Binding release libraries and wheels use the release settings of their
+# lane, with two differences: musl lanes build for the musl C platform, so
+# the shared library links the shared musl libc, and macOS libraries keep
+# their Mach-O UUID, because dyld does not load a dylib without one.
+build:release-bindings-linux-x86_64-gnu --config=release-linux-x86_64-gnu
+build:release-bindings-linux-aarch64-gnu --config=release-linux-aarch64-gnu
+build:release-bindings-linux-x86_64-musl --config=release-linux-x86_64-musl --platforms=//platforms:linux_x86_64_musl_c
+build:release-bindings-linux-aarch64-musl --config=release-linux-aarch64-musl --platforms=//platforms:linux_aarch64_musl_c
+build:release-bindings-macos-x86_64 --config=macos-x86_64 --config=release-opt --config=release-lto
+build:release-bindings-macos-aarch64 --config=macos-aarch64 --config=release-opt --config=release-lto
+build:release-bindings-windows-x86_64-msvc --config=release-windows-x86_64-msvc
+build:release-bindings-windows-aarch64-msvc --config=release-windows-aarch64-msvc

@@ -1,0 +1,12 @@
+//go:build {{build}}
+
+// Package native links librustleaks_ffi.a, the Rustleaks native library for
+// {{description}}, through cgo. It has no API.
+//
+// The folder holds only the archive and this file. Go checks every
+// library-named file under a cgo -L folder, and the license texts of the
+// module, such as COPYING.LIB, are not libraries.
+package native
+
+// #cgo LDFLAGS: -L${SRCDIR} -lrustleaks_ffi {{system_libraries}}
+import "C"

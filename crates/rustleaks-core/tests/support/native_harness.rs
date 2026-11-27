@@ -47,7 +47,10 @@ pub fn scan_with_depth(
     path: &str,
     max_decode_depth: usize,
 ) -> Vec<Finding> {
-    let fragment = Fragment::builder(bytes).file_path(path).build();
+    let fragment = Fragment::builder(bytes)
+        .start_line(0)
+        .file_path(path)
+        .build();
     let result = engine.scan_fragment(
         &fragment,
         &ScanOptions::builder()

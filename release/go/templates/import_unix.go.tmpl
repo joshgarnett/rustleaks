@@ -1,0 +1,6 @@
+//go:build {{build}}
+
+package rustleaks
+
+// The platform module links the native library through cgo.
+import _ "github.com/joshgarnett/rustleaks-go/lib/{{platform}}"

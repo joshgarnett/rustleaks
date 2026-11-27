@@ -17,16 +17,17 @@ change that makes Rustleaks miss a secret it found before needs maintainer
 approval. Help, usage, error wording, logs, the banner, summaries, and JSON
 key or CSV column order are presentation.
 
-Do not install Go or check out Gitleaks to create expected values.
+Do not use Go or Gitleaks to create expected values.
 
 Keep `rustleaks-core` independent of archives, Git, reports, the CLI, async
 runtimes and native libraries. It reads no files except through the two
 explicit file helpers named in the architecture. Source adapters belong in
 `rustleaks-sources`, formatting in `rustleaks-report`, orchestration in
-`rustleaks-cli`, and unpublished regression or maintenance code in
-`rustleaks-eval` or `xtask`. Owned codec crates are source implementation
-details and must not enter the default core graph or public API. See
-[the architecture](docs/dev/architecture.md).
+`rustleaks-cli`, the C ABI of the Go and Python bindings in `rustleaks-ffi`,
+and unpublished regression or maintenance code in `rustleaks-eval` or
+`xtask`. Owned codec crates are source implementation details and must not
+enter the default core graph or public API. See [the
+architecture](docs/dev/architecture.md).
 
 The built-in rules are the Gitleaks-based rules in
 `crates/rustleaks-core/default/gitleaks.toml` and the Rustleaks rule files
@@ -78,7 +79,17 @@ compilation.
   `NOTICE` attribution for copied configuration and fixtures.
 - Use only synthetic values or reviewed upstream fixtures in tests, examples,
   fuzz seeds and issues. Treat findings and crash artifacts as sensitive.
-- Owned crates forbid unsafe Rust. Apply the
+- Owned crates forbid unsafe Rust, except `rustleaks-ffi`. Its exports are
+  `unsafe extern "C"` functions marked `#[unsafe(no_mangle)]`. Their unsafe
+  code checks, reads and writes only the pointers that a C caller passes,
+  and frees only handles that the library made. Its `harness` module, its
+  tests and the link test library `tests/linktest/other.rs` call or define
+  exports with unsafe code. Every unsafe block there has a `SAFETY:`
+  comment, and every `unsafe impl Send` or `Sync` says why its pointer views
+  or handles can be shared between threads. Detection stays in safe
+  `rustleaks-core` code. The Go
+  `unsafe`, cgo and `syscall` code and the Python ctypes code under
+  `bindings/` are part of the same reviewed boundary. Apply the
   [threat model](docs/dev/threat-model.md),
   [resource limits](docs/user/resource-limits.md) with
   [engine internals](docs/dev/engine-internals.md), and the
@@ -104,6 +115,7 @@ issues, commits, pull requests, reviews and merges.
 
 Stop for maintainer approval before:
 
+- allowing unsafe Rust in a crate other than `rustleaks-ffi`;
 - adding or updating dependencies, toolchains or `rules_rust`;
 - changing GitHub settings or ownership;
 - enabling paid services;

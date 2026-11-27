@@ -62,7 +62,10 @@ const IDS: [&str; 44] = [
 
 fn scan(engine: &Engine, bytes: &[u8], path: &str) -> Vec<Finding> {
     let result = engine.scan_fragment(
-        &Fragment::builder(bytes).file_path(path).build(),
+        &Fragment::builder(bytes)
+            .start_line(0)
+            .file_path(path)
+            .build(),
         &ScanOptions::default(),
     );
     assert!(result.is_complete());
@@ -748,6 +751,7 @@ fn source_predicates_paths_keywords_and_byte_entropy_stay_attached() {
             value["allowlists"] = toml::Value::Array(vec![al]);
             let engine = single(value);
             let fragment = Fragment::builder(text.as_bytes())
+                .start_line(0)
                 .file_path(c.path)
                 .commit("synthetic-commit")
                 .build();
@@ -806,7 +810,7 @@ fn unbounded_yandex_segment_remains_bounded_by_caller_controls() {
             );
             if first_length >= 8192 {
                 let skipped = selected().scan_fragment(
-                    &Fragment::new(input.as_bytes()),
+                    &Fragment::builder(input.as_bytes()).start_line(0).build(),
                     &ScanOptions::builder().max_target_bytes(Some(1024)).build(),
                 );
                 assert!(skipped.findings().is_empty());
@@ -817,7 +821,7 @@ fn unbounded_yandex_segment_remains_bounded_by_caller_controls() {
                 ScanBudget::unlimited().max_finding_payload_bytes(1),
             ] {
                 let result = selected().scan_fragment_controlled(
-                    &Fragment::new(input.as_bytes()),
+                    &Fragment::builder(input.as_bytes()).start_line(0).build(),
                     &ScanOptions::default(),
                     &ScanControl::unlimited().with_budget(budget),
                 );
@@ -828,7 +832,10 @@ fn unbounded_yandex_segment_remains_bounded_by_caller_controls() {
     }
     let low = b"password=\"aaaaaaaa\"\\\"";
     let result = selected().scan_fragment_controlled(
-        &Fragment::builder(low).file_path("source.tf").build(),
+        &Fragment::builder(low)
+            .start_line(0)
+            .file_path("source.tf")
+            .build(),
         &ScanOptions::default(),
         &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(0)),
     );

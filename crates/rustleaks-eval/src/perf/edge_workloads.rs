@@ -208,7 +208,9 @@ mod tests {
                     .max_decoded_bytes(0),
             );
             let suppressed = detector.scan_fragment_controlled(
-                &Fragment::new(fixture.input.clone()),
+                &Fragment::builder(fixture.input.clone())
+                    .start_line(0)
+                    .build(),
                 &ScanOptions::default(),
                 &control,
             );
@@ -218,7 +220,9 @@ mod tests {
 
             *fixture.input.last_mut().unwrap() = b'!';
             let positive = detector.scan_fragment_controlled(
-                &Fragment::new(fixture.input.clone()),
+                &Fragment::builder(fixture.input.clone())
+                    .start_line(0)
+                    .build(),
                 &ScanOptions::default(),
                 &control,
             );
@@ -236,7 +240,9 @@ mod tests {
         let bytes = 8 * KIB;
         let fixture = stopword_fixture(bytes, "a");
         let detector = Engine::builder(fixture.compile().unwrap()).build().unwrap();
-        let fragment = Fragment::new(fixture.input.clone());
+        let fragment = Fragment::builder(fixture.input.clone())
+            .start_line(0)
+            .build();
         let control = ScanControl::unlimited().with_budget(
             ScanBudget::unlimited()
                 .max_work_units(3)
@@ -288,7 +294,9 @@ mod tests {
         );
         let detector = Engine::builder(fixture.compile().unwrap()).build().unwrap();
         let outcome = detector.scan_fragment_controlled(
-            &Fragment::new(fixture.input.clone()),
+            &Fragment::builder(fixture.input.clone())
+                .start_line(0)
+                .build(),
             &ScanOptions::default(),
             &ScanControl::unlimited().with_budget(
                 ScanBudget::unlimited()
@@ -309,14 +317,19 @@ mod tests {
     fn empty_results_do_not_hide_skipped_work_or_budget_termination() {
         let fixture = build(8 * KIB, 4, Suppressor::Marker, false).unwrap();
         let detector = Engine::builder(fixture.compile().unwrap()).build().unwrap();
-        let skipped = detector.scan_fragment(&Fragment::new(b""), &ScanOptions::default());
+        let skipped = detector.scan_fragment(
+            &Fragment::builder(b"").start_line(0).build(),
+            &ScanOptions::default(),
+        );
         assert!(skipped.is_complete());
         assert!(skipped.findings().is_empty());
         assert_eq!(skipped.usage().work_units(), 2);
         assert!(fixture.validate(&skipped).is_err());
 
         let partial = detector.scan_fragment_controlled(
-            &Fragment::new(fixture.input.clone()),
+            &Fragment::builder(fixture.input.clone())
+                .start_line(0)
+                .build(),
             &ScanOptions::default(),
             &ScanControl::unlimited().with_budget(
                 ScanBudget::unlimited()

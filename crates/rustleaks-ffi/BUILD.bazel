@@ -1,0 +1,169 @@
+load("@rules_go//go:def.bzl", "go_test")
+load("@rules_rust//rust:defs.bzl", "rust_shared_library", "rust_static_library")
+load("//bazel:musl_c.bzl", "musl_c_test")
+load("//bazel:rust_crate.bzl", "RUSTLEAKS_VERSION", "rustleaks_build_contract_files", "rustleaks_integration_test", "rustleaks_library")
+
+exports_files([
+    "Cargo.toml",
+    "include/rustleaks.h",
+])
+
+rustleaks_build_contract_files()
+
+_SRCS = glob(["src/**/*.rs"])
+
+_DEPS = ["//crates/rustleaks-core:rustleaks_core"]
+
+_RUSTC_ENV = {
+    "CARGO_MANIFEST_DIR": package_name(),
+    "CARGO_PKG_NAME": "rustleaks-ffi",
+    "CARGO_PKG_VERSION": RUSTLEAKS_VERSION,
+}
+
+# The Rust library form, for the Rust tests, Clippy, the docs and the
+# target compile check. The unit tests read the header.
+rustleaks_library(
+    name = "rustleaks_ffi",
+    compile_data = ["include/rustleaks.h"],
+    crate_name = "rustleaks_ffi",
+    deps = _DEPS,
+    edition = "2024",
+)
+
+# The C header, for the Go and Python builds.
+filegroup(
+    name = "header",
+    srcs = ["include/rustleaks.h"],
+    visibility = ["//visibility:public"],
+)
+
+# Static library (`librustleaks_ffi_static.a` or `rustleaks_ffi_static.lib`)
+# for cgo. On Windows, Bazel runs actions in the shared output folder without
+# a sandbox, and two rustc actions with one crate name in one package write
+# the same object file names there. So the static library has its own crate
+# name.
+rust_static_library(
+    name = "rustleaks_ffi_static",
+    crate_name = "rustleaks_ffi_static",
+    crate_root = "src/lib.rs",
+    # Rust's musl standard library expects the program to link libunwind.a,
+    # which musl C toolchains do not ship. rustc bundles the libunwind.a of
+    # Rust's musl standard library into this archive, so a musl Go program
+    # needs only the C library. Adding //bazel:llvm_unwind here would define
+    # each _Unwind_ symbol twice; the binding dry run checks for one copy.
+    deps = _DEPS,
+    edition = "2024",
+    rustc_env = _RUSTC_ENV,
+    srcs = _SRCS,
+    visibility = ["//visibility:public"],
+)
+
+# Shared library (`librustleaks_ffi.so`, `.dylib` or `rustleaks_ffi.dll`) for
+# ctypes and for Go on Windows.
+#
+# - Windows links the C runtime statically, so the DLL needs only system DLLs.
+# - musl turns off crt-static and links the shared musl libc.so, so the library
+#   uses the C library of the process that loads it. Binding tests build it
+#   for //platforms:linux_<cpu>_musl_c through //bazel:musl_c.bzl.
+# - GNU Linux links the LLVM unwinder, because the hermetic toolchain stubs out
+#   libgcc_s and the library must not depend on the host process for it.
+rust_shared_library(
+    name = "rustleaks_ffi_shared",
+    crate_name = "rustleaks_ffi",
+    crate_root = "src/lib.rs",
+    deps = _DEPS + select({
+        "//platforms:gnu": ["//bazel:llvm_unwind"],
+        "//platforms:musl": ["//bazel:musl_libc_shared"],
+        "//conditions:default": [],
+    }),
+    rustc_flags = select({
+        "//platforms:musl": ["-Ctarget-feature=-crt-static"],
+        "@platforms//os:windows": ["-Ctarget-feature=+crt-static"],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    rustc_env = _RUSTC_ENV,
+    srcs = _SRCS,
+    visibility = ["//visibility:public"],
+)
+
+rustleaks_integration_test(
+    name = "contract_test",
+    src = "tests/contract.rs",
+    data = ["//testdata:bindings"],
+    deps = [":rustleaks_ffi"],
+)
+
+# Scans the core corpus inputs with core and through the C ABI and compares.
+rustleaks_integration_test(
+    name = "differential_test",
+    src = "tests/differential.rs",
+    data = ["//testdata:all"],
+    deps = [
+        ":rustleaks_ffi",
+        "//crates/rustleaks-core:rustleaks_core",
+    ],
+)
+
+rustleaks_integration_test(
+    name = "exports_fuzz_test",
+    src = "tests/exports_fuzz.rs",
+    data = glob(["fuzz/seeds/exports/*"]),
+    deps = [":rustleaks_ffi"],
+)
+
+# Links the static library and a second Rust static library into one cgo
+# program. Each Rust static library carries a copy of the Rust standard
+# library, so this checks that the release archive does not cause duplicate
+# symbol errors in a Go program that already uses Rust. The second library
+# exports a C function, so it lives in this crate, the only place where
+# unsafe Rust is allowed.
+rust_static_library(
+    name = "linktest_other_static",
+    srcs = ["tests/linktest/other.rs"],
+    crate_name = "linktest_other_rust",
+    crate_root = "tests/linktest/other.rs",
+    edition = "2024",
+    # Listed in //:clippy and //:format.
+    visibility = ["//:__pkg__"],
+)
+
+go_test(
+    name = "linktest_test",
+    size = "small",
+    srcs = ["tests/linktest/link_test.go"],
+    cdeps = [
+        ":linktest_other_static",
+        ":rustleaks_ffi_static",
+    ],
+    cgo = True,
+    importpath = "github.com/joshgarnett/rustleaks/crates/rustleaks-ffi/tests/linktest",
+    pure = "off",
+    target_compatible_with = select({
+        "//platforms:musl_c_libc": [],
+        "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+musl_c_test(
+    name = "linktest_musl_test",
+    size = "small",
+    target_compatible_with = ["//platforms:musl"],
+    test = ":linktest_test",
+)
+
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":contract_test",
+        ":differential_test",
+        ":exports_fuzz_test",
+        ":linktest_musl_test",
+        ":linktest_test",
+        ":rustleaks_ffi_doc_test",
+        ":rustleaks_ffi_unit_test",
+    ],
+    visibility = ["//visibility:public"],
+)

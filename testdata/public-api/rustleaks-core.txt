@@ -469,6 +469,8 @@ pub const fn rustleaks_core::model::Fragment::start_line(&self) -> usize
 pub const fn rustleaks_core::model::Fragment::symlink_file(&self) -> &rustleaks_core::model::ByteText
 pub const fn rustleaks_core::model::Fragment::windows_file_path(&self) -> &rustleaks_core::model::ByteText
 pub fn rustleaks_core::model::Fragment::with_source_paths(self, rustleaks_core::model::ByteText, rustleaks_core::model::ByteText, rustleaks_core::model::ByteText) -> Self
+impl core::default::Default for rustleaks_core::model::Fragment
+pub fn rustleaks_core::model::Fragment::default() -> Self
 impl core::fmt::Debug for rustleaks_core::model::Fragment
 pub fn rustleaks_core::model::Fragment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for rustleaks_core::model::Fragment

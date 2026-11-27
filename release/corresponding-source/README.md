@@ -1,11 +1,14 @@
 # GNU corresponding source and relinking
 
-This page is for people who rebuild or relink the GNU Linux executables. The
-last section, Maintainer generation and proof, is for Rustleaks maintainers.
+This page is for people who rebuild or relink the GNU Linux executables or
+the GNU Linux library of the Python package. The last section, Maintainer
+generation and proof, is for Rustleaks maintainers.
 
 The `rustleaks-VERSION-corresponding-source.tar.gz` release asset is the
-source archive for the two GNU Linux executables. It holds the application
-source, and the glibc source and build inputs that the executables use.
+source archive for the two GNU Linux executables and for
+`librustleaks_ffi.so` in the two `manylinux_2_28` wheels of the same
+version. It holds the application source, and the glibc source and build
+inputs that they use.
 
 The signed native archive records the SHA-256 digest of the source archive
 in `corresponding_source` in `licenses/index.json`. Before you extract the
@@ -28,8 +31,8 @@ license files, copyright notices, file modes and symbolic links.
 | Material | Identity and use |
 | --- | --- |
 | glibc source | 2.28, commit `92d25389c255b0da9b56bc05694f0702cd22921a`, including startup and nonshared support source and `COPYING.LIB` |
-| Hermetic LLVM Bazel module | 0.8.11, complete module source with glibc build definitions, helper rules, compiler defines, copied support source and notices |
-| BCR module patch | Exact `module_dot_bazel_version.patch` applied to LLVM 0.8.11 by the Bazel Central Registry |
+| Hermetic LLVM Bazel module | 0.8.27, complete module source with glibc build definitions, helper rules, compiler defines, copied support source and notices |
+| BCR module patch | Exact `module_dot_bazel_version.patch` applied to LLVM 0.8.27 by the Bazel Central Registry |
 | Generated glibc headers | Exact x86_64 and AArch64 GNU 2.28 header archives selected by the module's header index |
 
 The glibc patches are part of the supplied LLVM module. Apply them in order,
@@ -70,10 +73,10 @@ and apply the release patches:
 mkdir -p /tmp/rustleaks-relink/application
 tar -xf /tmp/rustleaks-corresponding-source/application.tar -C /tmp/rustleaks-relink/application
 tar -xzf /tmp/rustleaks-corresponding-source/inputs/92d25389c255b0da9b56bc05694f0702cd22921a.tar.gz -C /tmp/rustleaks-relink
-tar -xzf /tmp/rustleaks-corresponding-source/inputs/hermetic-llvm-v0.8.11.tar.gz -C /tmp/rustleaks-relink
-git -C /tmp/rustleaks-relink/hermetic-llvm-0.8.11 apply --no-index -p1 /tmp/rustleaks-corresponding-source/inputs/module_dot_bazel_version.patch
-git -C /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a apply --no-index -p1 /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0001-Add-empty-config.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0002-Add-abi-tag.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/0003-Adding-libc-modules.h.patch
-cp /tmp/rustleaks-relink/hermetic-llvm-0.8.11/3rd_party/libc/glibc/glibc.BUILD.bazel /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/BUILD.bazel
+tar -xzf /tmp/rustleaks-corresponding-source/inputs/hermetic-llvm-v0.8.27.tar.gz -C /tmp/rustleaks-relink
+git -C /tmp/rustleaks-relink/hermetic-llvm-0.8.27 apply --no-index -p1 /tmp/rustleaks-corresponding-source/inputs/module_dot_bazel_version.patch
+git -C /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a apply --no-index -p1 /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/0001-Add-empty-config.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/0002-Add-abi-tag.h.patch /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/0003-Adding-libc-modules.h.patch
+cp /tmp/rustleaks-relink/hermetic-llvm-0.8.27/3rd_party/libc/glibc/glibc.BUILD.bazel /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/BUILD.bazel
 touch /tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a/REPO.bazel
 ```
 
@@ -87,7 +90,7 @@ Build and relink with the supplied module and the changed library source:
 
 ```sh
 cd /tmp/rustleaks-relink/application
-bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-x86_64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.11 --override_repository=llvm++glibc+glibc_x86_64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-x86_64-gnu --host_platform=//platforms:linux_x86_64_gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --help
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --version
 ```
@@ -97,7 +100,7 @@ the native AArch64 build command:
 
 ```sh
 cd /tmp/rustleaks-relink/application
-bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-aarch64-gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.11 --override_repository=llvm++glibc+glibc_aarch64-linux-gnu.2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-linux-aarch64-gnu --host_platform=//platforms:linux_aarch64_gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-cli:rustleaks
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --help
 /tmp/rustleaks-relink/application/bazel-bin/crates/rustleaks-cli/rustleaks --version
 ```
@@ -107,6 +110,39 @@ The generated headers and linker rules stay the same. The application is
 rebuilt from source, so no separate application object files are needed.
 You can make other ABI-compatible changes to the supplied glibc source or the
 module's support source with the same overrides.
+
+## Relink the Python package library
+
+The `manylinux_2_28` wheels hold `rustleaks/_native/librustleaks_ffi.so`,
+built from the same candidate with the same GNU link configuration. The
+linker maps of both architectures show that it links two members of the
+glibc `libc_nonshared.a`, from `io/stat64.c` and `io/fstat64.c`, and no
+glibc startup object. Its `crtbeginS.o` comes from the LLVM compiler
+runtime. Prepare the sources as above. Then, for example, insert
+this line in `io/stat64.c` of the glibc source, right before
+`return __xstat64 (_STAT_VER, file, buf);`:
+
+```c
+  __asm__ volatile (".rept 16\n\tnop\n\t.endr");
+```
+
+Build the library with the binding configuration and the same overrides,
+on a native host of the wheel's architecture:
+
+```sh
+cd /tmp/rustleaks-relink/application
+bazelisk --output_user_root=/tmp/rustleaks-relink/bazel build --config=release-bindings-linux-x86_64-gnu --host_platform=//platforms:linux_x86_64_gnu --distdir=/tmp/rustleaks-corresponding-source/inputs --override_repository=llvm+=/tmp/rustleaks-relink/hermetic-llvm-0.8.27 --override_repository=llvm++glibc+glibc_2.28=/tmp/rustleaks-relink/glibc-92d25389c255b0da9b56bc05694f0702cd22921a //crates/rustleaks-ffi:rustleaks_ffi_shared
+```
+
+For AArch64, use `release-bindings-linux-aarch64-gnu` and
+`//platforms:linux_aarch64_gnu`. Replace
+`rustleaks/_native/librustleaks_ffi.so` in the installed package with
+`bazel-bin/crates/rustleaks-ffi/librustleaks_ffi.so`. Without a source
+change, the build gives the library of the wheel.
+
+The Go modules for GNU Linux hold `native/librustleaks_ffi.a`, a static
+archive. It holds no glibc object code: the Go program's own link adds the
+C library of the system that builds it, so no relink step applies.
 
 ## Maintainer generation and proof
 

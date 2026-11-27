@@ -32,7 +32,7 @@ fn single_rule(rule: &str) -> Engine {
 
 fn scan(engine: &Engine, input: &[u8], depth: usize) -> Vec<Finding> {
     let outcome = engine.scan_fragment(
-        &Fragment::new(input),
+        &Fragment::builder(input).start_line(0).build(),
         &ScanOptions::builder().max_decode_depth(depth).build(),
     );
     assert!(outcome.is_complete());

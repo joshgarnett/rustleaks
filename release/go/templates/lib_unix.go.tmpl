@@ -1,0 +1,11 @@
+//go:build {{build}}
+
+// Package lib links the Rustleaks native library for {{description}}.
+//
+// It is part of github.com/joshgarnett/rustleaks-go, which imports it on
+// this platform. It has no API. Release {{version}} of Rustleaks built
+// native/librustleaks_ffi.a.
+package lib
+
+// The native package holds the archive and links it with cgo.
+import _ "github.com/joshgarnett/rustleaks-go/lib/{{platform}}/native"

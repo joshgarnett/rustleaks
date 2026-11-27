@@ -6,6 +6,8 @@ engine, scanning, limits, findings, ignore files and baselines, choosing
 rule files and review records.
 
 The full API reference is on [docs.rs](https://docs.rs/rustleaks-core).
+To scan from Go or Python, see [Using the Go package](go.md) or
+[Using Rustleaks from Python](python.md).
 
 ## Add the library
 
@@ -31,11 +33,14 @@ report writers and the command-line program are not published crates.
 ## What the library does and does not do
 
 The engine takes bytes that you give it and returns findings. It does not read
-files, run Git, read environment variables, write logs, start threads or need
-an async runtime. Only two helpers read files, and only when you call them:
-`Baseline::load_go_json` and `FileSystemResolver`. An `Engine` can be shared
-between threads (`Send + Sync`). Build it once and reuse it, because building
-it compiles every rule.
+files, run Git, read environment variables, write logs or need an async
+runtime. It starts a thread only to compile a pattern with more than 200
+groups, with a 32 MiB stack, and waits for it. Other patterns compile on the
+thread that loads the configuration or runs the first search, so do not
+scan on a thread with a very small stack. Only two helpers read files, and
+only when you call them: `Baseline::load_go_json` and `FileSystemResolver`.
+An `Engine` can be shared between threads (`Send + Sync`). Build it once and
+reuse it, because building it compiles every rule.
 
 ## A first scan
 
@@ -79,7 +84,7 @@ then builds the engine.
 | Call | Result |
 | --- | --- |
 | `ConfigLoader::new().load_default()` | Every [built-in rule](built-in-rules.md), the same rules as the CLI. |
-| `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). |
+| `ConfigLoader::new().load_toml(text)` | Your own configuration. It uses the Gitleaks format described in [Configuration](configuration.md). A configuration with no rules, such as empty text, loads without an error, and an engine built from it reports nothing. |
 | `CompiledConfig::select_rules(ids)` | A copy that keeps only the named rules, like `--enable-rule`. A rule that a kept rule needs through `[[rules.required]]` stays, but does not report findings. |
 
 A configuration can use `[extend] useDefault = true` to build on the
@@ -128,7 +133,6 @@ use rustleaks_core::model::{Fragment, ScanOptions};
 fn main() {
     let fragment = Fragment::builder(b"token = \"value\"\n")
         .file_path("config/app.env")
-        .start_line(1)
         .build();
     let options = ScanOptions::builder().max_decode_depth(5).build();
     let _ = (fragment, options);
@@ -138,7 +142,7 @@ fn main() {
 | Builder method | Meaning |
 | --- | --- |
 | `file_path` | The path reported in `Finding::file`. Path rules and path allowlists test this value. |
-| `start_line` | The line number of the first line. The default is 0. Use 1 to number lines like the CLI. |
+| `start_line` | The line number of the first line. The default is 1, which numbers lines like the CLI. A finding of a rule that has only a `path` pattern has line 0. |
 | `commit`, `commit_metadata` | Git details reported in findings. |
 | `symlink_file` | The link path for a file reached through a symbolic link. |
 | `windows_file_path` | The original Windows spelling of the path, with `\` separators. Rule `path` patterns also test this value. It is not reported. |
@@ -281,7 +285,7 @@ invalid UTF-8) or `to_string_lossy()`.
 | `secret()`, `match_text()` | The secret, and the full text the rule matched. |
 | `location()` | `start_line()`, `end_line()`, `start_column()` and `end_column()`, with the same values as the CLI report fields. See [Line and column numbers](reports.md#line-and-column-numbers). |
 | `secret_range()`, `match_range()` | `FindingRange::Exact(ByteRange)` with exact byte offsets into the fragment, or `FindingRange::Unavailable` when no exact range exists, for example for decoded text. |
-| `line()` | The source line that holds the match. |
+| `line()` | The source line that holds the match. On every line after the first, it starts with the line break that ends the line before it. |
 | `file()`, `symlink_file()`, `commit()`, `author()`, `email()`, `date()`, `message()` | Values copied from the fragment. |
 | `link()` | A web link to the finding. The engine leaves it empty. The CLI adds it for Git history scans. |
 | `entropy()`, `tags()` | Shannon entropy of the secret, and rule and decoding tags. |
@@ -320,7 +324,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fragment = Fragment::builder(b"string AWSToken = \"AKIALALEMEL33243OLIB\";") // rustleaks:allow
         .file_path("config/app.env")
-        .start_line(1)
         .build();
     let outcome = engine.scan_fragment(&fragment, &ScanOptions::default());
     assert!(outcome.is_complete());

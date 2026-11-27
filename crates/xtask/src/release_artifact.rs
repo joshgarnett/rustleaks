@@ -16,6 +16,7 @@ use crate::RELEASE_VERSION;
 use crate::tooling::{command_output, hex_lower, sha256_bytes, sha256_file};
 
 mod corresponding_source;
+mod executable;
 mod linux_packages;
 mod notices;
 mod package_managers;
@@ -84,8 +85,19 @@ pub(crate) const RELEASE_ARTIFACT_SUBCOMMANDS: &[&str] = &[
     "add-packages",
     "package-managers",
     "check-upgrade",
+    "check-executable",
     "verify",
 ];
+
+/// The third-party license texts and notices of the release build for
+/// `target`, as the CLI archives carry them: paths under `licenses/` and
+/// their bytes, checked against the committed notice catalog.
+pub(crate) fn target_notice_files(
+    root: &Path,
+    target: &str,
+) -> Result<std::collections::BTreeMap<String, Vec<u8>>, String> {
+    notices::load(root, target, None).map(|bundle| bundle.files)
+}
 
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
@@ -101,6 +113,14 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         }
         [command, left, right, proof] if command == "compare" => {
             compare(Path::new(left), Path::new(right), Path::new(proof))
+        }
+        [command, target, binary] if command == "check-executable" => {
+            target_config(target)?;
+            let bytes = fs::read(binary)
+                .map_err(|error| format!("cannot read release binary {binary}: {error}"))?;
+            executable::validate(target, &bytes)?;
+            println!("{target} executable {binary} is linked as the release requires");
+            Ok(())
         }
         [command, left, right] if command == "compare-bundles" => {
             compare_bundles(Path::new(left), Path::new(right))
@@ -138,7 +158,7 @@ pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
         [command, output] if command == "verify" => {
             verify(root, Path::new(output), LinuxPackages::Required).map(|_| ())
         }
-        _ => Err("usage: cargo xtask release-artifact <notices [--check]|fetch-source REPOSITORY_CACHE|prepare-source REPOSITORY_CACHE COMMIT OUTPUT|relink-source ARCHIVE COMMIT TARGET WORK PROOF|compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE [SOURCE_PROOF]|prepare-windows BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT MAP TRACE|package-input BUNDLE OUTPUT|add-packages BUNDLE DEB RPM|package-managers ASSETS VERSION OUTPUT|check-upgrade CURRENT_VERSION NEW_VERSION|verify OUTPUT>".into()),
+        _ => Err("usage: cargo xtask release-artifact <notices [--check]|fetch-source REPOSITORY_CACHE|prepare-source REPOSITORY_CACHE COMMIT OUTPUT|relink-source ARCHIVE COMMIT TARGET WORK PROOF|compare LEFT RIGHT PROOF|compare-bundles LEFT RIGHT|prepare BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT GLIBC_BASELINE [SOURCE_PROOF]|prepare-windows BINARY BAZEL_OUTPUT_ROOT TARGET COMMIT PROOF OUTPUT MAP TRACE|package-input BUNDLE OUTPUT|add-packages BUNDLE DEB RPM|package-managers ASSETS VERSION OUTPUT|check-upgrade CURRENT_VERSION NEW_VERSION|check-executable TARGET BINARY|verify OUTPUT>".into()),
     }
 }
 
@@ -283,6 +303,7 @@ fn prepare(
     )?;
     let binary_bytes = fs::read(binary)
         .map_err(|error| format!("cannot read release binary {}: {error}", binary.display()))?;
+    executable::validate(target, &binary_bytes)?;
     let binary_sha256 = sha256_bytes(&binary_bytes);
     validate_reproducibility_proof(proof, &binary_sha256, binary_bytes.len())?;
     let graph_text = bazel_graph(root, bazel_output_root, bazel_config)?;

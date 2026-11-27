@@ -269,6 +269,7 @@ fn native_tuple_identity_retains_each_parent_and_only_its_own_helper() {
     for case in &cases().tuples {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         let fragment = Fragment::builder(input.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         let options = ScanOptions::builder()
@@ -485,6 +486,7 @@ fn local_allowlists_preserve_targets_stopwords_commit_neighbors_and_markers() {
             ("synthetic-special-neighbor", 1),
         ] {
             let fragment = Fragment::builder(input.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .commit(commit)
                 .build();
@@ -518,6 +520,7 @@ fn local_allowlists_preserve_targets_stopwords_commit_neighbors_and_markers() {
             }
             assert!(for_rule(&scan(selected(), &marked, &case.path), &case.rule).is_empty());
             let fragment = Fragment::builder(marked.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .build();
             let result = selected().scan_fragment(
@@ -603,6 +606,7 @@ fn global_target_and_commit_controls_keep_their_unrelated_positive_cases() {
             ("synthetic-special-neighbor", 1),
         ] {
             let fragment = Fragment::builder(input.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .commit(commit)
                 .build();
@@ -618,6 +622,7 @@ fn every_special_family_obeys_work_record_payload_and_target_limits() {
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         let fragment = Fragment::builder(input.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         for budget in [
@@ -653,6 +658,7 @@ fn every_special_family_obeys_work_record_payload_and_target_limits() {
                 repeated.push(b'\n');
             }
             let fragment = Fragment::builder(repeated.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .build();
             let result = selected().scan_fragment_controlled(
@@ -726,7 +732,7 @@ fn long_valid_json_payloads_and_uri_tails_keep_exact_secrets_and_budget_failures
                 range(Some([start, start + expected_secret.len()]))
             );
             assert_eq!(findings[0].match_range(), range(Some([0, input.len()])));
-            let fragment = Fragment::new(input.as_bytes());
+            let fragment = Fragment::builder(input.as_bytes()).start_line(0).build();
             for budget in [
                 ScanBudget::unlimited().max_finding_payload_bytes(1_024),
                 ScanBudget::unlimited().max_work_units(0),
@@ -931,6 +937,7 @@ fn kubernetes_long_context_location_is_the_whole_match_and_decoding_adds_a_findi
     // decoded finding is reported next to the raw one, and its columns cover
     // the encoded text in the input.
     let fragment = Fragment::builder(terminated.as_slice())
+        .start_line(0)
         .file_path("deploy/secret.yaml")
         .build();
     let options = ScanOptions::builder().max_decode_depth(1).build();

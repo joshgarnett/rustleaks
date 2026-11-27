@@ -445,6 +445,7 @@ fn native_local_allowlist_targets_stopwords_commits_and_marker_controls_hold() {
             ("synthetic-format-neighbor", 1),
         ] {
             let fragment = Fragment::builder(input.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .commit(commit)
                 .build();
@@ -460,6 +461,7 @@ fn native_local_allowlist_targets_stopwords_commits_and_marker_controls_hold() {
         let mut marked = input;
         marked.extend_from_slice(b" # rustleaks:allow");
         let fragment = Fragment::builder(marked.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         assert!(
@@ -572,6 +574,7 @@ fn custom_global_target_rules_and_commit_allowlists_have_positive_controls() {
             ("synthetic-format-neighbor", 1),
         ] {
             let fragment = Fragment::builder(input.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .commit(commit)
                 .build();
@@ -613,6 +616,7 @@ fn every_format_obeys_explicit_resource_limits_and_exact_target_size() {
     for case in &cases().primary {
         let input = STANDARD.decode(&case.input_base64).unwrap();
         let fragment = Fragment::builder(input.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         for budget in [
@@ -671,7 +675,7 @@ fn repeated_formats_keep_all_exact_ranges_and_bounded_work_stops() {
             );
         }
         let result = engine.scan_fragment_controlled(
-            &Fragment::new(input),
+            &Fragment::builder(input).start_line(0).build(),
             &ScanOptions::default(),
             &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(1)),
         );
@@ -730,7 +734,7 @@ fn unbounded_gitlab_tokens_and_hcp_whitespace_keep_exact_bytes_and_limits() {
                 findings[0].secret_range(),
                 range([start, start + secret.len()])
             );
-            let fragment = Fragment::new(input.as_bytes());
+            let fragment = Fragment::builder(input.as_bytes()).start_line(0).build();
             for budget in [
                 ScanBudget::unlimited().max_finding_payload_bytes(1_024),
                 ScanBudget::unlimited().max_work_units(0),
@@ -757,6 +761,7 @@ fn base64_and_nested_base64_preserve_source_projection_and_exact_decoded_secrets
                 encoded = STANDARD.encode(encoded).into_bytes();
             }
             let fragment = Fragment::builder(encoded.as_slice())
+                .start_line(0)
                 .file_path(case.path.as_str())
                 .build();
             let outcome = selected().scan_fragment(

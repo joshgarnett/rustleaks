@@ -1,0 +1,570 @@
+{
+  "cases": [
+    {
+      "name": "empty-input-with-a-path-rule",
+      "engine": {"config": null, "rules": null},
+      "scan": {"input": [], "path": "certs/site.p12"},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "pkcs12-file",
+            "secret": [],
+            "match": ["file detected: certs/site.p12"],
+            "line": [],
+            "start_line": 0,
+            "end_line": 0,
+            "start_column": 0,
+            "end_column": 0,
+            "secret_range": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty-input-without-a-path",
+      "engine": {"config": null, "rules": null},
+      "scan": {"input": []},
+      "expect": {"error": null, "findings": []}
+    },
+    {
+      "name": "path-rule-needs-a-matching-path",
+      "engine": {"config": null, "rules": null},
+      "scan": {"input": [], "path": "certs/site.pem"},
+      "expect": {"error": null, "findings": []}
+    },
+    {
+      "name": "builtin-rule-on-the-first-line",
+      "engine": {"config": null, "rules": null},
+      "scan": {"input": ["AKIA", "LALEMEL33243OLIB\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "aws-access-token",
+            "secret": ["AKIA", "LALEMEL33243OLIB"],
+            "match": ["AKIA", "LALEMEL33243OLIB"],
+            "line": ["AKIA", "LALEMEL33243OLIB"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 20,
+            "secret_range": [0, 20]
+          }
+        ]
+      }
+    },
+    {
+      "name": "match-on-the-first-line",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["a MARK-ABCD b\n"], "path": "config/app.env"},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["a MARK-ABCD b"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 3,
+            "end_column": 11,
+            "secret_range": [7, 11]
+          }
+        ]
+      }
+    },
+    {
+      "name": "matches-on-later-lines",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["x\n", "MARK-ABCD\n", "  MARK-EFGH\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["\nMARK-ABCD"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [7, 11]
+          },
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["EFGH"],
+            "match": ["MARK-EFGH"],
+            "line": ["\n  MARK-EFGH"],
+            "start_line": 3,
+            "end_line": 3,
+            "start_column": 4,
+            "end_column": 12,
+            "secret_range": [19, 23]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unterminated-last-line",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["x\n", "MARK-ABCD"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["\nMARK-ABCD"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [7, 11]
+          }
+        ]
+      }
+    },
+    {
+      "name": "input-without-a-line-end",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["MARK-ABCD"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          }
+        ]
+      }
+    },
+    {
+      "name": "nul-and-invalid-utf8-bytes",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": [{"hex": "00ff"}, "MARK-ABCD", {"hex": "fe0a"}]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": [{"hex": "00ff"}, "MARK-ABCD", {"hex": "fe"}],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 3,
+            "end_column": 11,
+            "secret_range": [7, 11]
+          }
+        ]
+      }
+    },
+    {
+      "name": "crlf-line-ends",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["a\r\n", "MARK-ABCD\r\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["\nMARK-ABCD\r"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [8, 12]
+          }
+        ]
+      }
+    },
+    {
+      "name": "match-over-several-lines",
+      "engine": {"config": "configs/block.toml", "rules": null},
+      "scan": {"input": ["x\n", "BEGIN\n", "data\n", "END\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-block",
+            "secret": ["BEGIN\ndata\nEND"],
+            "match": ["BEGIN\ndata\nEND"],
+            "line": ["\nBEGIN\ndata\nEND"],
+            "start_line": 2,
+            "end_line": 4,
+            "start_column": 2,
+            "end_column": 4,
+            "secret_range": [2, 16]
+          }
+        ]
+      }
+    },
+    {
+      "name": "match-over-the-last-line-end",
+      "engine": {"config": "configs/block.toml", "rules": null},
+      "scan": {"input": ["BEGIN\n", "END"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-block",
+            "secret": ["BEGIN\nEND"],
+            "match": ["BEGIN\nEND"],
+            "line": ["BEGIN\nEND"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 0,
+            "secret_range": [0, 9]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rustleaks-allow-comment-honored",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["MARK-ABCD # rustleaks:allow\n", "MARK-EFGH\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["EFGH"],
+            "match": ["MARK-EFGH"],
+            "line": ["\nMARK-EFGH"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [33, 37]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rustleaks-allow-comment-ignored",
+      "engine": {"config": "configs/marker.toml", "rules": null, "allow_comments": false},
+      "scan": {"input": ["MARK-ABCD # rustleaks:allow\n", "MARK-EFGH\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD # rustleaks:allow"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          },
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["EFGH"],
+            "match": ["MARK-EFGH"],
+            "line": ["\nMARK-EFGH"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [33, 37]
+          }
+        ]
+      }
+    },
+    {
+      "name": "gitleaks-allow-comment-honored",
+      "engine": {"config": "configs/marker.toml", "rules": null, "allow_comments": true},
+      "scan": {"input": ["MARK-ABCD # gitleaks:allow\n", "MARK-EFGH\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["EFGH"],
+            "match": ["MARK-EFGH"],
+            "line": ["\nMARK-EFGH"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [32, 36]
+          }
+        ]
+      }
+    },
+    {
+      "name": "gitleaks-allow-comment-ignored",
+      "engine": {"config": "configs/marker.toml", "rules": null, "allow_comments": false},
+      "scan": {"input": ["MARK-ABCD # gitleaks:allow\n", "MARK-EFGH\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD # gitleaks:allow"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          },
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["EFGH"],
+            "match": ["MARK-EFGH"],
+            "line": ["\nMARK-EFGH"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [32, 36]
+          }
+        ]
+      }
+    },
+    {
+      "name": "replacing-config-drops-builtin-rules",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["AKIA", "LALEMEL33243OLIB\n"]},
+      "expect": {"error": null, "findings": []}
+    },
+    {
+      "name": "extending-config-keeps-builtin-rules",
+      "engine": {"config": "configs/extend-default.toml", "rules": null},
+      "scan": {"input": ["AKIA", "LALEMEL33243OLIB\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "aws-access-token",
+            "secret": ["AKIA", "LALEMEL33243OLIB"],
+            "match": ["AKIA", "LALEMEL33243OLIB"],
+            "line": ["AKIA", "LALEMEL33243OLIB"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 20,
+            "secret_range": [0, 20]
+          }
+        ]
+      }
+    },
+    {
+      "name": "extending-config-adds-its-rules",
+      "engine": {"config": "configs/extend-default.toml", "rules": null},
+      "scan": {"input": ["MARK-ABCD\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          }
+        ]
+      }
+    },
+    {
+      "name": "extend-path-is-rejected",
+      "engine": {"config": "configs/extend-path.toml", "rules": null},
+      "scan": {"input": ["MARK-ABCD\n"]},
+      "expect": {"error": "config", "findings": []}
+    },
+    {
+      "name": "invalid-pattern-is-a-config-error",
+      "engine": {"config": "configs/invalid-regex.toml", "rules": null},
+      "scan": {"input": ["MARK-ABCD\n"]},
+      "expect": {"error": "config", "findings": []}
+    },
+    {
+      "name": "selected-builtin-rule-reports",
+      "engine": {"config": null, "rules": ["aws-access-token"]},
+      "scan": {"input": ["AKIA", "LALEMEL33243OLIB\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "aws-access-token",
+            "secret": ["AKIA", "LALEMEL33243OLIB"],
+            "match": ["AKIA", "LALEMEL33243OLIB"],
+            "line": ["AKIA", "LALEMEL33243OLIB"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 20,
+            "secret_range": [0, 20]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unselected-builtin-rule-is-silent",
+      "engine": {"config": null, "rules": ["pkcs12-file"]},
+      "scan": {"input": ["AKIA", "LALEMEL33243OLIB\n"]},
+      "expect": {"error": null, "findings": []}
+    },
+    {
+      "name": "selected-config-rule-without-a-group",
+      "engine": {"config": "configs/marker-and-pin.toml", "rules": ["synthetic-pin"]},
+      "scan": {"input": ["MARK-ABCD PIN-1234\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-pin",
+            "secret": ["PIN-1234"],
+            "match": ["PIN-1234"],
+            "line": ["MARK-ABCD PIN-1234"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 11,
+            "end_column": 18,
+            "secret_range": [10, 18]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-rule-is-a-selection-error",
+      "engine": {"config": null, "rules": ["no-such-rule"]},
+      "scan": {"input": ["MARK-ABCD\n"]},
+      "expect": {"error": "rule_selection", "findings": []}
+    },
+    {
+      "name": "input-one-byte-under-the-limit",
+      "engine": {"config": "configs/marker.toml", "rules": null, "max_input_bytes": 10},
+      "scan": {"input": ["MARK-ABCD"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          }
+        ]
+      }
+    },
+    {
+      "name": "input-at-the-limit",
+      "engine": {"config": "configs/marker.toml", "rules": null, "max_input_bytes": 10},
+      "scan": {"input": ["MARK-ABCD\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          }
+        ]
+      }
+    },
+    {
+      "name": "input-one-byte-over-the-limit",
+      "engine": {"config": "configs/marker.toml", "rules": null, "max_input_bytes": 10},
+      "scan": {"input": ["MARK-ABCD\n\n"]},
+      "expect": {"error": "input_too_large", "findings": []}
+    },
+    {
+      "name": "findings-at-the-record-limit",
+      "engine": {"config": "configs/marker.toml", "rules": null, "max_finding_records": 2},
+      "scan": {"input": ["MARK-ABCD\n", "MARK-EFGH\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["MARK-ABCD"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 9,
+            "secret_range": [5, 9]
+          },
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["EFGH"],
+            "match": ["MARK-EFGH"],
+            "line": ["\nMARK-EFGH"],
+            "start_line": 2,
+            "end_line": 2,
+            "start_column": 2,
+            "end_column": 10,
+            "secret_range": [15, 19]
+          }
+        ]
+      }
+    },
+    {
+      "name": "findings-over-the-record-limit",
+      "engine": {"config": "configs/marker.toml", "rules": null, "max_finding_records": 1},
+      "scan": {"input": ["MARK-ABCD\n", "MARK-EFGH\n"]},
+      "expect": {"error": "budget_exceeded", "findings": []}
+    },
+    {
+      "name": "encoded-text-is-not-decoded-by-default",
+      "engine": {"config": "configs/marker.toml", "rules": null},
+      "scan": {"input": ["aWQ6IE1BUkstQUJDRCBva2F5\n"]},
+      "expect": {"error": null, "findings": []}
+    },
+    {
+      "name": "encoded-text-with-decoding",
+      "engine": {"config": "configs/marker.toml", "rules": null, "decode_depth": 1},
+      "scan": {"input": ["aWQ6IE1BUkstQUJDRCBva2F5\n"]},
+      "expect": {
+        "error": null,
+        "findings": [
+          {
+            "rule_id": "synthetic-marker",
+            "secret": ["ABCD"],
+            "match": ["MARK-ABCD"],
+            "line": ["aWQ6IE1BUkstQUJDRCBva2F5"],
+            "start_line": 1,
+            "end_line": 1,
+            "start_column": 1,
+            "end_column": 24,
+            "secret_range": null
+          }
+        ]
+      }
+    }
+  ]
+}

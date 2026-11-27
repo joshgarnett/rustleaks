@@ -1,0 +1,78 @@
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//bazel:musl_c.bzl", "musl_c_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["pyproject.toml"])
+
+# The package. The wheel adds the shared library under rustleaks/_native/.
+py_library(
+    name = "rustleaks",
+    srcs = glob(["src/rustleaks/*.py"]),
+    data = ["src/rustleaks/py.typed"],
+    imports = ["src"],
+)
+
+# Pull requests test the oldest and newest supported CPython versions.
+_PYTHON_VERSIONS = [
+    "3.12",
+    "3.15",
+]
+
+_NAMES = ["python_" + version.replace(".", "_") for version in _PYTHON_VERSIONS]
+
+# On musl each test builds only for the musl C platform, through its
+# _musl_test wrapper, so the shared library links against a shared musl libc.
+[
+    py_test(
+        name = name + "_test",
+        size = "medium",
+        srcs = glob(["tests/*.py"]),
+        data = [
+            "README.md",
+            "pyproject.toml",
+            "//:docs/user/python.md",
+            "//crates/rustleaks-eval:binding_reference",
+            "//crates/rustleaks-eval:binding_reference_files",
+            "//crates/rustleaks-ffi:header",
+            "//crates/rustleaks-ffi:rustleaks_ffi_shared",
+            "//testdata:bindings",
+        ],
+        env = {
+            "RUSTLEAKS_TEST_CORPUS": "$(rlocationpaths //testdata:bindings)",
+            "RUSTLEAKS_TEST_DOCS": "$(rlocationpath README.md) $(rlocationpath //:docs/user/python.md)",
+            "RUSTLEAKS_TEST_HEADER": "$(rlocationpath //crates/rustleaks-ffi:header)",
+            "RUSTLEAKS_TEST_LIBRARY": "$(rlocationpaths //crates/rustleaks-ffi:rustleaks_ffi_shared)",
+            "RUSTLEAKS_TEST_PYPROJECT": "$(rlocationpath pyproject.toml)",
+            "RUSTLEAKS_TEST_PYTHON": version,
+            "RUSTLEAKS_TEST_REFERENCE": "$(rlocationpaths //crates/rustleaks-eval:binding_reference)",
+        },
+        # The test modules import each other.
+        imports = ["tests"],
+        main = "tests/run_tests.py",
+        python_version = version,
+        target_compatible_with = select({
+            "//platforms:musl_c_libc": [],
+            "//platforms:musl_any_libc": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [":rustleaks"],
+    )
+    for name, version in zip(_NAMES, _PYTHON_VERSIONS)
+]
+
+[
+    musl_c_test(
+        name = name + "_musl_test",
+        size = "medium",
+        target_compatible_with = ["//platforms:musl"],
+        test = ":" + name + "_test",
+    )
+    for name in _NAMES
+]
+
+test_suite(
+    name = "all_tests",
+    tests = [":" + name + "_test" for name in _NAMES] + [":" + name + "_musl_test" for name in _NAMES],
+)

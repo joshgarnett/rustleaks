@@ -1,0 +1,8 @@
+# One synthetic rule. The secret is the four letters after "MARK-".
+[[rules]]
+id = "synthetic-marker"
+description = "A synthetic marker"
+regex = '''MARK-([A-Z]{4})'''
+secretGroup = 1
+keywords = ["mark-"]
+tags = ["synthetic"]

@@ -20,6 +20,14 @@ build:
 test:
     bazelisk test //:test
 
+# Run the Go binding tests through Bazel.
+test-go:
+    bazelisk test //bindings/go:all_tests
+
+# Run the Python binding tests through Bazel.
+test-python:
+    bazelisk test //bindings/python:all_tests
+
 # Run every first-party test ten uncached times to expose nondeterminism.
 flake-check:
     bazelisk test --nocache_test_results --runs_per_test=10 //:test
@@ -136,6 +144,7 @@ deps-repin:
     cargo update --workspace --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
     cargo update --workspace --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
     cargo update --workspace --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+    cargo update --workspace --manifest-path crates/rustleaks-ffi/fuzz/Cargo.toml
     CARGO_BAZEL_REPIN=1 bazelisk query @crates//:srcs --lockfile_mode=update
     bazelisk mod deps --lockfile_mode=update
     git diff -- Cargo.lock cargo-bazel-lock.json MODULE.bazel.lock
@@ -147,6 +156,7 @@ deps-repin:
     cargo update --workspace --manifest-path crates/rustleaks-core/fuzz/Cargo.toml
     cargo update --workspace --manifest-path crates/rustleaks-sources/fuzz/Cargo.toml
     cargo update --workspace --manifest-path crates/rustleaks-report/fuzz/Cargo.toml
+    cargo update --workspace --manifest-path crates/rustleaks-ffi/fuzz/Cargo.toml
     $env:CARGO_BAZEL_REPIN = "1"; bazelisk query @crates//:srcs --lockfile_mode=update; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     bazelisk mod deps --lockfile_mode=update
     git diff -- Cargo.lock cargo-bazel-lock.json MODULE.bazel.lock

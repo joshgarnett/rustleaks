@@ -92,7 +92,10 @@ fn both_packs() -> &'static NativeEngine {
 }
 
 fn scan(engine: &Engine, bytes: &[u8]) -> Vec<Finding> {
-    let result = engine.scan_fragment(&Fragment::new(bytes), &ScanOptions::default());
+    let result = engine.scan_fragment(
+        &Fragment::builder(bytes).start_line(0).build(),
+        &ScanOptions::default(),
+    );
     assert!(result.is_complete());
     result.findings().to_vec()
 }
@@ -500,6 +503,7 @@ fn assert_rule_allowlists_reject(case: Case, input: &str) {
             .insert("allowlists".into(), toml::Value::Array(vec![allowlist]));
         let engine = one_rule(rule);
         let fragment = Fragment::builder(input.as_bytes())
+            .start_line(0)
             .file_path("synthetic.conf")
             .commit("synthetic-commit")
             .build();
@@ -522,7 +526,10 @@ fn exclusions_keyword_selection_and_finite_budgets_apply_before_admission() {
             "node_modules/synthetic.js",
             "gitleaks.toml",
         ] {
-            let fragment = Fragment::builder(input.as_bytes()).file_path(path).build();
+            let fragment = Fragment::builder(input.as_bytes())
+                .start_line(0)
+                .file_path(path)
+                .build();
             assert!(
                 selected()
                     .scan_fragment(&fragment, &ScanOptions::default())
@@ -531,6 +538,7 @@ fn exclusions_keyword_selection_and_finite_budgets_apply_before_admission() {
             );
         }
         let bun = Fragment::builder(input.as_bytes())
+            .start_line(0)
             .file_path("bun.lock")
             .build();
         assert_eq!(
@@ -574,7 +582,7 @@ fn exclusions_keyword_selection_and_finite_budgets_apply_before_admission() {
             ScanBudget::unlimited().max_finding_payload_bytes(1),
         ] {
             let result = selected().scan_fragment_controlled(
-                &Fragment::new(input.as_bytes()),
+                &Fragment::builder(input.as_bytes()).start_line(0).build(),
                 &ScanOptions::default(),
                 &ScanControl::unlimited().with_budget(budget),
             );
@@ -583,7 +591,7 @@ fn exclusions_keyword_selection_and_finite_budgets_apply_before_admission() {
         }
         let ordinary = format!("{}{value};", case.context);
         let result = selected().scan_fragment_controlled(
-            &Fragment::new(ordinary.as_bytes()),
+            &Fragment::builder(ordinary.as_bytes()).start_line(0).build(),
             &ScanOptions::default(),
             &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_finding_records(0)),
         );

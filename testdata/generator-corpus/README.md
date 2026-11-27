@@ -38,6 +38,10 @@ rows.
   inputs for other checks.
 - `//crates/rustleaks-core:rustleaks_core_unit_test` uses the samples in the
   regular expression and literal prefilter tests.
+- `//crates/rustleaks-ffi:differential_test` and the Go and Python
+  reference tests scan the samples with every built-in rule, through core
+  and through the bindings, and require the same findings. See
+  [Platforms](../../docs/dev/testing.md#platforms).
 
 `cargo xtask compare-workloads` also reads the samples as scan inputs.
 

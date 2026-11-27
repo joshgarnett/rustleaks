@@ -362,7 +362,7 @@ mod tests {
             .unwrap();
         let detector = Engine::builder(config).build().unwrap();
         let fragments = (0..8)
-            .map(|_| Fragment::builder(raw.as_slice()).build())
+            .map(|_| Fragment::builder(raw.as_slice()).start_line(0).build())
             .collect::<Vec<_>>();
         let expected = super::super::expected_token(raw, 0, raw.len(), false).unwrap();
         let control = ScanControl::unlimited().with_budget(

@@ -238,11 +238,12 @@ fn render(text: &str) -> String {
     rendered
 }
 
-/// Columns count from 1 on the first line and from the preceding LF on
-/// later lines; the end column is the column of the last byte.
+/// Lines count from 1, the default start line of a fragment. Columns count
+/// from 1 on the first line and from the preceding LF on later lines; the
+/// end column is the column of the last byte.
 fn location(text: &[u8], start: usize, end: usize) -> Location {
     let before = &text[..start];
-    let line = count_lf(before);
+    let line = count_lf(before) + 1;
     let column = before
         .iter()
         .rposition(|byte| *byte == b'\n')

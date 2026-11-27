@@ -132,6 +132,40 @@ Ubuntu host. Bazel doc tests are marked incompatible on Windows and musl;
 the Linux GNU and macOS lanes run them. The workflow's `Required` job fails
 unless every lane passes.
 
+`//:test` includes the Go and Python binding tests, so every lane runs them
+natively:
+
+- Go uses the Go SDK that `MODULE.bazel` pins. On Linux and macOS the tests
+  link the FFI static library through cgo. On Windows they build without cgo
+  and load the FFI DLL.
+- Python uses the CPython builds that `MODULE.bazel` pins: 3.12 and 3.15 on
+  every lane. The release dry run also installs the wheels on 3.13 and 3.14. The tests load the FFI shared library with `ctypes`.
+- On musl, the binding tests build for `//platforms:linux_<cpu>_musl_c`,
+  which selects the LLVM toolchain's musl C library (see
+  `bazel/musl_c.bzl`). The Go test programs are static musl executables.
+  The Python tests run a dynamic musl CPython, so the musl lanes install the
+  Ubuntu `musl` package, which provides the musl loader.
+- `//crates/rustleaks-ffi:linktest_test` links the FFI static library and a
+  second Rust static library into one cgo program, on every lane but
+  Windows.
+- Differential tests compare the bindings with `rustleaks-core` at run
+  time and store no expected values.
+  `//crates/rustleaks-ffi:differential_test` scans the detection cases of
+  the detect, allowlist, composite and decoder corpora and every generator
+  sample with core and through the C ABI, and requires the same findings,
+  completion and usage. `//crates/rustleaks-eval:binding_reference` runs a
+  test-only tool that scans the fixture files, a few other `testdata` files
+  and a file of all generator samples with every built-in rule through core.
+  It also scans each text file with CRLF line breaks and without its final
+  line break, and writes the findings as JSON. The Go `TestReferenceFindings` and the Python
+  `reference_test` scan the same inputs and require the same findings in
+  the same order.
+
+The release dry run also runs `Binding Packages` on all eight lanes: it builds
+a Go program from the packed `rustleaks-go` modules with the host C compiler
+and installs each wheel into a new virtual environment without network
+access. See [Binding packages](releasing.md#binding-packages).
+
 Other CI jobs, such as `just ci` and the Cargo stable and MSRV checks, run
 on `ubuntu-24.04` (`x86_64`) only.
 

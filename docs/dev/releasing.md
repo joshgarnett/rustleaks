@@ -5,20 +5,23 @@ release. It does not authorize a release. Only `rustleaks-core` is
 published to crates.io. The CLI ships as release archives, as `.deb` and
 `.rpm` packages for the Linux glibc targets, and through the Homebrew tap
 `joshgarnett/homebrew-tap` and the Scoop bucket `joshgarnett/scoop-bucket`.
+The Go package is published to `joshgarnett/rustleaks-go`, and the Python
+package to PyPI as `rustleaks`. All of them use the release version.
 
 ## Approvals
 
 Each of these actions needs its own maintainer approval: selecting a
 version, creating a GitHub release or tag, publishing a crate, pushing to the
 tap and bucket, changing a release or trusted publishing setting, and using a
-credential. A successful local or hosted dry run is not approval. The release
+credential. Pushing a commit or tag to `joshgarnett/rustleaks-go` and
+uploading to PyPI need their own approval too. A successful local or hosted dry run is not approval. The release
 checks need no approval, because they cannot publish, tag or use a registry
 token.
 
 Ask with the [approval packet](#approval-packet). Name the exact version,
 candidate, dry run ID and external action in the request. Crates.io
-publication, the GitHub tag or release, and the package manager push are
-separate actions, and each approval must name the action it covers. An
+publication, the GitHub tag or release, the package manager push, the
+`rustleaks-go` push and the PyPI upload are separate actions, and each approval must name the action it covers. An
 approval stays valid for that unchanged action while its checks run; do not
 ask again. A changed value, a wider scope or a different retry needs new
 approval.
@@ -38,10 +41,15 @@ approval.
         `bazel/rust_crate.bzl`;
       - `CHANGELOG.md` and the Status section of `README.md`; and
       - the install examples in `docs/user/getting-started.md`,
-        `docs/user/ci.md` and `docs/user/library.md`.
+        `docs/user/ci.md`, `docs/user/library.md`, `docs/user/go.md` and
+        `docs/user/python.md`;
+      - `packageVersion` in `bindings/go/library.go`; and
+      - `version` in `bindings/python/pyproject.toml` and `__version__` in
+        `bindings/python/src/rustleaks/_version.py`.
 
       `cargo xtask build-system-check`, which `just test` runs, fails when
-      `MODULE.bazel` or `RUSTLEAKS_VERSION` differs from the Cargo version.
+      `MODULE.bazel`, `RUSTLEAKS_VERSION` or one of the three binding files
+      differs from the Cargo version.
 - [ ] The generated files that name the version are regenerated:
       `just deps-repin` (`Cargo.lock` and `cargo-bazel-lock.json`),
       `cargo xtask generate vet-inventory`,
@@ -103,7 +111,8 @@ finding counts that changed.
 
 - [ ] Prepare the [approval packet](#approval-packet).
 - [ ] Get a separate [approval](#approvals) for the crates.io publication,
-      for the GitHub release and for the package manager push.
+      for the GitHub release, for the package manager push, for the
+      `rustleaks-go` push and for the PyPI upload.
 
 ### 5. Revalidate just before publishing
 
@@ -135,6 +144,13 @@ crates.io credential.
       `Update Package Managers` from `packages.yml` with the version and
       `publish` set. See
       [Updating the package managers](#updating-the-package-managers).
+- [ ] After the GitHub release, with its
+      `rustleaks-VERSION-corresponding-source.tar.gz`, is published and while
+      `main` is still the candidate, dispatch `Publish Go Module` from
+      `publish-go.yml` and `Publish Python Package` from
+      `publish-python.yml` with the candidate commit, version and dry run
+      ID. Both refuse a version without that release. See
+      [Publishing the Go and Python packages](#publishing-the-go-and-python-packages).
 
 ### 7. Verify
 
@@ -146,6 +162,13 @@ crates.io credential.
 - [ ] Every GitHub artifact attestation and checksum verifies.
 - [ ] The Homebrew and Scoop install jobs of `Update Package Managers`
       pass, and its push job updated both repositories.
+- [ ] The `verify` job of `Publish Go Module` passes: the Go checksum
+      database has the dry run's hashes for all nine modules.
+- [ ] `Publish Python Package` found all eight wheels on PyPI with the dry
+      run's SHA-256.
+- [ ] On a clean machine, `go get github.com/joshgarnett/rustleaks-go@vVERSION`
+      and `python -m pip install rustleaks==VERSION` install the release,
+      and a scan finds a synthetic key.
 - [ ] On a clean machine for each channel, the release installs and
       `rustleaks --version` prints it: Homebrew on macOS and Linux, Scoop on
       Windows, the `.deb` on Debian or Ubuntu and the `.rpm` on Fedora or
@@ -217,6 +240,9 @@ Windows binaries, so only this dry run could prove them. Each job emits:
 The source package is built twice into separate Cargo target folders,
 compared byte for byte, and gets the same signed provenance check.
 
+The `bindings` job runs `Binding Packages` (`bindings.yml`). See
+[Binding packages](#binding-packages).
+
 #### Licenses and notices
 
 Every native archive has a `licenses/` tree with a target-specific
@@ -264,7 +290,13 @@ accepts only the emitted gzip format and bounded GNU long paths. Limits are
 
 GNU manifests record the highest `GLIBC_X.Y` symbol version found in the
 binary. Musl archives must have no ELF interpreter and no dynamic `NEEDED`
-entry. macOS builds leave out the nondeterministic Mach-O UUID before the
+entry. `release-artifact prepare` also checks the ELF type of each Linux
+binary: the GNU binaries must be PIE (`ET_DYN`) with an interpreter, and the
+x86_64 musl binary must be a static PIE. Rust's `aarch64-unknown-linux-musl`
+target links a static executable that is not PIE (`ET_EXEC`), so the check
+requires only static linking there and accepts either type. The
+native Linux CI lanes run the same check, `release-artifact check-executable`,
+on their CLI build. macOS builds leave out the nondeterministic Mach-O UUID before the
 linker adds any ad-hoc signature. No other difference is normalized.
 
 #### Linux packages
@@ -330,6 +362,14 @@ the pinned glibc sources, patches, generated headers and build recipes. Each
 GNU lane builds from that source, checks that its binary matches the release
 binary, changes the startup code, rebuilds and runs a smoke test. Packaging
 fails if this proof is missing or does not match.
+
+The same source archive covers `librustleaks_ffi.so` in the two
+`manylinux_2_28` wheels of the version, which links the glibc
+`libc_nonshared.a` members of `io/stat64.c` and `io/fstat64.c`. The
+[reconstruction instructions](../../release/corresponding-source/README.md)
+also show how to relink that library. The binding publish workflows require
+the GitHub release with this archive first (see
+[Publishing the Go and Python packages](#publishing-the-go-and-python-packages)).
 
 The signed notice index of the native archive binds the source archive and
 `source-relink.json`. The manifest, checksum file and provenance repeat those
@@ -462,6 +502,159 @@ A pre-release pushed to the tap or bucket becomes what `brew install` and
 manifest's `checkver: github` follows stable releases. A pre-release can
 replace a pre-release, and a stable release can replace either.
 
+### Binding packages
+
+`Binding Packages` builds and checks the Go and Python packages of one
+commit. The release dry run and the weekly workflow call it, and it can run
+by hand. It publishes nothing and uses no credential. Only the release dry
+run sets its `attest` input, which adds a build provenance attestation of
+the checksums.
+
+1. On each native lane it builds `//release/native:all` and
+   `//release/python:wheel` with the lane's `release-bindings-*` config from
+   `.bazelrc`. Those configs are the lane's release settings, with two
+   differences: musl lanes build for `//platforms:linux_<cpu>_musl_c`, so the
+   shared library links the shared musl libc, and macOS libraries keep their
+   Mach-O UUID, because dyld does not load a dylib without one. The Go
+   archive leaves out the LLVM bitcode sections that Rust's standard library
+   objects carry, because Go refuses a cgo library with bitcode.
+2. `cargo xtask bindings finish-wheel` turns the Bazel wheel into the
+   release wheel. It adds the target's third-party license texts and
+   notices from the native notice catalog (the same files the CLI archive
+   of that target carries under `licenses/`) to
+   `.dist-info/licenses/third-party/`. The catalog covers the CLI's build
+   graph, so the files are a superset of what the library links, and its
+   `index.json` describes the CLI binary of that target. It also writes core metadata 2.4 with
+   `License-Expression`, `Keywords` and one `License-File` per license file.
+3. `cargo xtask bindings go-layout` writes the `rustleaks-go` repository
+   from `bindings/go/`, the templates in `release/go/` and the eight
+   libraries: the main module, one module per platform under `lib/`, and
+   the main module's `go.sum`. Each `lib/<platform>` module holds
+   `LICENSE`, `NOTICE` and the target's `licenses/` tree. A Unix module
+   keeps its static library in the Go package `native/`, which links it
+   with cgo and holds nothing else. Go checks every library-named file
+   under a `-L` folder, and the glibc notice `COPYING.LIB` is not a
+   library. The folder is a package so that `go mod vendor` copies the
+   archive.
+   `cargo xtask bindings go-proxy` writes a file-based Go module proxy of
+   the nine modules and their `go.sum` lines in `hashes.txt`.
+4. The job keeps the layout (`rustleaks-go/`), the proxy (`proxy/`), the
+   eight wheels (`wheels/`) and `SHA256SUMS` as the artifact
+   `rustleaks-bindings-<version>-packages`. `SHA256SUMS` lists every other
+   file of the artifact. When `attest` is set, the job attests `SHA256SUMS`
+   with `actions/attest-build-provenance` and keeps the bundle as
+   `SHA256SUMS.attestation.jsonl`. The dry run jobs below check every
+   checksum and that the artifact holds no file that `SHA256SUMS` does not
+   list. The publish workflows also check the attestation. Weekly and
+   manual runs make no attestation.
+5. On each native lane, `cargo xtask bindings dry-run` builds a Go program
+   from that proxy with the Bazel-pinned Go SDK and the lane's C compiler
+   (`musl-gcc` with `-tags musl` and static linking on musl, no cgo on
+   Windows) and runs a scan. Every `go.sum` line Go records must equal one
+   that xtask computed. It then runs `go mod vendor`, builds the program
+   again with `-mod=vendor` and no module proxy, and requires the same
+   output. On Linux the vendored archive must define `_Unwind_Resume`
+   exactly once. Then `release/python/upload.py check` builds the
+   PyPI upload form from the wheel and requires every field to be present
+   and to match `bindings/python/pyproject.toml`. The dry run installs the
+   wheel into a new virtual environment of each of CPython 3.12, 3.13, 3.14
+   and 3.15 with `pip --no-index`, compares the installed metadata with
+   `pyproject.toml` and runs a scan. Last, it checks the library against its
+   wheel tag. On glibc no symbol may be newer than the `manylinux` version.
+   On musl the library may need only `libc.so` and must bind at load, so
+   loading it under the host's musl 1.2 resolves every symbol. On macOS it
+   may need only system libraries, and its deployment target must not be
+   newer than the `macosx` version.
+
+The wheel platform tags are `manylinux_2_28` on glibc (the hermetic
+toolchain's glibc floor), `musllinux_1_2` on musl, `macosx_14_0` on macOS
+(the toolchain's deployment target), `win_amd64` and `win_arm64`.
+
+The license expression of the wheels, in `pyproject.toml` and
+`LIBRARY_LICENSE` in `crates/xtask/src/bindings/wheel.rs`, is
+`MIT AND BSD-3-Clause AND Apache-2.0 AND Apache-2.0 WITH LLVM-exception`:
+`rustleaks-core` is `MIT AND BSD-3-Clause AND Apache-2.0`, every other
+linked crate offers MIT, and the Rust standard library and the hermetic
+toolchain link LLVM runtime code under `Apache-2.0 WITH LLVM-exception`.
+`finish-wheel` fails when the two differ. Review the expression when the
+library's dependencies change.
+
+As with the `.deb` and `.rpm` packages, whose `license` field is `MIT`, the
+expression names the licenses of the project and of the Rust code and LLVM
+runtime that every wheel links. It does not list every term of every
+component. The runtime components that the notice catalog lists without an
+SPDX expression keep their terms in the wheel's `licenses/` tree, which
+`License-File` names. These are the glibc nonshared support on GNU, the
+Microsoft C runtime on Windows, and the standard library's bundled
+attributions. The GNU wheels' glibc code also has the corresponding source
+above.
+
+### Publishing the Go and Python packages
+
+Publish the binding packages of a version only after its
+[GitHub release](#publishing-the-github-release), while `main` is still the
+release commit. Dispatch `Publish Go Module` and `Publish Python Package`
+from `main` with the candidate commit, version and dry run ID. Each one
+first requires that the candidate is the clean current `main` and that the
+binding files name the version. Then it requires that the GitHub release
+`vVERSION` is published, is not a pre-release, holds
+`rustleaks-VERSION-corresponding-source.tar.gz`, and that its tag names the
+candidate, so a package version always names the released commit. Last, it
+requires that the dry run passed for that commit. Then it checks the
+`rustleaks-bindings-<version>-packages` artifact as described in
+[Binding packages](#binding-packages): the attestation of `SHA256SUMS`
+against `bindings.yml` and the candidate commit, every checksum, and the
+file set. Neither one builds anything: they publish the dry run's files.
+
+`Publish Go Module` refuses a version that already has a tag in
+`joshgarnett/rustleaks-go`, because a published Go version cannot be
+replaced. Its `publish` job runs in the protected `release` environment,
+with only Git, the GitHub CLI and the pinned token action, as in
+[Updating the package managers](#updating-the-package-managers). It
+replaces the whole tree of `main` with the layout, commits it as the
+`rustleaks-packaging` App, and pushes the commit, the `vVERSION` tag and the
+eight `lib/<platform>/vVERSION` tags in one atomic push. The `verify` job then
+waits for the Go checksum database and compares its hashes for all nine
+modules with the dry run's `hashes.txt`. The README and CONTRIBUTING files
+of `rustleaks-go` come from `release/go/`; they say that the repository is a
+published copy and that issues and pull requests go to this repository.
+
+The first Go publication also needs:
+
+- `joshgarnett/rustleaks-go` to exist, to be public, and to have a `main`
+  branch with at least one commit. The workflow clones `main` and pushes a
+  fast-forward commit on top of it; it does not create the branch.
+- no tag in `rustleaks-go` that starts with `v` or `lib/`;
+- the `rustleaks-packaging` App installed on `rustleaks-go` with contents
+  write, and the `PACKAGING_APP_ID` variable and `PACKAGING_APP_PRIVATE_KEY`
+  secret in the `release` environment; and
+- no branch protection on `rustleaks-go` `main` that rejects the App's push.
+
+To withdraw a bad Go version, add a `retract` directive to
+`bindings/go/go.mod`; `go-layout` copies `retract` lines into the published
+`go.mod`. Then release a new version.
+
+`Publish Python Package` runs in the protected `release` environment with
+`id-token: write`. It exchanges the GitHub identity token for a short-lived
+PyPI upload token (PyPI trusted publishing). `release/python/upload.py
+upload` then uploads each wheel with every core metadata field of the wheel
+in the form, because PyPI creates the release metadata from the first
+upload's form and never changes it. The last step checks each file's SHA-256
+and the release's `requires_python`, summary and license expression on
+PyPI. Before the first upload, the maintainer must register this
+repository, the workflow file `publish-python.yml` and the environment
+`release` as a trusted publisher of the PyPI project `rustleaks`; that is a
+separate approval.
+
+After the first release of each package, replace the text in
+`docs/user/go.md` and `docs/user/python.md` that says the package is not
+released yet with the install commands:
+
+```sh
+go get github.com/joshgarnett/rustleaks-go@vVERSION
+python -m pip install rustleaks==VERSION
+```
+
 ### Rollback
 
 If registry metadata, package contents, checksums, attestations, native smoke
@@ -470,7 +663,9 @@ tests or the public API differ from the approval packet:
 1. Stop further publication.
 2. Remove or quarantine the GitHub release assets. If the package
    managers were updated, revert the commit in `joshgarnett/homebrew-tap`
-   and `joshgarnett/scoop-bucket`.
+   and `joshgarnett/scoop-bucket`. A Go version cannot be removed: publish
+   a new version whose `go.mod` retracts the bad one. A PyPI release can be
+   yanked; a file name can never be uploaded again.
 3. Follow the [incident response](incident-response.md) procedure.
 4. Yank the crates.io version when new installs would create risk. Yanking
    does not delete the package and does not replace a fixed release, an

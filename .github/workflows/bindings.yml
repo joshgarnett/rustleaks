@@ -1,0 +1,429 @@
+name: Binding Packages
+
+# Builds the Go and Python binding packages of one commit and checks them as
+# a user would, on each of the eight native lanes. It publishes nothing and
+# uses no credential. The release dry run calls it with `attest` set, so the
+# checksums of its packages carry a build provenance attestation that the
+# publish workflows check. The weekly workflow and a run by hand do not
+# attest.
+#
+# 1. Each lane builds its optimized native library and its wheel.
+# 2. One job writes the rustleaks-go layout and a file-based Go module proxy
+#    from the eight libraries.
+# 3. Each lane builds and runs a Go program from that proxy, and installs
+#    the wheel into new virtual environments without network access, with
+#    CPython 3.12, 3.13, 3.14 and 3.15, and runs a scan.
+
+on:
+  workflow_call:
+    inputs:
+      candidate:
+        description: Full commit ID to build.
+        required: true
+        type: string
+      version:
+        description: Release version that the commit names.
+        required: true
+        type: string
+      attest:
+        description: Attest the checksums of the packages. Only the release dry run sets it.
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full commit ID to build.
+        required: true
+        type: string
+      version:
+        description: Release version that the commit names.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: "5"
+
+jobs:
+  native-unix:
+    name: Binding libraries ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            config: linux-x86_64-gnu
+            platform: linux-amd64
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            config: linux-aarch64-gnu
+            platform: linux-arm64
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            config: linux-x86_64-musl
+            platform: linux-amd64-musl
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            config: linux-aarch64-musl
+            platform: linux-arm64-musl
+          - runner: macos-15-intel
+            architecture: x86_64
+            config: macos-x86_64
+            platform: darwin-amd64
+          - runner: macos-15
+            architecture: arm64
+            config: macos-aarch64
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+      # The musl configs select the musl CPython, and Bazel also uses that
+      # interpreter for the Python tools that write the wheel. It needs the
+      # musl loader, which the Ubuntu host lacks.
+      - name: Install the musl loader
+        if: endsWith(matrix.config, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl
+          ls -l /lib/ld-musl-*.so.1
+      - name: Build the native library and the wheel
+        working-directory: rustleaks
+        env:
+          BAZEL_CONFIG: release-bindings-${{ matrix.config }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+          GO_PLATFORM: ${{ matrix.platform }}
+          LANE_CONFIG: ${{ matrix.config }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "${EXPECTED_ARCHITECTURE}"
+          bazelisk build --config="${BAZEL_CONFIG}" //release/native:all //release/python:wheel
+          bin="$(bazelisk info --config="${BAZEL_CONFIG}" bazel-bin)"
+          out="${RUNNER_TEMP}/bindings/${GO_PLATFORM}"
+          mkdir -p "${out}"
+          install -m 0644 "${bin}/release/native/librustleaks_ffi_static.a" "${out}/"
+          wheels=("${bin}"/release/python/rustleaks-*.whl)
+          test "${#wheels[@]}" = 1
+          # Adds the linked library's third-party notices and the license
+          # expression to the wheel's metadata.
+          cargo xtask bindings finish-wheel "${LANE_CONFIG}" "${wheels[0]}" "${out}"
+          ls -l "${out}"
+      - name: Upload the native library and the wheel
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rustleaks-bindings-${{ inputs.version }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/bindings/${{ matrix.platform }}
+          if-no-files-found: error
+
+  native-windows:
+    name: Binding libraries ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            architecture: X64
+            config: windows-x86_64-msvc
+            platform: windows-amd64
+          - runner: windows-11-arm
+            architecture: Arm64
+            config: windows-aarch64-msvc
+            platform: windows-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    # Check out with LF line endings, as CI does, so the notice catalog's
+    # source hashes match.
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+      - name: Build the native library and the wheel
+        shell: pwsh
+        working-directory: rustleaks
+        env:
+          BAZEL_CONFIG: release-bindings-${{ matrix.config }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+          GO_PLATFORM: ${{ matrix.platform }}
+          LANE_CONFIG: ${{ matrix.config }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($actual -ne $env:EXPECTED_ARCHITECTURE) { throw "expected $env:EXPECTED_ARCHITECTURE runner, got $actual" }
+          $flags = @("--config=$env:BAZEL_CONFIG", '--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0', '--extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all')
+          bazelisk --output_user_root=C:/b --windows_enable_symlinks build @flags //release/native:all //release/python:wheel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bin = bazelisk --output_user_root=C:/b --windows_enable_symlinks info @flags bazel-bin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $out = Join-Path $env:RUNNER_TEMP "bindings/$env:GO_PLATFORM"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item (Join-Path $bin 'release/native/rustleaks_ffi.dll') $out
+          $wheels = @(Get-ChildItem (Join-Path $bin 'release/python') -Filter 'rustleaks-*.whl')
+          if ($wheels.Count -ne 1) { throw "expected one wheel, found $($wheels.Count)" }
+          # Adds the linked library's third-party notices and the license
+          # expression to the wheel's metadata.
+          cargo xtask bindings finish-wheel $env:LANE_CONFIG $wheels[0].FullName $out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem $out | Format-Table Name, Length
+      - name: Upload the native library and the wheel
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rustleaks-bindings-${{ inputs.version }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/bindings/${{ matrix.platform }}
+          if-no-files-found: error
+
+  layout:
+    name: Write the Go module layout and proxy
+    needs:
+      - native-unix
+      - native-windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+          install-bazelisk: "false"
+      - name: Write the layout, the proxy and the checksums
+        working-directory: rustleaks
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/bindings"
+          mkdir -p "${work}/libraries" "${work}/wheels" "${work}/out"
+          for platform in linux-amd64 linux-arm64 linux-amd64-musl linux-arm64-musl darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
+            gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+              --name "rustleaks-bindings-${EXPECTED_VERSION}-${platform}" --dir "${work}/libraries/${platform}"
+            mv "${work}/libraries/${platform}"/rustleaks-*.whl "${work}/wheels/"
+          done
+          cargo xtask bindings go-layout "${EXPECTED_VERSION}" "${work}/libraries" "${work}/out/rustleaks-go"
+          cargo xtask bindings go-proxy "${work}/out/rustleaks-go" "${work}/out/proxy"
+          test "$(find "${work}/wheels" -name '*.whl' | wc -l)" = 8
+          mv "${work}/wheels" "${work}/out/wheels"
+          # SHA256SUMS lists every file of the artifact: the rustleaks-go
+          # layout, the module proxy and the wheels.
+          (cd "${work}/out" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum > SHA256SUMS)
+          cat "${work}/out/SHA256SUMS"
+          cat "${work}/out/rustleaks-go/go.sum"
+      - name: Attest the checksums
+        if: inputs.attest
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/bindings/out/SHA256SUMS
+      - name: Verify and retain the checksum attestation
+        if: inputs.attest
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          CANDIDATE: ${{ inputs.candidate }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/bindings/out"
+          install -m 0644 "${ATTESTATION_BUNDLE}" "${out}/SHA256SUMS.attestation.jsonl"
+          gh attestation verify "${out}/SHA256SUMS" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --bundle "${out}/SHA256SUMS.attestation.jsonl" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/bindings.yml" \
+            --source-digest "${CANDIDATE}"
+      - name: Upload the layout, the proxy and the wheels
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rustleaks-bindings-${{ inputs.version }}-packages
+          path: ${{ runner.temp }}/bindings/out
+          if-no-files-found: error
+
+  dry-run-unix:
+    name: Binding dry run ${{ matrix.platform }}
+    needs: layout
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            config: linux-x86_64-gnu
+            platform: linux-amd64
+            wheel: manylinux_2_28_x86_64
+          - runner: ubuntu-24.04-arm
+            config: linux-aarch64-gnu
+            platform: linux-arm64
+            wheel: manylinux_2_28_aarch64
+          - runner: ubuntu-24.04
+            config: linux-x86_64-musl
+            platform: linux-amd64-musl
+            wheel: musllinux_1_2_x86_64
+          - runner: ubuntu-24.04-arm
+            config: linux-aarch64-musl
+            platform: linux-arm64-musl
+            wheel: musllinux_1_2_aarch64
+          - runner: macos-15-intel
+            config: macos-x86_64
+            platform: darwin-amd64
+            wheel: macosx_14_0_x86_64
+          - runner: macos-15
+            config: macos-aarch64
+            platform: darwin-arm64
+            wheel: macosx_14_0_arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+      # A dynamic musl CPython needs the musl loader, and a musl Go program
+      # needs a musl C compiler. The Ubuntu host has neither.
+      - name: Install musl and its C compiler wrapper
+        if: endsWith(matrix.config, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl musl-tools
+          ls -l /lib/ld-musl-*.so.1
+          musl-gcc --version
+      - name: Build and run a Go program and install the wheel
+        working-directory: rustleaks
+        env:
+          BAZEL_CONFIG: ${{ matrix.config }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          WHEEL_TAG: ${{ matrix.wheel }}
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/bindings"
+          gh run download "${GITHUB_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "rustleaks-bindings-${EXPECTED_VERSION}-packages" --dir "${work}"
+          (cd "${work}" && sha256sum --check --quiet SHA256SUMS 2>/dev/null || shasum -a 256 --check --quiet SHA256SUMS)
+          packages="${work}"
+          diff <(cd "${packages}" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\./||' | LC_ALL=C sort) \
+            <(awk '{print $2}' "${packages}/SHA256SUMS" | LC_ALL=C sort)
+          goroot="$(bazelisk run @rules_go//go -- env GOROOT | tail -n 1)"
+          pythons=()
+          for version in 3.12 3.13 3.14 3.15; do
+            pythons+=("$(bazelisk run --config="${BAZEL_CONFIG}" --@rules_python//python/config_settings:python_version="${version}" @rules_python//python/bin:python -- -I -c 'import sys; print(sys.executable)' | tail -n 1)")
+          done
+          wheel="${work}/wheels/rustleaks-${EXPECTED_VERSION}-py3-none-${WHEEL_TAG}.whl"
+          cargo xtask bindings dry-run "${BAZEL_CONFIG}" "${goroot}" "${work}/proxy" "${wheel}" "${work}/run" "${pythons[@]}"
+
+  dry-run-windows:
+    name: Binding dry run ${{ matrix.platform }}
+    needs: layout
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            config: windows-x86_64-msvc
+            platform: windows-amd64
+            wheel: win_amd64
+          - runner: windows-11-arm
+            config: windows-aarch64-msvc
+            platform: windows-arm64
+            wheel: win_arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    # Check out with LF line endings, as CI does, so the notice catalog's
+    # source hashes match.
+    env:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.candidate }}
+          path: rustleaks
+          persist-credentials: false
+      - name: Set up tools
+        uses: ./rustleaks/.github/actions/setup
+        with:
+          rust-components: ""
+          install-just: "false"
+      - name: Build and run a Go program and install the wheel
+        shell: pwsh
+        working-directory: rustleaks
+        env:
+          BAZEL_CONFIG: ${{ matrix.config }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          WHEEL_TAG: ${{ matrix.wheel }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP bindings
+          gh run download $env:GITHUB_RUN_ID --repo $env:GITHUB_REPOSITORY --name "rustleaks-bindings-$env:EXPECTED_VERSION-packages" --dir $work
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $listed = @()
+          foreach ($line in Get-Content (Join-Path $work SHA256SUMS)) {
+            $expected, $file = $line -split '  ', 2
+            $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $work $file)).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) { throw "checksum mismatch for $file" }
+            $listed += $file
+          }
+          $present = @(Get-ChildItem -Recurse -File $work | Where-Object { $_.Name -notlike 'SHA256SUMS*' } | ForEach-Object { $_.FullName.Substring($work.Length + 1).Replace('\', '/') })
+          if (Compare-Object ($listed | Sort-Object) ($present | Sort-Object)) { throw 'the packages artifact holds files that SHA256SUMS does not list' }
+          $flags = @('--repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0', '--extra_toolchains=@@rules_cc++cc_configure_extension+local_config_cc_toolchains//:all')
+          $goroot = (bazelisk --output_user_root=C:/b --windows_enable_symlinks run @flags @rules_go//go -- env GOROOT | Select-Object -Last 1)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pythons = @()
+          foreach ($version in @('3.12', '3.13', '3.14', '3.15')) {
+            $python = (bazelisk --output_user_root=C:/b --windows_enable_symlinks run --enable_runfiles --config=$env:BAZEL_CONFIG @flags "--@rules_python//python/config_settings:python_version=$version" //release/python:interpreter | Select-Object -Last 1)
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $pythons += $python
+          }
+          $wheel = Join-Path $work "wheels/rustleaks-$env:EXPECTED_VERSION-py3-none-$env:WHEEL_TAG.whl"
+          cargo xtask bindings dry-run $env:BAZEL_CONFIG $goroot (Join-Path $work proxy) $wheel (Join-Path $work run) @pythons
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -52,12 +52,13 @@ fn check_bazel_ignore(source: &str) -> Result<(), String> {
     let expected = [
         "target",
         "crates/rustleaks-core/fuzz/target",
+        "crates/rustleaks-ffi/fuzz/target",
         "crates/rustleaks-report/fuzz/target",
         "crates/rustleaks-sources/fuzz/target",
     ];
     if !source.lines().eq(expected) {
         return Err(
-            ".bazelignore must exclude exactly the workspace and three standalone fuzz Cargo target directories"
+            ".bazelignore must exclude exactly the workspace and four standalone fuzz Cargo target directories"
                 .into(),
         );
     }
@@ -362,7 +363,15 @@ fn check_version(root: &Path, workspace: &Value) -> Result<(), String> {
         .map_err(|error| format!("cannot read bazel/rust_crate.bzl: {error}"))?;
     let module = fs::read_to_string(root.join("MODULE.bazel"))
         .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
-    check_version_text(cargo, &rules, &module)
+    check_version_text(cargo, &rules, &module)?;
+    for (path, version) in crate::bindings::binding_versions(root)? {
+        if version != cargo {
+            return Err(format!(
+                "{path} names version {version}, not the Cargo workspace version {cargo}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn check_version_text(cargo: &str, rules: &str, module: &str) -> Result<(), String> {
@@ -550,7 +559,7 @@ fn check_module(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("cannot read MODULE.bazel: {error}"))?;
     for required in [
         "bazel_dep(name = \"git\", version = \"2.55.0\")",
-        "bazel_dep(name = \"llvm\", version = \"0.8.11\")",
+        "bazel_dep(name = \"llvm\", version = \"0.8.27\")",
         "bazel_dep(name = \"rules_rust\", version = \"0.72.0\")",
         "cargo_lockfile = \"//:Cargo.lock\"",
         "isolated = True",
@@ -729,6 +738,8 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
         "security",
         "security-deep",
         "test",
+        "test-go",
+        "test-python",
     ]
     .into_iter()
     .map(str::to_owned)
@@ -741,6 +752,8 @@ fn check_just_interface(root: &Path) -> Result<(), String> {
     for (recipe, command) in [
         ("build", "bazelisk build //:build"),
         ("test", "bazelisk test //:test"),
+        ("test-go", "bazelisk test //bindings/go:all_tests"),
+        ("test-python", "bazelisk test //bindings/python:all_tests"),
         (
             "flake-check",
             "bazelisk test --nocache_test_results --runs_per_test=10 //:test",
@@ -985,7 +998,7 @@ mod tests {
 
     #[test]
     fn bazel_ignore_rejects_missing_outputs_and_source_exclusions() {
-        let expected = "target\ncrates/rustleaks-core/fuzz/target\ncrates/rustleaks-report/fuzz/target\ncrates/rustleaks-sources/fuzz/target\n";
+        let expected = "target\ncrates/rustleaks-core/fuzz/target\ncrates/rustleaks-ffi/fuzz/target\ncrates/rustleaks-report/fuzz/target\ncrates/rustleaks-sources/fuzz/target\n";
         assert!(check_bazel_ignore(expected).is_ok());
         let directories = expected.lines().collect::<Vec<_>>();
         for missing in 0..directories.len() {

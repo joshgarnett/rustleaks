@@ -296,7 +296,7 @@ fn target_and_decoded_byte_limits_count_pass_bytes_before_utf8_normalization() {
     let expected = |input: &[u8], end| {
         Finding::builder()
             .rule_id("synthetic-location")
-            .location(Location::new(0, 0, 2, end).unwrap())
+            .location(Location::new(1, 1, 2, end).unwrap())
             .line(input)
             .match_text(b"v=AB".as_slice())
             .secret(b"AB".as_slice())

@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+- A Go package, `github.com/joshgarnett/rustleaks-go`, scans bytes for
+  secrets in process with every built-in rule, a selection of them, or your
+  own configuration. It has engine and scan options, budgets, context
+  deadlines and cancellation, and findings whose printed, logged and JSON
+  forms leave out the secret. It uses cgo on Linux and macOS and loads a DLL
+  without cgo on Windows. Its defaults are those of `rustleaks-core`: decode
+  depth 0 and allow comments honored. See [Using the Go
+  package](docs/user/go.md).
+- New Python package `rustleaks` for CPython 3.12 and later. It scans bytes
+  and text in process with the same engine and built-in rules as the
+  `rustleaks` command, and can select rules, extend them or replace them
+  with a TOML configuration. It supports budgets, timeouts, cancellation and
+  scans on many threads. Its defaults are those of `rustleaks-core`: no
+  decoding and allow comments honored. See
+  [Using Rustleaks from Python](docs/user/python.md).
+- In `rustleaks-core`, a `Fragment` starts at line 1 unless you set
+  another start line, so findings from direct scans number lines like the
+  `rustleaks` command. Before, the default was 0. `Fragment::new`,
+  `Fragment::builder` and `Fragment::default` all start at line 1. Line
+  numbers in findings, and the fingerprints that sessions build from them,
+  are 1 higher for fragments that did not set a start line. A baseline
+  recorded from such findings matches by start line, so its entries no
+  longer match until you record it again. Call
+  `FragmentBuilder::start_line(0)` to keep the old numbers. A finding of a
+  rule that has only a `path` pattern still has line 0. The `rustleaks`
+  command already set the start line of every fragment, so its findings,
+  reports, baselines and exit codes do not change.
 - Rustleaks finds secrets on the last line of a file that does not end with
   a newline when an earlier line has an allow comment (`gitleaks:allow` or
   `rustleaks:allow`). Before, the line of such a finding started at the

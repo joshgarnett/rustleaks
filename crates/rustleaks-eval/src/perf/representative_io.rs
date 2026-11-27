@@ -191,7 +191,9 @@ fn expected_findings(fragments: &[Fragment]) -> Result<Vec<Finding>> {
 fn engine() -> Result<Engine> {
     let engine = Engine::builder(ConfigLoader::new().load_toml(CONFIG)?).build()?;
     let first = engine.scan_fragment(
-        &Fragment::new(b"warm initialization"),
+        &Fragment::builder(b"warm initialization")
+            .start_line(0)
+            .build(),
         &ScanOptions::default(),
     );
     if !first.is_complete() {

@@ -362,6 +362,7 @@ fn exact_source_byte_patterns_preserve_bridges_bounds_guards_and_capture_policy(
         }
         let input = bytes(&case.input_base64);
         let fragment = Fragment::builder(input.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         let result = selected.scan_fragment_controlled(
@@ -624,6 +625,7 @@ fn every_graph_keeps_its_helpers_under_selection_and_accounts_for_support_multip
             }
         }
         let fragment = Fragment::builder(repeated.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         let result =
@@ -678,6 +680,7 @@ fn every_graph_keeps_its_helpers_under_selection_and_accounts_for_support_multip
             }
         }
         let fragment = Fragment::builder(stress.as_slice())
+            .start_line(0)
             .file_path(case.path.as_str())
             .build();
         for budget in [
@@ -700,6 +703,7 @@ fn every_graph_keeps_its_helpers_under_selection_and_accounts_for_support_multip
 fn check_resource_limits(engine: &Engine, case: &Case) {
     let input = bytes(&case.input_base64);
     let fragment = Fragment::builder(input.as_slice())
+        .start_line(0)
         .file_path(case.path.as_str())
         .build();
     for budget in [
@@ -741,7 +745,7 @@ fn every_graph_enforces_independent_resource_limits() {
         if case.expected.is_empty() {
             let input = bytes(&case.input_base64);
             let result = engine.scan_fragment_controlled(
-                &Fragment::new(input.as_slice()),
+                &Fragment::builder(input.as_slice()).start_line(0).build(),
                 &ScanOptions::default(),
                 &ScanControl::unlimited().with_budget(ScanBudget::unlimited().max_work_units(0)),
             );
@@ -824,6 +828,7 @@ fn real_graph_source_filters_and_keywords_gate_each_component() {
                 ("fixture-association-neighbor", 1),
             ] {
                 let fragment = Fragment::builder(input.as_slice())
+                    .start_line(0)
                     .file_path(case.path.as_str())
                     .commit(commit)
                     .build();
@@ -896,8 +901,10 @@ fn source_filters_are_preserved_and_exercised_without_detector_language_masking(
             .chain(std::iter::once(("Q7z9b2N4c6", 1)))
         {
             let input = format!("probe:{value}END");
-            let result =
-                engine.scan_fragment(&Fragment::new(input.as_bytes()), &ScanOptions::default());
+            let result = engine.scan_fragment(
+                &Fragment::builder(input.as_bytes()).start_line(0).build(),
+                &ScanOptions::default(),
+            );
             assert!(result.is_complete());
             assert_eq!(result.findings().len(), expected, "{id} {value}");
         }
@@ -952,6 +959,7 @@ fn source_path_predicates_are_isolated_from_embedded_global_policy() {
             ]);
         for (path, count) in paths {
             let fragment = Fragment::builder(b"probe:Q7z9b2N4c6".as_slice())
+                .start_line(0)
                 .file_path(path)
                 .build();
             let result = engine.scan_fragment(&fragment, &ScanOptions::default());
@@ -1005,8 +1013,10 @@ fn actual_helper_captures_preserve_strict_and_inclusive_entropy_comparators() {
     for ((case, input, threshold, expected), engine) in
         checks.into_iter().zip(custom_batch(variants))
     {
-        let result =
-            engine.scan_fragment(&Fragment::new(input.as_slice()), &ScanOptions::default());
+        let result = engine.scan_fragment(
+            &Fragment::builder(input.as_slice()).start_line(0).build(),
+            &ScanOptions::default(),
+        );
         assert!(result.is_complete());
         assert_eq!(
             result.findings().len(),

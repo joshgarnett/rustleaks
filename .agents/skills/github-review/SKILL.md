@@ -31,7 +31,8 @@ quality, maintainability and documentation.
 For this repository, also check:
 
 - the [invariants](../../../AGENTS.md#invariants), including the synchronous
-  in-memory core and the ban on unsafe code in owned crates;
+  in-memory core, the ban on unsafe code in owned crates other than
+  `rustleaks-ffi`, and a `SAFETY:` comment on every unsafe block there;
 - that expected findings, spans, fingerprints, report fields, exit codes and
   error classes come from the intended behavior, not from current output;
 - that a presentation change has an updated expectation that matches its

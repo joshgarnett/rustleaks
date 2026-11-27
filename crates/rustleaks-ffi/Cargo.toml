@@ -1,0 +1,31 @@
+[package]
+name = "rustleaks-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Private C ABI over rustleaks-core for the Go and Python bindings"
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+rustleaks-core = { path = "../rustleaks-core", version = "=0.2.0" }
+
+[dev-dependencies]
+serde_json = "1"
+
+# This crate cannot inherit the workspace lints, because the workspace
+# forbids unsafe code and a forbid cannot be relaxed. It is the only crate
+# that allows unsafe code, and it denies unsafe code without a written
+# safety argument. The crate root repeats these lints for Bazel builds.
+[lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"

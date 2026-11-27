@@ -54,7 +54,9 @@ impl RepresentativeWorker {
             }
         }
         let detector = Engine::builder(config).build()?;
-        let fragment = Fragment::builder(fixture.input.clone()).build();
+        let fragment = Fragment::builder(fixture.input.clone())
+            .start_line(0)
+            .build();
         let options = ScanOptions::builder()
             .max_decode_depth(fixture.depth)
             .build();

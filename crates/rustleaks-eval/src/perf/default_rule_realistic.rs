@@ -53,7 +53,7 @@ fn path_scan(
 ) -> Fallible<Scan> {
     let expected = ctx.expected(&raw, plants, candidates)?;
     Ok(Scan {
-        fragment: Fragment::builder(raw).file_path(path).build(),
+        fragment: Fragment::builder(raw).start_line(0).file_path(path).build(),
         expected,
     })
 }
