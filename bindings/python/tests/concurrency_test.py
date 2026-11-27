@@ -13,6 +13,7 @@ import _thread
 import gc
 import json
 import os
+import random
 import signal
 import threading
 import time
@@ -223,6 +224,27 @@ class CloseTest(unittest.TestCase):
         self.assertIsNone(closed.error)
         self.assertFalse(engine._handle)
 
+    def test_close_inside_a_scan_on_the_same_thread(self) -> None:
+        # As from a signal handler that runs during a scan: close would wait
+        # for its own thread, so it raises instead.
+        engine = rustleaks.Engine(config=MARKER_CONFIG)
+        errors: list[RuntimeError] = []
+
+        def close_here(scanning: rustleaks.Engine) -> None:
+            try:
+                scanning.close()
+            except RuntimeError as error:
+                errors.append(error)
+
+        with before_native(close_here):
+            findings = engine.scan(marker_input())
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("inside a scan", str(errors[0]))
+        self.assertFalse(engine.closed)
+        engine.close()
+        self.assertTrue(engine.closed)
+
     def test_many_threads_share_an_engine(self) -> None:
         with rustleaks.Engine(config=MARKER_CONFIG, workers=2) as engine:
             started = [
@@ -264,6 +286,36 @@ class InterruptTest(unittest.TestCase):
             gate.open()
             join(scanner)
         self.assertEqual(len(scanned.value), 1)
+        engine.close()
+        self.assertFalse(engine._handle)
+
+    @unittest.skipUnless(hasattr(signal, "setitimer"), "this platform has no interval timer")
+    def test_timer_interrupts_never_leak_the_lock_or_a_worker(self) -> None:
+        # A timer signal interrupts the scan loop at any bytecode, including
+        # the Python code around the native call, unlike interrupt_main,
+        # which only lands where the main thread gives up the GIL. After each
+        # interrupt the lock must be free and no scan registered; otherwise
+        # the next scan would wait forever.
+        def handler(signum: int, frame: object) -> None:
+            raise KeyboardInterrupt
+
+        previous = signal.signal(signal.SIGALRM, handler)
+        engine = rustleaks.Engine(config=MARKER_CONFIG, workers=1)
+        delays = random.Random(0)
+        try:
+            for _ in range(1500):
+                try:
+                    signal.setitimer(signal.ITIMER_REAL, 0.0002 + delays.random() * 0.002)
+                    while True:
+                        engine.scan(marker_input(), timeout=60)
+                except KeyboardInterrupt:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                self.assertFalse(engine._lock.locked())
+                self.assertEqual(engine._in_flight, 0)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        self.assertEqual(len(engine.scan(marker_input(), timeout=60)), 1)
         engine.close()
         self.assertFalse(engine._handle)
 

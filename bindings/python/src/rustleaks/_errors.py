@@ -1,7 +1,9 @@
 """Exceptions raised by the rustleaks package.
 
 No exception holds scanned bytes, findings or the text given to
-``scan_text``. A ``ConfigError`` message can quote configuration text.
+``scan_text``. A ``ConfigError`` message can quote configuration text. The
+traceback of a scan error holds frames whose local variables hold the
+input.
 """
 
 from __future__ import annotations
@@ -107,7 +109,8 @@ class ClosedError(Error):
 
 
 class TextEncodingError(Error):
-    """The text given to ``scan_text`` cannot be encoded as UTF-8.
+    """Text cannot be encoded as UTF-8: the text given to ``scan_text``, a
+    scan ``path``, a ``config`` string or a rule ID.
 
     ``position`` is the index of the first character that cannot be encoded,
     such as a lone surrogate. The exception does not hold the text.

@@ -31,8 +31,10 @@ class Finding:
     and ``end_column`` follow the rules of the ``rustleaks`` reports: lines
     count from 1, and columns count bytes from 1, plus 1 on every line after
     the first. A finding of a rule with only a path pattern has line and
-    column 0. ``secret_range`` and ``match_range`` are byte offsets into the
-    input, or ``None`` when no exact range exists, as for decoded text.
+    column 0. On every line after the first, ``line`` starts with the line
+    break that ends the line before it. ``secret_range`` and
+    ``match_range`` are byte offsets into the input, or ``None`` when no
+    exact range exists, as for decoded text.
     ``path`` is the path given to the scan.
 
     Findings cannot be pickled, because they hold secrets.
