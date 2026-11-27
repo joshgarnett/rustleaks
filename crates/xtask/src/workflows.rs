@@ -785,6 +785,7 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
         "test \"$(jq -r '.status' <<<\"${run_json}\")\" = \"completed\"",
         "release_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}\")\"",
         "test \"$(jq -r '.draft' <<<\"${release_json}\")\" = false",
+        "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = false",
         "source_archive=\"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
         "select(.name == $name and .state == \"uploaded\")] | length' <<<\"${release_json}\")\" = 1",
         "ref_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}\")\"",
@@ -1987,6 +1988,10 @@ mod tests {
                     "true",
                 ),
                 ("-corresponding-source.tar.gz\"", "-source.tar.gz\""),
+                (
+                    "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = false",
+                    "true",
+                ),
             ] {
                 assert!(source.contains(before), "{file} omits {before:?}");
                 let changed = source.replacen(before, after, 1);
