@@ -60,7 +60,11 @@ fn header_functions(header: &str) -> BTreeMap<String, Vec<String>> {
 
 /// The C spelling of a Rust parameter type.
 fn c_type(rust: &str) -> String {
-    let mut rust = rust.trim();
+    // `stringify!` can put a space after the `*` of a pointer type.
+    let spelled = rust
+        .replace("* const ", "*const ")
+        .replace("* mut ", "*mut ");
+    let mut rust = spelled.trim();
     let mut pointers = Vec::new();
     loop {
         if let Some(rest) = rust.strip_prefix("*const ") {
@@ -75,6 +79,8 @@ fn c_type(rust: &str) -> String {
     }
     let base = match rust {
         "u8" => "uint8_t",
+        "f64" => "double",
+        "Bytes" => "rustleaks_bytes",
         "u32" => "uint32_t",
         "u64" => "uint64_t",
         "i32" => "int32_t",
@@ -319,8 +325,12 @@ fn c_layout(field_type: &str) -> (usize, usize) {
     }
 }
 
-/// Struct name to its fields with their C offsets, and its C size.
-fn header_structs(header: &str) -> BTreeMap<String, (Vec<(String, usize)>, usize)> {
+/// Fields with their names, offsets and C types, and the struct size.
+type Layout = (Vec<(String, usize, String)>, usize);
+
+/// Struct name to its fields with their C offsets and C types, and its C
+/// size.
+fn header_structs(header: &str) -> BTreeMap<String, Layout> {
     let mut structs = BTreeMap::new();
     for block in header.split("typedef struct ").skip(1) {
         let Some(open) = block.find('{') else {
@@ -337,10 +347,9 @@ fn header_structs(header: &str) -> BTreeMap<String, (Vec<(String, usize)>, usize
                 continue;
             }
             let (field_type, field) = line.rsplit_once(' ').expect("typed field");
-            let field_type = field_type.trim_start_matches("const ");
-            let (size, field_align) = c_layout(field_type);
+            let (size, field_align) = c_layout(field_type.trim_start_matches("const "));
             offset = offset.next_multiple_of(field_align);
-            fields.push((field.to_owned(), offset));
+            fields.push((field.to_owned(), offset, field_type.to_owned()));
             offset += size;
             align = align.max(field_align);
         }
@@ -349,42 +358,50 @@ fn header_structs(header: &str) -> BTreeMap<String, (Vec<(String, usize)>, usize
     structs
 }
 
+/// Each field's name, Rust offset and the C spelling of its Rust type, and
+/// the Rust size. The closure fails to compile unless every listed type is
+/// the field's real type.
 macro_rules! rust_layout {
-    ($type:ty, [$($field:ident),* $(,)?]) => {
+    ($type:ty, [$($field:ident: $field_type:ty),* $(,)?]) => {{
+        $(let _: fn(&$type) -> &$field_type = |value| &value.$field;)*
         (
-            vec![$((stringify!($field).to_owned(), offset_of!($type, $field))),*],
+            vec![$((
+                stringify!($field).to_owned(),
+                offset_of!($type, $field),
+                c_type(stringify!($field_type)),
+            )),*],
             size_of::<$type>(),
         )
-    };
+    }};
 }
 
 #[test]
-fn header_structs_have_the_rust_layout() {
+fn header_structs_have_the_rust_layout_and_types() {
     let header = header_structs(&strip_comments(HEADER));
     let rust = BTreeMap::from([
         (
             "rustleaks_bytes".to_owned(),
-            rust_layout!(Bytes, [ptr, len]),
+            rust_layout!(Bytes, [ptr: *const u8, len: usize]),
         ),
         (
             "rustleaks_scan_args".to_owned(),
             rust_layout!(
                 ScanArgs,
                 [
-                    path,
-                    path_len,
-                    overrides,
-                    decode_depth,
-                    base64_mode,
-                    redaction_percent,
-                    max_decoded_bytes,
-                    max_work_units,
-                    max_finding_records,
-                    max_finding_payload_bytes,
-                    max_collected_spans,
-                    max_normalization_bytes,
-                    deadline_ns,
-                    allow_comments,
+                    path: *const u8,
+                    path_len: usize,
+                    overrides: u64,
+                    decode_depth: u64,
+                    base64_mode: u64,
+                    redaction_percent: u64,
+                    max_decoded_bytes: u64,
+                    max_work_units: u64,
+                    max_finding_records: u64,
+                    max_finding_payload_bytes: u64,
+                    max_collected_spans: u64,
+                    max_normalization_bytes: u64,
+                    deadline_ns: u64,
+                    allow_comments: u8,
                 ]
             ),
         ),
@@ -392,7 +409,14 @@ fn header_structs_have_the_rust_layout() {
             "rustleaks_rule_view".to_owned(),
             rust_layout!(
                 RuleView,
-                [id, description, tags, tag_count, keywords, keyword_count]
+                [
+                    id: Bytes,
+                    description: Bytes,
+                    tags: *const Bytes,
+                    tag_count: usize,
+                    keywords: *const Bytes,
+                    keyword_count: usize,
+                ]
             ),
         ),
         (
@@ -400,25 +424,25 @@ fn header_structs_have_the_rust_layout() {
             rust_layout!(
                 FindingView,
                 [
-                    rule_id,
-                    description,
-                    tags,
-                    tag_count,
-                    secret,
-                    match_text,
-                    line,
-                    path,
-                    start_line,
-                    end_line,
-                    start_column,
-                    end_column,
-                    secret_start,
-                    secret_end,
-                    match_start,
-                    match_end,
-                    entropy,
-                    secret_range_exact,
-                    match_range_exact,
+                    rule_id: Bytes,
+                    description: Bytes,
+                    tags: *const Bytes,
+                    tag_count: usize,
+                    secret: Bytes,
+                    match_text: Bytes,
+                    line: Bytes,
+                    path: Bytes,
+                    start_line: u64,
+                    end_line: u64,
+                    start_column: u64,
+                    end_column: u64,
+                    secret_start: u64,
+                    secret_end: u64,
+                    match_start: u64,
+                    match_end: u64,
+                    entropy: f64,
+                    secret_range_exact: u8,
+                    match_range_exact: u8,
                 ]
             ),
         ),
@@ -427,17 +451,17 @@ fn header_structs_have_the_rust_layout() {
             rust_layout!(
                 StatusView,
                 [
-                    termination,
-                    budget,
-                    limit,
-                    consumed,
-                    requested,
-                    decoded_bytes,
-                    work_units,
-                    finding_records,
-                    finding_payload_bytes,
-                    collected_spans,
-                    normalization_bytes,
+                    termination: i32,
+                    budget: i32,
+                    limit: u64,
+                    consumed: u64,
+                    requested: u64,
+                    decoded_bytes: u64,
+                    work_units: u64,
+                    finding_records: u64,
+                    finding_payload_bytes: u64,
+                    collected_spans: u64,
+                    normalization_bytes: u64,
                 ]
             ),
         ),
@@ -450,6 +474,8 @@ fn header_parsers_reject_what_they_cannot_read() {
     assert_eq!(c_type("*mut *const u8"), "const uint8_t * *");
     assert_eq!(c_type("*const EngineHandle"), "const rustleaks_engine *");
     assert_eq!(c_type("*mut *mut Options"), "rustleaks_options * *");
+    assert_eq!(c_type("* const Bytes"), "const rustleaks_bytes *");
+    assert_eq!(c_type("f64"), "double");
     assert_eq!(normalize("const uint8_t **x"), "const uint8_t * * x");
     assert!(std::panic::catch_unwind(|| c_type("String")).is_err());
 }

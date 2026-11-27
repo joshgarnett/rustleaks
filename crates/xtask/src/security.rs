@@ -1072,8 +1072,9 @@ fn miri_check() -> Result<(), String> {
             "rustleaks-report",
             "go_json::tests::float32_format_uses_go_json_cutoffs_and_sign",
         ),
-        // The C ABI: pointer checks, views read after a scan on a scan
-        // thread, and a panic that crosses that thread.
+        // The C ABI: null and misaligned pointer checks, rule views made
+        // before their owner moves, finding views read after a scan on a
+        // scan thread, and a panic that crosses that thread.
         (
             "rustleaks-ffi",
             "tests::null_handles_and_out_pointers_are_invalid_arguments",
@@ -1089,6 +1090,18 @@ fn miri_check() -> Result<(), String> {
         (
             "rustleaks-ffi",
             "tests::a_panicking_scan_drops_its_scratch_and_returns_an_internal_error",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::misaligned_out_handle_argument_and_free_pointers_are_invalid",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::error_message_checks_both_out_pointers_before_writing",
+        ),
+        (
+            "rustleaks-ffi",
+            "tests::rules_list_every_reporting_rule_in_report_order",
         ),
     ];
     for (package, case) in cases {

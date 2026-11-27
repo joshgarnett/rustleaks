@@ -720,6 +720,9 @@ impl<'a> Reader<'a> {
 /// Panics when a library call breaks the ABI contract.
 pub fn exercise(data: &[u8]) {
     let mut reader = Reader(data);
+    let (abi, version) = library_identity();
+    assert_eq!(abi, ABI_VERSION);
+    assert!(!version.is_empty());
     let Ok(mut options) = Options::new() else {
         panic!("options_new failed with the library ABI number");
     };
@@ -784,6 +787,7 @@ pub fn exercise(data: &[u8]) {
     drop(options);
     let _ = engine.rules();
     assert_eq!(engine.max_input_bytes(), max_input);
+    assert!(engine.workers() >= 1);
     let path_len = usize::from(reader.byte() % 64);
     let path = reader.take(path_len);
     let mut args = scan_args(path);
@@ -799,9 +803,31 @@ pub fn exercise(data: &[u8]) {
     args.max_collected_spans = u64::from(reader.byte());
     args.max_normalization_bytes = u64::from(reader.byte()) * 64;
     args.deadline_ns = u64::from(reader.byte()) * 1_000_000;
+    // No cancel handle, a fresh one, or one that is already set.
+    let cancel_choice = reader.byte() % 3;
+    let cancel = (cancel_choice != 0).then(Cancel::new);
+    if let (2, Some(cancel)) = (cancel_choice, &cancel) {
+        cancel.set();
+    }
     let input = reader.rest();
-    match engine.scan(input, Some(&args), None) {
-        Ok(outcome) => check_outcome(input, path, redacted, &args, &outcome),
+    match engine.scan(input, Some(&args), cancel.as_ref()) {
+        Ok(outcome) => {
+            if cancel_choice == 2 {
+                // A set flag wins over a passed deadline; a scan that needs
+                // no poll can still complete.
+                assert!(
+                    [
+                        crate::abi::TERMINATION_CANCELLED,
+                        crate::abi::TERMINATION_COMPLETE
+                    ]
+                    .contains(&outcome.status.termination)
+                        || outcome.status.termination == crate::abi::TERMINATION_BUDGET,
+                    "{}",
+                    outcome.status.termination
+                );
+            }
+            check_outcome(input, path, redacted, &args, &outcome);
+        }
         Err(error) if error.kind == ERROR_INPUT_TOO_LARGE => {
             assert!(max_input != crate::abi::UNLIMITED);
             assert!(u64::try_from(input.len()).unwrap_or(u64::MAX) > max_input);

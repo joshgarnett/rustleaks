@@ -260,14 +260,12 @@ pub unsafe extern "C" fn rustleaks_abi_version(out: *mut u32) -> i32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rustleaks_version(out_ptr: *mut *const u8, out_len: *mut usize) -> i32 {
     guarded(|| {
-        if out_ptr.is_null() || out_len.is_null() {
-            return Err(ERROR_INVALID_ARGUMENT);
-        }
-        // SAFETY: forwarded from the caller.
-        unsafe {
-            write_out(out_ptr, VERSION.as_ptr())?;
-            write_out(out_len, VERSION.len())
-        }
+        // SAFETY: forwarded from the caller. Both pointers are checked
+        // before either is written.
+        let (mut ptr_out, mut len_out) = unsafe { (Out::new(out_ptr)?, Out::new(out_len)?) };
+        ptr_out.write(VERSION.as_ptr());
+        len_out.write(VERSION.len());
+        Ok(())
     })
 }
 
@@ -789,16 +787,14 @@ pub unsafe extern "C" fn rustleaks_error_message(
     out_len: *mut usize,
 ) -> i32 {
     guarded(|| {
-        if out_ptr.is_null() || out_len.is_null() {
-            return Err(ERROR_INVALID_ARGUMENT);
-        }
-        // SAFETY: forwarded from the caller.
-        unsafe {
-            let error = borrow(error)?;
-            let message = Bytes::of(error.message().as_bytes());
-            write_out(out_ptr, message.ptr)?;
-            write_out(out_len, message.len)
-        }
+        // SAFETY: forwarded from the caller. Both out pointers and the
+        // handle are checked before either out pointer is written.
+        let (error, mut ptr_out, mut len_out) =
+            unsafe { (borrow(error)?, Out::new(out_ptr)?, Out::new(out_len)?) };
+        let message = Bytes::of(error.message().as_bytes());
+        ptr_out.write(message.ptr);
+        len_out.write(message.len);
+        Ok(())
     })
 }
 

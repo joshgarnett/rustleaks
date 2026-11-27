@@ -124,6 +124,20 @@ impl ScanThreads {
     /// Returns `ERROR_ENGINE` when a thread cannot start. The threads that
     /// started are joined first.
     pub(crate) fn start(count: usize) -> Result<Self, FfiError> {
+        Self::start_with(count, |work| {
+            std::thread::Builder::new()
+                .name("rustleaks-scan".into())
+                .stack_size(SCAN_STACK_BYTES)
+                .spawn(work)
+        })
+    }
+
+    /// [`ScanThreads::start`] with the function that starts one thread, so
+    /// that a test can make a start fail.
+    fn start_with(
+        count: usize,
+        mut spawn: impl FnMut(Box<dyn FnOnce() + Send>) -> std::io::Result<JoinHandle<()>>,
+    ) -> Result<Self, FfiError> {
         let (sender, receiver) = mpsc::channel::<Task>();
         let receiver = Arc::new(Mutex::new(receiver));
         let mut threads = Self {
@@ -132,11 +146,10 @@ impl ScanThreads {
         };
         for _ in 0..count.max(1) {
             let receiver = Arc::clone(&receiver);
-            let thread = std::thread::Builder::new()
-                .name("rustleaks-scan".into())
-                .stack_size(SCAN_STACK_BYTES)
-                .spawn(move || serve(&receiver))
-                .map_err(|error| thread_error(&error))?;
+            // On failure `threads` drops, which closes the queue and joins
+            // the threads that started.
+            let thread =
+                spawn(Box::new(move || serve(&receiver))).map_err(|error| thread_error(&error))?;
             threads.threads.push(thread);
         }
         Ok(threads)
@@ -153,13 +166,22 @@ impl ScanThreads {
         engine: Arc<EngineInner>,
         job: ScanJob,
     ) -> Result<ResultHandle, FfiError> {
+        self.call(move || Ok(engine.run(job)))
+    }
+
+    /// Runs `work` on a scan thread and waits for its outcome. A panic in
+    /// `work` becomes `ERROR_PANIC`, and so does a task that never runs.
+    fn call(
+        &self,
+        work: impl FnOnce() -> Result<ResultHandle, FfiError> + Send + 'static,
+    ) -> Result<ResultHandle, FfiError> {
         let reply = Arc::new(Reply::default());
         let mut sender = ReplySender {
             reply: Some(Arc::clone(&reply)),
         };
         let task: Task = Box::new(move || {
             let outcome =
-                catch_unwind(AssertUnwindSafe(|| engine.run(job))).map_err(|_| FfiError::panic());
+                catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(FfiError::panic()));
             sender.send(outcome);
         });
         // A task that cannot be queued is dropped here, and its sender then
@@ -239,12 +261,85 @@ mod tests {
         assert_eq!(error.message(), "a rustleaks scan thread stopped");
     }
 
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::Duration;
+
     #[test]
-    fn scan_threads_start_at_least_one_and_join_on_drop() {
-        let threads = ScanThreads::start(0).unwrap();
-        assert_eq!(threads.len(), 1);
+    fn scan_threads_start_at_least_one() {
+        assert_eq!(ScanThreads::start(0).unwrap().len(), 1);
+        assert_eq!(ScanThreads::start(3).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn drop_waits_for_the_running_task_and_joins_every_thread() {
+        let threads = ScanThreads::start(2).unwrap();
+        let finished = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(Reply::default());
+        {
+            let finished = Arc::clone(&finished);
+            let started = Arc::clone(&started);
+            let task: Task = Box::new(move || {
+                started.put(Err(FfiError::new(ERROR_ENGINE, "started")));
+                // The drop below must wait for this task, however long it
+                // takes; the pause only makes a missing join visible.
+                std::thread::sleep(Duration::from_millis(20));
+                finished.store(true, Ordering::SeqCst);
+            });
+            threads.queue.as_ref().unwrap().send(task).unwrap();
+        }
+        // The task is running when `wait` returns.
+        assert!(started.wait().is_err());
         drop(threads);
-        let threads = ScanThreads::start(3).unwrap();
-        assert_eq!(threads.len(), 3);
+        assert!(finished.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn call_returns_the_outcome_a_panic_or_a_stop() {
+        let threads = ScanThreads::start(1).unwrap();
+        let error = threads
+            .call(|| Err(FfiError::new(ERROR_ENGINE, "sent")))
+            .unwrap_err();
+        assert_eq!((error.kind(), error.message()), (ERROR_ENGINE, "sent"));
+        let error = threads.call(|| panic!("synthetic")).unwrap_err();
+        assert_eq!(error.kind(), ERROR_PANIC);
+
+        // With the queue closed, the task is dropped unrun and the caller
+        // still gets an answer.
+        let mut closed = ScanThreads::start(1).unwrap();
+        drop(closed.queue.take());
+        let error = closed
+            .call(|| Err(FfiError::new(ERROR_ENGINE, "never")))
+            .unwrap_err();
+        assert_eq!(error.message(), "a rustleaks scan thread stopped");
+    }
+
+    #[test]
+    fn a_failed_thread_start_joins_the_threads_that_started() {
+        let started = Arc::new(AtomicUsize::new(0));
+        let exited = Arc::new(AtomicUsize::new(0));
+        let result = {
+            let started = Arc::clone(&started);
+            let exited = Arc::clone(&exited);
+            ScanThreads::start_with(3, move |work| {
+                if started.fetch_add(1, Ordering::SeqCst) == 1 {
+                    return Err(std::io::Error::other("synthetic start failure"));
+                }
+                let exited = Arc::clone(&exited);
+                std::thread::Builder::new().spawn(move || {
+                    work();
+                    exited.fetch_add(1, Ordering::SeqCst);
+                })
+            })
+        };
+        let error = result.unwrap_err();
+        assert_eq!(error.kind(), ERROR_ENGINE);
+        assert_eq!(
+            error.message(),
+            "cannot start a rustleaks thread: synthetic start failure"
+        );
+        // The second start failed, so the third was not tried, and the first
+        // thread was joined before `start_with` returned.
+        assert_eq!(started.load(Ordering::SeqCst), 2);
+        assert_eq!(exited.load(Ordering::SeqCst), 1);
     }
 }
