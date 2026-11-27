@@ -68,6 +68,11 @@ def check(wheel, pyproject_path):
     readme_path = os.path.join(os.path.dirname(pyproject_path), project["readme"])
     with open(readme_path, encoding="utf-8") as file:
         readme = file.read()
+    # The file name is the name PyPI keeps for good. Its version, like the
+    # METADATA version, is the PEP 440 form in pyproject.toml.
+    prefix = f"{project['name']}-{project['version']}-py3-none-"
+    if not os.path.basename(wheel).startswith(prefix):
+        sys.exit(f"wheel file name {os.path.basename(wheel)} does not start with {prefix}")
     fields = form_fields(wheel)
     single = {}
     for name, value in fields:

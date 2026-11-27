@@ -5,8 +5,8 @@ secrets inside their own program. The `rustleaks` package runs the same
 engine as the `rustleaks` command, in your process. It scans data that you
 give it; it does not read files, run Git or write reports.
 
-The package is listed under Unreleased in the [changelog](../../CHANGELOG.md)
-and is not in a release yet.
+The package was first released in 0.3.0-alpha.1, a pre-release, so its API
+can still change.
 
 ## Requirements
 
@@ -21,16 +21,26 @@ never searches the current folder or `PATH` for it.
 Free-threaded CPython, PyPy and subinterpreters are not tested. The package
 does not refuse them, but nothing checks that it works there.
 
-The package version and the native library version are the same. If the
-library is missing, is built for another architecture or has another
-version, creating an engine raises `LibraryError`.
+The package and the native library have the same Rustleaks version. The
+package writes it in the PEP 440 form that pip uses, so the pre-release
+0.3.0-alpha.1 is the package version 0.3.0a1. If the library is missing, is
+built for another architecture or has another version, creating an engine
+raises `LibraryError`.
 
 ## Install
 
-The package is not published yet. To try it from a checkout of this
-repository, build the wheel for your platform with Bazel and install it
-with pip. Pick the `release-bindings-*` configuration in `.bazelrc` that
-matches your platform, for example on Linux x86_64 with glibc:
+PyPI has a wheel for each supported target. Pin the version, because
+there is no stable release yet and pip's choice of a pre-release depends on
+what else PyPI holds:
+
+```sh
+python -m pip install rustleaks==0.3.0a1
+```
+
+To build the package from a checkout of this repository, build the wheel
+for your platform with Bazel and install it with pip. Pick the
+`release-bindings-*` configuration in `.bazelrc` that matches your
+platform, for example on Linux x86_64 with glibc:
 
 ```sh
 bazelisk build --config=release-bindings-linux-x86_64-gnu //release/python:wheel

@@ -5,6 +5,11 @@ name: Update Package Managers
 # checks the versions in joshgarnett/homebrew-tap and joshgarnett/scoop-bucket
 # and, after every check passes, pushes to them. Without `publish` the
 # workflow uses no credential and changes nothing.
+#
+# A pre-release is never pushed to a repository that holds a stable
+# release: `check-upgrade` refuses it, because Scoop's `checkver: github`
+# follows stable releases. So do not set `publish` for a pre-release once
+# the tap and bucket hold a stable release.
 
 on:
   workflow_dispatch:

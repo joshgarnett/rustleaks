@@ -6,7 +6,8 @@ published to crates.io. The CLI ships as release archives, as `.deb` and
 `.rpm` packages for the Linux glibc targets, and through the Homebrew tap
 `joshgarnett/homebrew-tap` and the Scoop bucket `joshgarnett/scoop-bucket`.
 The Go package is published to `joshgarnett/rustleaks-go`, and the Python
-package to PyPI as `rustleaks`. All of them use the release version.
+package to PyPI as `rustleaks`. All of them use the release version. The
+Python package uses its [PEP 440 form](#python-version).
 
 ## Approvals
 
@@ -35,21 +36,24 @@ approval.
       - `[workspace.package]` in the root `Cargo.toml`;
       - the `=VERSION` path dependency pins in
         `crates/rustleaks-cli/Cargo.toml`, `crates/rustleaks-eval/Cargo.toml`,
-        `crates/rustleaks-report/Cargo.toml` and
-        `crates/rustleaks-sources/Cargo.toml`;
+        `crates/rustleaks-ffi/Cargo.toml`, `crates/rustleaks-report/Cargo.toml`
+        and `crates/rustleaks-sources/Cargo.toml`;
       - the `module()` version in `MODULE.bazel` and `RUSTLEAKS_VERSION` in
         `bazel/rust_crate.bzl`;
-      - `CHANGELOG.md` and the Status section of `README.md`; and
+      - `CHANGELOG.md` and the Status section of `README.md`;
       - the install examples in `docs/user/getting-started.md`,
         `docs/user/ci.md`, `docs/user/library.md`, `docs/user/go.md` and
         `docs/user/python.md`;
       - `packageVersion` in `bindings/go/library.go`; and
-      - `version` in `bindings/python/pyproject.toml` and `__version__` in
+      - in the [PEP 440 form](#python-version), `RUSTLEAKS_PYTHON_VERSION`
+        in `bazel/rust_crate.bzl`, `version` in
+        `bindings/python/pyproject.toml` and `__version__` in
         `bindings/python/src/rustleaks/_version.py`.
 
       `cargo xtask build-system-check`, which `just test` runs, fails when
-      `MODULE.bazel`, `RUSTLEAKS_VERSION` or one of the three binding files
-      differs from the Cargo version.
+      `MODULE.bazel`, `RUSTLEAKS_VERSION` or `bindings/go/library.go`
+      differs from the Cargo version, or when one of the three Python
+      versions differs from its PEP 440 form.
 - [ ] The generated files that name the version are regenerated:
       `just deps-repin` (`Cargo.lock` and `cargo-bazel-lock.json`),
       `cargo xtask generate vet-inventory`,
@@ -144,6 +148,8 @@ crates.io credential.
       `Update Package Managers` from `packages.yml` with the version and
       `publish` set. See
       [Updating the package managers](#updating-the-package-managers).
+      Skip this item for a pre-release while the tap and bucket hold a
+      stable release: a pre-release is not pushed to them.
 - [ ] After the GitHub release, with its
       `rustleaks-VERSION-corresponding-source.tar.gz`, is published and while
       `main` is still the candidate, dispatch `Publish Go Module` from
@@ -160,15 +166,17 @@ crates.io credential.
 - [ ] The external Cargo and Bazel consumers build against the registry
       version.
 - [ ] Every GitHub artifact attestation and checksum verifies.
-- [ ] The Homebrew and Scoop install jobs of `Update Package Managers`
-      pass, and its push job updated both repositories.
+- [ ] Unless the package managers were skipped for a pre-release, the
+      Homebrew and Scoop install jobs of `Update Package Managers` pass,
+      and its push job updated both repositories.
 - [ ] The `verify` job of `Publish Go Module` passes: the Go checksum
       database has the dry run's hashes for all nine modules.
 - [ ] `Publish Python Package` found all eight wheels on PyPI with the dry
       run's SHA-256.
 - [ ] On a clean machine, `go get github.com/joshgarnett/rustleaks-go@vVERSION`
-      and `python -m pip install rustleaks==VERSION` install the release,
-      and a scan finds a synthetic key.
+      and `python -m pip install rustleaks==PYTHON_VERSION`, with the
+      [Python version](#python-version), install the release, and a scan
+      finds a synthetic key.
 - [ ] On a clean machine for each channel, the release installs and
       `rustleaks --version` prints it: Homebrew on macOS and Linux, Scoop on
       Windows, the `.deb` on Debian or Ubuntu and the `.rpm` on Fedora or
@@ -497,10 +505,14 @@ changing anything; set it, after approval, to push. The workflow:
    repository that was already pushed fails the check.
 
 A pre-release pushed to the tap or bucket becomes what `brew install` and
-`scoop install` give everyone. Once a repository holds a stable release,
-`check-upgrade` refuses to write a pre-release to it, because the Scoop
-manifest's `checkver: github` follows stable releases. A pre-release can
-replace a pre-release, and a stable release can replace either.
+`scoop install` give everyone. So a pre-release is not pushed to a
+repository that holds a stable release: `check-upgrade` refuses to write
+it, because the Scoop manifest's `checkver: github` follows stable
+releases. Since 0.2.0 both repositories hold a stable release, so do not
+set `publish` for a pre-release such as `0.3.0-alpha.1`. A run without
+`publish` still writes and installs the formula and manifest. A pre-release
+can replace a pre-release, and a stable release can replace either. The Go
+module and the Python package of a pre-release are published as usual.
 
 ### Binding packages
 
@@ -589,6 +601,26 @@ Microsoft C runtime on Windows, and the standard library's bundled
 attributions. The GNU wheels' glibc code also has the corresponding source
 above.
 
+#### Python version
+
+The Python package, its wheel file names and its PyPI release use the
+PEP 440 form of the release version. `cargo xtask bindings python-version
+VERSION` prints it, and the xtask checks use the same mapping:
+
+| Release version | Python version |
+| --- | --- |
+| `X.Y.Z` | `X.Y.Z` |
+| `X.Y.Z-alpha.N` | `X.Y.ZaN` |
+| `X.Y.Z-beta.N` | `X.Y.ZbN` |
+| `X.Y.Z-rc.N` | `X.Y.ZrcN` |
+
+Any other pre-release suffix, and build metadata, has no Python version, and
+the checks fail on it. So `0.3.0-alpha.1` is `0.3.0a1` on PyPI and in
+`rustleaks-0.3.0a1-py3-none-<platform>.whl`. The native library reports the
+release version, and the package compares the PEP 440 form of it with
+`__version__`. The Go module, its tags and the GitHub release use the
+release version itself, such as `v0.3.0-alpha.1`.
+
 ### Publishing the Go and Python packages
 
 Publish the binding packages of a version only after its
@@ -597,9 +629,11 @@ release commit. Dispatch `Publish Go Module` and `Publish Python Package`
 from `main` with the candidate commit, version and dry run ID. Each one
 first requires that the candidate is the clean current `main` and that the
 binding files name the version. Then it requires that the GitHub release
-`vVERSION` is published, is not a pre-release, holds
+`vVERSION` is published, holds
 `rustleaks-VERSION-corresponding-source.tar.gz`, and that its tag names the
-candidate, so a package version always names the released commit. Last, it
+candidate, so a package version always names the released commit. The
+release must be a GitHub pre-release exactly when the version has a
+pre-release suffix, as `release.yml` creates it. Last, it
 requires that the dry run passed for that commit. Then it checks the
 `rustleaks-bindings-<version>-packages` artifact as described in
 [Binding packages](#binding-packages): the attestation of `SHA256SUMS`
@@ -611,7 +645,8 @@ file set. Neither one builds anything: they publish the dry run's files.
 replaced. Its `publish` job runs in the protected `release` environment,
 with only Git, the GitHub CLI and the pinned token action, as in
 [Updating the package managers](#updating-the-package-managers). It
-replaces the whole tree of `main` with the layout, commits it as the
+replaces the whole tree of `main` with the layout, or starts `main` with it
+in an empty repository. It commits the layout as the
 `rustleaks-packaging` App, and pushes the commit, the `vVERSION` tag and the
 eight `lib/<platform>/vVERSION` tags in one atomic push. The `verify` job then
 waits for the Go checksum database and compares its hashes for all nine
@@ -621,9 +656,13 @@ published copy and that issues and pull requests go to this repository.
 
 The first Go publication also needs:
 
-- `joshgarnett/rustleaks-go` to exist, to be public, and to have a `main`
-  branch with at least one commit. The workflow clones `main` and pushes a
-  fast-forward commit on top of it; it does not create the branch.
+- `joshgarnett/rustleaks-go` to exist and to be public. It may be empty, with
+  no branch and no tag. Then the check job records an empty head. The
+  publish job starts a new repository with `main` as its branch and commits
+  the layout. It checks that `rustleaks-go` still has no refs, then creates
+  `main` and every tag in the one atomic push. When `rustleaks-go` has a `main`,
+  the workflow clones it and pushes a fast-forward commit on top of it. A
+  repository that has refs but no `main` stops the workflow;
 - no tag in `rustleaks-go` that starts with `v` or `lib/`;
 - the `rustleaks-packaging` App installed on `rustleaks-go` with contents
   write, and the `PACKAGING_APP_ID` variable and `PACKAGING_APP_PRIVATE_KEY`
@@ -635,7 +674,11 @@ To withdraw a bad Go version, add a `retract` directive to
 `go.mod`. Then release a new version.
 
 `Publish Python Package` runs in the protected `release` environment with
-`id-token: write`. It exchanges the GitHub identity token for a short-lived
+`id-token: write`. Its `version` input is the release version, such as
+`0.3.0-alpha.1`. It requires that `Cargo.toml` names that version, and takes
+the [Python version](#python-version), such as `0.3.0a1`, from
+`bindings/python/pyproject.toml` for the wheel file names and the PyPI
+release. It exchanges the GitHub identity token for a short-lived
 PyPI upload token (PyPI trusted publishing). `release/python/upload.py
 upload` then uploads each wheel with every core metadata field of the wheel
 in the form, because PyPI creates the release metadata from the first
@@ -645,15 +688,6 @@ PyPI. Before the first upload, the maintainer must register this
 repository, the workflow file `publish-python.yml` and the environment
 `release` as a trusted publisher of the PyPI project `rustleaks`; that is a
 separate approval.
-
-After the first release of each package, replace the text in
-`docs/user/go.md` and `docs/user/python.md` that says the package is not
-released yet with the install commands:
-
-```sh
-go get github.com/joshgarnett/rustleaks-go@vVERSION
-python -m pip install rustleaks==VERSION
-```
 
 ### Rollback
 

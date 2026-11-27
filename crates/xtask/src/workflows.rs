@@ -713,6 +713,36 @@ fn published_native_bindings(platform: &str) -> &'static [&'static str] {
 /// its `SHA256SUMS` lists.
 const FILE_SET_CHECK: &str = "diff <(cd \"${packages}\" && find . -type f ! -name 'SHA256SUMS*' | sed 's|^\\./||' | LC_ALL=C sort) \\\n            <(awk '{print $2}' \"${packages}/SHA256SUMS\" | LC_ALL=C sort)";
 
+/// How a binding publication workflow decides whether the GitHub release
+/// must be a pre-release: exactly as `release.yml` creates it.
+const BINDING_PRERELEASE: &str = "          if [[ \"${EXPECTED_VERSION}\" = *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+          test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = \"${prerelease}\"
+";
+
+/// How the Go check job reads the head of `rustleaks-go`: empty for an
+/// empty repository, else a 40-hex `main`. A repository with refs but no
+/// `main` fails.
+const GO_REMOTE_HEAD: &[&str] = &[
+    "          if [[ -z \"${refs}\" ]]; then\n",
+    "            head=\"\"\n          else\n            head=\"$(awk '$2 == \"refs/heads/main\" {print $1}' <<<\"${refs}\")\"\n            if ! [[ \"${head}\" =~ ^[0-9a-f]{40}$ ]]; then\n",
+    "              exit 1\n            fi\n          fi\n          printf 'head=%s\\n' \"${head}\" >> \"${GITHUB_OUTPUT}\"\n",
+];
+
+/// How the Go publish job starts its commit: a new `main` for an empty
+/// repository, which must still have no refs just before the push, or a
+/// clone of `main` at the checked head.
+const GO_PUBLISH_CHECKOUT: &[&str] = &[
+    "          if [[ -z \"${EXPECTED_HEAD}\" ]]; then\n",
+    "            git init --quiet --initial-branch=main \"${checkout}\"\n            git -C \"${checkout}\" remote add origin https://github.com/joshgarnett/rustleaks-go.git\n          else\n            git clone --branch main https://github.com/joshgarnett/rustleaks-go.git \"${checkout}\"\n",
+    "            test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${EXPECTED_HEAD}\"\n            git -C \"${checkout}\" rm -r --quiet --ignore-unmatch -- .\n          fi\n",
+    "            test -z \"$(git -C \"${checkout}\" ls-remote origin)\"\n          fi\n",
+    "          refs=(HEAD:refs/heads/main)\n",
+];
+
 /// The two binding publication workflows.
 #[derive(Clone, Copy)]
 enum BindingPublish {
@@ -779,13 +809,13 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
         "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/bindings.yml\"",
         "--source-digest \"${CANDIDATE}\"",
         "[[ \"${CANDIDATE}\" =~ ^[0-9a-f]{40}$ ]]",
-        "[[ \"${EXPECTED_VERSION}\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]",
         "[[ \"${DRY_RUN_ID}\" =~ ^[0-9]+$ ]]",
         "test \"$(jq -r '.event' <<<\"${run_json}\")\" = \"workflow_dispatch\"",
         "test \"$(jq -r '.status' <<<\"${run_json}\")\" = \"completed\"",
         "release_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}\")\"",
         "test \"$(jq -r '.draft' <<<\"${release_json}\")\" = false",
-        "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = false",
+        BINDING_PRERELEASE,
+        "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = \"${prerelease}\"",
         "source_archive=\"rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz\"",
         "select(.name == $name and .state == \"uploaded\")] | length' <<<\"${release_json}\")\" = 1",
         "ref_json=\"$(gh api \"repos/${GITHUB_REPOSITORY}/git/ref/tags/v${EXPECTED_VERSION}\")\"",
@@ -816,6 +846,10 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
                 "test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${EXPECTED_HEAD}\"",
                 "already has a tag for v${EXPECTED_VERSION}",
                 "https://sum.golang.org/lookup/",
+                // A Go module version is a semantic version; a capital
+                // letter would need escaping in the module proxy.
+                "[[ \"${EXPECTED_VERSION}\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9a-z.-]+)?$ ]]",
+                "grep -qx \"const packageVersion = \\\"${EXPECTED_VERSION}\\\"\" bindings/go/library.go",
             ],
             &[
                 ("environment: release", 1),
@@ -826,6 +860,8 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
                 (" push ", 1),
                 ("id-token:", 0),
                 ("attestations:", 0),
+                ("if [[ -z \"${EXPECTED_HEAD}\" ]]; then", 2),
+                ("EXPECTED_HEAD: ${{ needs.check.outputs.head }}", 2),
             ],
         ),
         BindingPublish::Python => (
@@ -837,6 +873,14 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
                 "https://upload.pypi.org/legacy/",
                 "'.info.requires_python'",
                 "'.info.license_expression'",
+                // Only the pre-releases that have a PEP 440 form.
+                "[[ \"${EXPECTED_VERSION}\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$ ]]",
+                "test \"${cargo_version}\" = \"${EXPECTED_VERSION}\"",
+                "[[ \"${python_version}\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+((a|b|rc)[0-9]+)?$ ]]",
+                "printf 'python=%s\\n' \"${python_version}\" >> \"${GITHUB_OUTPUT}\"",
+                "test -f \"${packages}/wheels/rustleaks-${PYTHON_VERSION}-py3-none-${tag}.whl\"",
+                "\"https://pypi.org/pypi/rustleaks/${PYTHON_VERSION}/json\"",
+                "test \"$(jq -r '.info.version' \"${metadata}\")\" = \"${PYTHON_VERSION}\"",
             ],
             &[
                 ("environment: release", 1),
@@ -845,6 +889,7 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
                 ("gh attestation verify", 1),
                 ("id-token: write", 1),
                 ("upload.py upload", 1),
+                ("PYTHON_VERSION: ${{ steps.version.outputs.python }}", 2),
             ],
         ),
     };
@@ -864,6 +909,23 @@ fn validate_binding_publish_workflow(source: &str, kind: BindingPublish) -> Resu
     // Only the protected job holds the credential: the App key, or the
     // identity token that PyPI exchanges.
     let protected = workflow_job(source, "publish")?;
+    if let BindingPublish::Go = kind {
+        let check = workflow_job(source, "check")?;
+        for needle in GO_REMOTE_HEAD {
+            if !check.contains(needle) {
+                return Err(format!(
+                    "{context} check job omits the rustleaks-go head rule {needle:?}"
+                ));
+            }
+        }
+        for needle in GO_PUBLISH_CHECKOUT {
+            if !protected.contains(needle) {
+                return Err(format!(
+                    "{context} publish job omits the rustleaks-go checkout rule {needle:?}"
+                ));
+            }
+        }
+    }
     if !protected.contains("environment: release") {
         return Err(format!(
             "{context} must run its publish job in the release environment"
@@ -1989,8 +2051,28 @@ mod tests {
                 ),
                 ("-corresponding-source.tar.gz\"", "-source.tar.gz\""),
                 (
-                    "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = false",
+                    "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = \"${prerelease}\"",
                     "true",
+                ),
+                (
+                    "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = \"${prerelease}\"",
+                    "test \"$(jq -r '.prerelease' <<<\"${release_json}\")\" = false",
+                ),
+                (
+                    "if [[ \"${EXPECTED_VERSION}\" = *-* ]]; then",
+                    "if false; then",
+                ),
+                (
+                    "            prerelease=true\n",
+                    "            prerelease=false\n",
+                ),
+                (
+                    "            prerelease=false\n",
+                    "            prerelease=true\n",
+                ),
+                (
+                    "[[ \"${EXPECTED_VERSION}\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+",
+                    "[[ \"${EXPECTED_VERSION}\" =~ ^[0-9]+\\.[0-9]+\\.?[0-9]*",
                 ),
             ] {
                 assert!(source.contains(before), "{file} omits {before:?}");
@@ -2004,6 +2086,82 @@ mod tests {
         let go = std::fs::read_to_string(root.join(".github/workflows/publish-go.yml")).unwrap();
         let forced = go.replacen("push --atomic", "push --force --atomic", 1);
         assert!(validate_binding_publish_workflow(&forced, BindingPublish::Go).is_err());
+        // An empty rustleaks-go gets a new main; anything else needs a
+        // 40-hex main that has not moved.
+        for (before, after) in [
+            ("! [[ \"${head}\" =~ ^[0-9a-f]{40}$ ]]", "false"),
+            (
+                "[0-9a-f]{40}$ ]]; then\n              echo \"rustleaks-go has refs",
+                "[0-9a-f]*$ ]]; then\n              echo \"rustleaks-go has refs",
+            ),
+            (
+                "if [[ -z \"${refs}\" ]]; then",
+                "if [[ -z \"${head:-}\" ]]; then",
+            ),
+            ("--initial-branch=main", "--initial-branch=master"),
+            (
+                "test -z \"$(git -C \"${checkout}\" ls-remote origin)\"",
+                "true",
+            ),
+            (
+                "test \"$(git -C \"${checkout}\" rev-parse HEAD)\" = \"${EXPECTED_HEAD}\"",
+                "true",
+            ),
+            (
+                "          EXPECTED_HEAD: ${{ needs.check.outputs.head }}\n          EXPECTED_VERSION",
+                "          EXPECTED_VERSION",
+            ),
+            ("refs=(HEAD:refs/heads/main)", "refs=()"),
+            (
+                "            git init --quiet",
+                "            git clone --branch main https://github.com/joshgarnett/rustleaks-go.git \"${checkout}\" || git init --quiet",
+            ),
+        ] {
+            assert!(go.contains(before), "publish-go.yml omits {before:?}");
+            let changed = go.replacen(before, after, 1);
+            assert!(
+                validate_binding_publish_workflow(&changed, BindingPublish::Go).is_err(),
+                "publish-go.yml accepted {after:?} in place of {before:?}"
+            );
+        }
+        let capitals = go.replacen("(-[0-9a-z.-]+)?$", "(-[0-9A-Za-z.-]+)?$", 1);
+        assert_ne!(capitals, go);
+        assert!(validate_binding_publish_workflow(&capitals, BindingPublish::Go).is_err());
+
+        // The Python package names its PEP 440 version on PyPI and in its
+        // wheel file names, not the release version.
+        let python =
+            std::fs::read_to_string(root.join(".github/workflows/publish-python.yml")).unwrap();
+        for (before, after) in [
+            (
+                "wheels/rustleaks-${PYTHON_VERSION}-py3-none-",
+                "wheels/rustleaks-${EXPECTED_VERSION}-py3-none-",
+            ),
+            (
+                "pypi.org/pypi/rustleaks/${PYTHON_VERSION}/json",
+                "pypi.org/pypi/rustleaks/${EXPECTED_VERSION}/json",
+            ),
+            ("= \"${PYTHON_VERSION}\"", "= \"${EXPECTED_VERSION}\""),
+            (
+                "test \"${cargo_version}\" = \"${EXPECTED_VERSION}\"",
+                "true",
+            ),
+            ("(-(alpha|beta|rc)\\.[0-9]+)?$", "(-[0-9A-Za-z.-]+)?$"),
+            (
+                "          PYTHON_VERSION: ${{ steps.version.outputs.python }}\n",
+                "          PYTHON_VERSION: ${{ inputs.version }}\n",
+            ),
+        ] {
+            assert!(
+                python.contains(before),
+                "publish-python.yml omits {before:?}"
+            );
+            let changed = python.replacen(before, after, 1);
+            assert!(
+                validate_binding_publish_workflow(&changed, BindingPublish::Python).is_err(),
+                "publish-python.yml accepted {after:?} in place of {before:?}"
+            );
+        }
     }
 
     #[test]

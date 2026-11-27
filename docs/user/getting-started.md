@@ -42,6 +42,10 @@ scoop install rustleaks/rustleaks
 
 Run `scoop update rustleaks` to get a newer release.
 
+Homebrew and Scoop install stable releases only. A pre-release, such as
+0.3.0-alpha.1, is not added to the tap or the bucket. Install a pre-release
+from its `.deb` or `.rpm` package or its release archive, as below.
+
 ### With a .deb or .rpm package
 
 For Linux x86_64 and ARM64 with glibc 2.28 or later, such as Debian 10,
@@ -51,7 +55,7 @@ Debian and an RPM package next to the glibc archive. They install
 `licenses` folder in `/usr/share/doc/rustleaks`.
 
 ```sh
-VERSION=0.2.0
+VERSION=0.3.0-alpha.1
 TARGET=x86_64-unknown-linux-gnu
 STEM="rustleaks-${VERSION}-${TARGET}"
 gh release download "v${VERSION}" --repo joshgarnett/rustleaks \
@@ -86,7 +90,7 @@ archive for each supported target.
 | Windows ARM64 | `rustleaks-VERSION-aarch64-pc-windows-msvc.tar.gz` |
 
 `VERSION` is the release version without the leading `v`, for example
-`0.2.0`. The release tag is `vVERSION`.
+`0.3.0-alpha.1`. The release tag is `vVERSION`.
 
 Each archive contains one folder named like the archive, without `.tar.gz`.
 The folder holds the `rustleaks` program (`rustleaks.exe` on Windows),
@@ -100,7 +104,7 @@ files](#other-release-files).
 This example installs the Linux x86_64 build with the GitHub CLI:
 
 ```sh
-VERSION=0.2.0
+VERSION=0.3.0-alpha.1
 TARGET=x86_64-unknown-linux-gnu
 STEM="rustleaks-${VERSION}-${TARGET}"
 gh release download "v${VERSION}" --repo joshgarnett/rustleaks \

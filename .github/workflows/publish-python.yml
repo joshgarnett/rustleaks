@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       version:
-        description: Exact rustleaks Python package version to publish.
+        description: Exact release version, as in Cargo.toml (for example 0.3.0-alpha.1). The workflow publishes its PEP 440 form.
         required: true
         type: string
 
@@ -45,6 +45,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Require the current protected branch version
+        id: version
         env:
           CANDIDATE: ${{ inputs.candidate }}
           EXPECTED_VERSION: ${{ inputs.version }}
@@ -53,15 +54,22 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]
           test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
           test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
           git fetch --no-tags origin main
           test "$(git rev-parse origin/main)" = "${CANDIDATE}"
           test -z "$(git status --short)"
-          actual_version="$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' bindings/python/pyproject.toml)"
-          test "${actual_version}" = "${EXPECTED_VERSION}"
+          cargo_version="$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["workspace"]["package"]["version"])' Cargo.toml)"
+          test "${cargo_version}" = "${EXPECTED_VERSION}"
+          # The Python package uses the PEP 440 form of the release version,
+          # such as 0.3.0a1 for 0.3.0-alpha.1. The xtask build system check,
+          # which CI and the dry run ran on this commit, requires
+          # pyproject.toml to hold that form of the Cargo version.
+          python_version="$(python3 -I -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' bindings/python/pyproject.toml)"
+          [[ "${python_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]
+          printf 'python=%s\n' "${python_version}" >> "${GITHUB_OUTPUT}"
       - name: Require the GitHub release of this commit
         env:
           CANDIDATE: ${{ inputs.candidate }}
@@ -74,7 +82,14 @@ jobs:
           # corresponding source must exist before any package does.
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
           test "$(jq -r '.draft' <<<"${release_json}")" = false
-          test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          # release.yml publishes a version with a pre-release suffix as a
+          # GitHub pre-release, and any other version as a normal release.
+          if [[ "${EXPECTED_VERSION}" = *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = "${prerelease}"
           source_archive="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
           test "$(jq --arg name "${source_archive}" '[.assets[] | select(.name == $name and .state == "uploaded")] | length' <<<"${release_json}")" = 1
           # release.yml creates a lightweight tag; the tag is what users fetch.
@@ -87,6 +102,7 @@ jobs:
           DRY_RUN_ID: ${{ inputs.dry_run_id }}
           EXPECTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
+          PYTHON_VERSION: ${{ steps.version.outputs.python }}
         run: |
           set -euo pipefail
           [[ "${DRY_RUN_ID}" =~ ^[0-9]+$ ]]
@@ -109,15 +125,13 @@ jobs:
             --source-digest "${CANDIDATE}"
           for tag in manylinux_2_28_x86_64 manylinux_2_28_aarch64 musllinux_1_2_x86_64 musllinux_1_2_aarch64 \
             macosx_14_0_x86_64 macosx_14_0_arm64 win_amd64 win_arm64; do
-            test -f "${packages}/wheels/rustleaks-${EXPECTED_VERSION}-py3-none-${tag}.whl"
+            test -f "${packages}/wheels/rustleaks-${PYTHON_VERSION}-py3-none-${tag}.whl"
           done
           test "$(find "${packages}/wheels" -type f | wc -l)" = 8
       # PyPI trusted publishing: GitHub signs an identity token for this
       # workflow and environment, and PyPI exchanges it for an upload token
       # that lasts a few minutes. No credential is stored in the repository.
       - name: Upload the wheels to PyPI
-        env:
-          EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           identity="$(curl --fail --silent --show-error \
@@ -138,20 +152,20 @@ jobs:
           done
       - name: Verify the published files
         env:
-          EXPECTED_VERSION: ${{ inputs.version }}
+          PYTHON_VERSION: ${{ steps.version.outputs.python }}
         run: |
           set -euo pipefail
           metadata="${RUNNER_TEMP}/pypi.json"
           for attempt in {1..20}; do
             if curl --fail --silent --show-error --location \
               --user-agent rustleaks-release-verifier/0.1 \
-              "https://pypi.org/pypi/rustleaks/${EXPECTED_VERSION}/json" --output "${metadata}"; then
+              "https://pypi.org/pypi/rustleaks/${PYTHON_VERSION}/json" --output "${metadata}"; then
               break
             fi
             test "${attempt}" -lt 20
             sleep 3
           done
-          test "$(jq -r '.info.version' "${metadata}")" = "${EXPECTED_VERSION}"
+          test "$(jq -r '.info.version' "${metadata}")" = "${PYTHON_VERSION}"
           expected() {
             python3 -I -c 'import sys, tomllib; print(tomllib.load(open("bindings/python/pyproject.toml", "rb"))["project"][sys.argv[1]])' "$1"
           }

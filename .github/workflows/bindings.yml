@@ -352,7 +352,10 @@ jobs:
           for version in 3.12 3.13 3.14 3.15; do
             pythons+=("$(bazelisk run --config="${BAZEL_CONFIG}" --@rules_python//python/config_settings:python_version="${version}" @rules_python//python/bin:python -- -I -c 'import sys; print(sys.executable)' | tail -n 1)")
           done
-          wheel="${work}/wheels/rustleaks-${EXPECTED_VERSION}-py3-none-${WHEEL_TAG}.whl"
+          # The wheel's file name has the PEP 440 form of the version, such
+          # as 0.3.0a1 for 0.3.0-alpha.1.
+          python_version="$(cargo xtask bindings python-version "${EXPECTED_VERSION}")"
+          wheel="${work}/wheels/rustleaks-${python_version}-py3-none-${WHEEL_TAG}.whl"
           cargo xtask bindings dry-run "${BAZEL_CONFIG}" "${goroot}" "${work}/proxy" "${wheel}" "${work}/run" "${pythons[@]}"
 
   dry-run-windows:
@@ -424,6 +427,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $pythons += $python
           }
-          $wheel = Join-Path $work "wheels/rustleaks-$env:EXPECTED_VERSION-py3-none-$env:WHEEL_TAG.whl"
+          # The wheel's file name has the PEP 440 form of the version, such
+          # as 0.3.0a1 for 0.3.0-alpha.1.
+          $pythonVersion = (cargo xtask bindings python-version $env:EXPECTED_VERSION | Select-Object -Last 1)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $wheel = Join-Path $work "wheels/rustleaks-$pythonVersion-py3-none-$env:WHEEL_TAG.whl"
           cargo xtask bindings dry-run $env:BAZEL_CONFIG $goroot (Join-Path $work proxy) $wheel (Join-Path $work run) @pythons
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,5 +1,5 @@
 {
-  "checksum": "0b4638a55bd35a87b64f0d6c483b44b7b8d52549f8f446fe08391d66c82cf19b",
+  "checksum": "3e79e7fd2fc47845be9d4a1a7406fe6c6115e27928c885314a7e50acc6995c4d",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -2054,9 +2054,9 @@
       ],
       "license_file": null
     },
-    "rustleaks-cli 0.2.0": {
+    "rustleaks-cli 0.3.0-alpha.1": {
       "name": "rustleaks-cli",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": null,
       "repository": null,
       "targets": [
@@ -2079,7 +2079,7 @@
           "**"
         ],
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -2087,9 +2087,9 @@
       ],
       "license_file": null
     },
-    "rustleaks-core 0.2.0": {
+    "rustleaks-core 0.3.0-alpha.1": {
       "name": "rustleaks-core",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": "https://github.com/joshgarnett/rustleaks",
       "repository": null,
       "targets": [
@@ -2157,7 +2157,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT AND BSD-3-Clause AND Apache-2.0",
       "license_ids": [
@@ -2167,9 +2167,9 @@
       ],
       "license_file": null
     },
-    "rustleaks-eval 0.2.0": {
+    "rustleaks-eval 0.3.0-alpha.1": {
       "name": "rustleaks-eval",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": null,
       "repository": null,
       "targets": [
@@ -2205,7 +2205,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -2213,9 +2213,9 @@
       ],
       "license_file": null
     },
-    "rustleaks-ffi 0.2.0": {
+    "rustleaks-ffi 0.3.0-alpha.1": {
       "name": "rustleaks-ffi",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": null,
       "repository": null,
       "targets": [
@@ -2247,7 +2247,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -2286,9 +2286,9 @@
       "license_ids": [],
       "license_file": "COPYING"
     },
-    "rustleaks-report 0.2.0": {
+    "rustleaks-report 0.3.0-alpha.1": {
       "name": "rustleaks-report",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": null,
       "repository": null,
       "targets": [
@@ -2333,7 +2333,7 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -2399,9 +2399,9 @@
       ],
       "license_file": null
     },
-    "rustleaks-sources 0.2.0": {
+    "rustleaks-sources 0.3.0-alpha.1": {
       "name": "rustleaks-sources",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": null,
       "repository": null,
       "targets": [
@@ -2496,7 +2496,7 @@
           }
         },
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -3955,9 +3955,9 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "xtask 0.2.0": {
+    "xtask 0.3.0-alpha.1": {
       "name": "xtask",
-      "version": "0.2.0",
+      "version": "0.3.0-alpha.1",
       "package_url": null,
       "repository": null,
       "targets": [],
@@ -4011,7 +4011,7 @@
           }
         },
         "edition": "2024",
-        "version": "0.2.0"
+        "version": "0.3.0-alpha.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -4129,15 +4129,15 @@
   "binary_crates": [],
   "workspace_members": {
     "rustleaks-bzip2 0.1.2-rustleaks.1": "crates/rustleaks-bzip2",
-    "rustleaks-cli 0.2.0": "crates/rustleaks-cli",
-    "rustleaks-core 0.2.0": "crates/rustleaks-core",
-    "rustleaks-eval 0.2.0": "crates/rustleaks-eval",
-    "rustleaks-ffi 0.2.0": "crates/rustleaks-ffi",
+    "rustleaks-cli 0.3.0-alpha.1": "crates/rustleaks-cli",
+    "rustleaks-core 0.3.0-alpha.1": "crates/rustleaks-core",
+    "rustleaks-eval 0.3.0-alpha.1": "crates/rustleaks-eval",
+    "rustleaks-ffi 0.3.0-alpha.1": "crates/rustleaks-ffi",
     "rustleaks-rar-codec 0.9.3-rustleaks.1": "crates/rustleaks-rar-codec",
-    "rustleaks-report 0.2.0": "crates/rustleaks-report",
+    "rustleaks-report 0.3.0-alpha.1": "crates/rustleaks-report",
     "rustleaks-sevenz 0.20.2-rustleaks.1": "crates/rustleaks-sevenz",
-    "rustleaks-sources 0.2.0": "crates/rustleaks-sources",
-    "xtask 0.2.0": "crates/xtask"
+    "rustleaks-sources 0.3.0-alpha.1": "crates/rustleaks-sources",
+    "xtask 0.3.0-alpha.1": "crates/xtask"
   },
   "conditions": {
     "aarch64-apple-darwin": [

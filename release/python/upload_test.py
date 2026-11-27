@@ -83,5 +83,61 @@ class FormTest(unittest.TestCase):
         self.assertEqual(values("description"), ["# Readme\n"])
 
 
+PYPROJECT = """[project]
+name = "rustleaks"
+version = "{version}"
+description = "Scan bytes and text for secrets"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+keywords = ["a", "b"]
+classifiers = ["Programming Language :: Python :: 3"]
+
+[project.urls]
+Homepage = "https://example.com/"
+"""
+
+
+class CheckTest(unittest.TestCase):
+    """`check` compares a pre-release wheel with pyproject.toml, which holds
+    the PEP 440 version, such as 1.2.3a1 for the release 1.2.3-alpha.1."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.pyproject = os.path.join(self.directory.name, "pyproject.toml")
+        with open(self.pyproject, "w", encoding="utf-8") as file:
+            file.write(PYPROJECT.format(version="1.2.3a1"))
+        with open(os.path.join(self.directory.name, "README.md"), "w", encoding="utf-8") as file:
+            file.write("# Readme\n")
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def wheel(self, file_version, metadata_version):
+        path = os.path.join(self.directory.name, f"rustleaks-{file_version}-py3-none-any.whl")
+        metadata = METADATA.replace("Version: 1.2.3\n", f"Version: {metadata_version}\n")
+        metadata = metadata.replace("License-File: LICENSE\n", "License-File: LICENSE\nLicense-File: NOTICE\n")
+        dist_info = f"rustleaks-{file_version}.dist-info"
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("rustleaks/__init__.py", "")
+            archive.writestr(f"{dist_info}/METADATA", metadata)
+            for name in ("LICENSE", "NOTICE", "third-party/index.json"):
+                archive.writestr(f"{dist_info}/licenses/{name}", "text")
+        return path
+
+    def test_accepts_the_pep_440_version(self):
+        upload.check(self.wheel("1.2.3a1", "1.2.3a1"), self.pyproject)
+
+    def test_rejects_the_semantic_version(self):
+        for file_version, metadata_version in [
+            ("1.2.3_alpha.1", "1.2.3a1"),
+            ("1.2.3a1", "1.2.3-alpha.1"),
+            ("1.2.3", "1.2.3"),
+        ]:
+            with self.subTest(file_version=file_version, metadata_version=metadata_version):
+                with self.assertRaises(SystemExit):
+                    upload.check(self.wheel(file_version, metadata_version), self.pyproject)
+
+
 if __name__ == "__main__":
     unittest.main()

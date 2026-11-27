@@ -2,7 +2,7 @@
 # native library, so this file names no build backend.
 [project]
 name = "rustleaks"
-version = "0.2.0"
+version = "0.3.0a1"
 description = "Scan bytes and text for secrets with the Rustleaks engine"
 readme = "README.md"
 requires-python = ">=3.12"

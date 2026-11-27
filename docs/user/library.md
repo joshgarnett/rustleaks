@@ -20,11 +20,13 @@ Before 1.0, a minor release, such as 0.3.0, can change the library API. A
 patch release, such as 0.2.1, does not. Rustleaks keeps configuration files,
 ignore files, baselines, allow comments and report fields working, and a
 release that changes one of them says so in the changelog.
-`cargo add` accepts later 0.2 patch releases. To pin the exact version, add it
-with `=`:
+`cargo add` picks the newest stable release and accepts its later patch
+releases. Cargo does not pick a pre-release, such as 0.3.0-alpha.1, unless
+you name it. To use a pre-release, or to pin the exact version, add it with
+`=`:
 
 ```sh
-cargo add rustleaks-core@=0.2.0
+cargo add rustleaks-core@=0.3.0-alpha.1
 ```
 
 Only `rustleaks-core` is published. The file, archive and Git readers, the

@@ -5,6 +5,7 @@ name: Publish Go Module
 # v<version> and lib/<platform>/v<version>. It builds nothing: the layout is
 # the dry run's, checked against its SHA256SUMS. A published Go version
 # cannot be replaced, so the check job refuses a version whose tag exists.
+# In an empty rustleaks-go, the first publication creates main.
 
 on:
   workflow_dispatch:
@@ -55,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${EXPECTED_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9a-z.-]+)?$ ]]
           test "${TRIGGER_COMMIT}" = "${CANDIDATE}"
           test "${TRIGGER_REF}" = refs/heads/main
           test "$(git rev-parse HEAD)" = "${CANDIDATE}"
@@ -75,7 +76,14 @@ jobs:
           # corresponding source must exist before any package does.
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v${EXPECTED_VERSION}")"
           test "$(jq -r '.draft' <<<"${release_json}")" = false
-          test "$(jq -r '.prerelease' <<<"${release_json}")" = false
+          # release.yml publishes a version with a pre-release suffix as a
+          # GitHub pre-release, and any other version as a normal release.
+          if [[ "${EXPECTED_VERSION}" = *-* ]]; then
+            prerelease=true
+          else
+            prerelease=false
+          fi
+          test "$(jq -r '.prerelease' <<<"${release_json}")" = "${prerelease}"
           source_archive="rustleaks-${EXPECTED_VERSION}-corresponding-source.tar.gz"
           test "$(jq --arg name "${source_archive}" '[.assets[] | select(.name == $name and .state == "uploaded")] | length' <<<"${release_json}")" = 1
           # release.yml creates a lightweight tag; the tag is what users fetch.
@@ -120,8 +128,18 @@ jobs:
             echo "rustleaks-go already has a tag for v${EXPECTED_VERSION}" >&2
             exit 1
           fi
-          head="$(awk '$2 == "refs/heads/main" {print $1}' <<<"${refs}")"
-          [[ "${head}" =~ ^[0-9a-f]{40}$ ]]
+          if [[ -z "${refs}" ]]; then
+            # An empty repository: no branch and no tag. The publish job
+            # creates main with the first commit. A repository with refs
+            # but no main still fails below.
+            head=""
+          else
+            head="$(awk '$2 == "refs/heads/main" {print $1}' <<<"${refs}")"
+            if ! [[ "${head}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "rustleaks-go has refs but no main branch with one commit ID" >&2
+              exit 1
+            fi
+          fi
           printf 'head=%s\n' "${head}" >> "${GITHUB_OUTPUT}"
 
   publish:
@@ -162,10 +180,17 @@ jobs:
         run: |
           set -euo pipefail
           checkout="${RUNNER_TEMP}/rustleaks-go"
-          git clone --branch main https://github.com/joshgarnett/rustleaks-go.git "${checkout}"
-          # A main that moved after the check stops the push.
-          test "$(git -C "${checkout}" rev-parse HEAD)" = "${EXPECTED_HEAD}"
-          git -C "${checkout}" rm -r --quiet --ignore-unmatch -- .
+          if [[ -z "${EXPECTED_HEAD}" ]]; then
+            # The check found an empty repository: the last step creates
+            # main together with the tags.
+            git init --quiet --initial-branch=main "${checkout}"
+            git -C "${checkout}" remote add origin https://github.com/joshgarnett/rustleaks-go.git
+          else
+            git clone --branch main https://github.com/joshgarnett/rustleaks-go.git "${checkout}"
+            # A main that moved after the check stops the push.
+            test "$(git -C "${checkout}" rev-parse HEAD)" = "${EXPECTED_HEAD}"
+            git -C "${checkout}" rm -r --quiet --ignore-unmatch -- .
+          fi
           cp -R "${RUNNER_TEMP}/packages/rustleaks-go/." "${checkout}/"
           git -C "${checkout}" add --all
       - name: Create a one-hour token for rustleaks-go
@@ -184,12 +209,18 @@ jobs:
         env:
           APP_SLUG: ${{ steps.token.outputs.app-slug }}
           CANDIDATE: ${{ inputs.candidate }}
+          EXPECTED_HEAD: ${{ needs.check.outputs.head }}
           EXPECTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: |
           set -euo pipefail
           checkout="${RUNNER_TEMP}/rustleaks-go"
           gh auth setup-git
+          if [[ -z "${EXPECTED_HEAD}" ]]; then
+            # This commit creates main. A branch or tag created in the
+            # repository since the check stops the publication.
+            test -z "$(git -C "${checkout}" ls-remote origin)"
+          fi
           bot_id="$(gh api "users/${APP_SLUG}%5Bbot%5D" --jq '.id')"
           author=(-c user.name="${APP_SLUG}[bot]" -c user.email="${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com")
           git -C "${checkout}" "${author[@]}" commit --allow-empty \
