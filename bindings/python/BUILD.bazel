@@ -33,6 +33,8 @@ _NAMES = ["python_" + version.replace(".", "_") for version in _PYTHON_VERSIONS]
             "README.md",
             "pyproject.toml",
             "//:docs/user/python.md",
+            "//crates/rustleaks-eval:binding_reference",
+            "//crates/rustleaks-eval:binding_reference_files",
             "//crates/rustleaks-ffi:header",
             "//crates/rustleaks-ffi:rustleaks_ffi_shared",
             "//testdata:bindings",
@@ -44,6 +46,7 @@ _NAMES = ["python_" + version.replace(".", "_") for version in _PYTHON_VERSIONS]
             "RUSTLEAKS_TEST_LIBRARY": "$(rlocationpaths //crates/rustleaks-ffi:rustleaks_ffi_shared)",
             "RUSTLEAKS_TEST_PYPROJECT": "$(rlocationpath pyproject.toml)",
             "RUSTLEAKS_TEST_PYTHON": version,
+            "RUSTLEAKS_TEST_REFERENCE": "$(rlocationpaths //crates/rustleaks-eval:binding_reference)",
         },
         # The test modules import each other.
         imports = ["tests"],

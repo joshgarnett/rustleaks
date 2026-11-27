@@ -148,6 +148,18 @@ natively:
 - `//crates/rustleaks-ffi:linktest_test` links the FFI static library and a
   second Rust static library into one cgo program, on every lane but
   Windows.
+- Differential tests compare the bindings with `rustleaks-core` at run
+  time and store no expected values.
+  `//crates/rustleaks-ffi:differential_test` scans the detection cases of
+  the detect, allowlist, composite and decoder corpora and every generator
+  sample with core and through the C ABI, and requires the same findings,
+  completion and usage. `//crates/rustleaks-eval:binding_reference` runs a
+  test-only tool that scans the fixture files, a few other `testdata` files
+  and a file of all generator samples with every built-in rule through core.
+  It also scans each text file with CRLF line breaks and without its final
+  line break, and writes the findings as JSON. The Go `TestReferenceFindings` and the Python
+  `reference_test` scan the same inputs and require the same findings in
+  the same order.
 
 The release dry run also runs `Binding Packages` on all eight lanes: it builds
 a Go program from the packed `rustleaks-go` modules with the host C compiler

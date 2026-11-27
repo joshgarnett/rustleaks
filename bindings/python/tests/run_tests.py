@@ -14,6 +14,7 @@ MODULES = [
     "docs_test",
     "engine_test",
     "native_test",
+    "reference_test",
     "thread_stack_test",
 ]
 
