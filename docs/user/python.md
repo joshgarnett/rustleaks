@@ -214,7 +214,8 @@ Lines count from 1. Columns count bytes from 1 on the first line of the
 input, and are 1 higher on every later line, as in the command's reports. A
 finding of a rule that has only a `path` pattern, such as `pkcs12-file`, has
 line and column 0 and no ranges. Use the ranges, not the columns, to find
-the secret in the input.
+the secret in the input. On every line after the first, `line` starts with
+the line break that ends the line before it, as in `b"\nsecond = ..."`.
 
 When a match starts on, or runs to, a last line that has no line break,
 `line` currently holds the text from the start of the input instead of
@@ -238,7 +239,7 @@ argument types raise `TypeError` and bad values raise `ValueError`. A
 | `IncompleteScanError` | The scan stopped early. Its subclasses are `ScanCancelledError`, `ScanTimeoutError` and `BudgetExceededError`. |
 | `ClosedError` | The engine is closed, or was created before the process forked. |
 | `LibraryError` | The native library cannot be used, or failed inside. `kind` is `"load"` (missing, cannot load or lacks an export), `"version"` (another ABI number or version), `"engine"` (a failure outside the configuration, such as a thread that cannot start in a restricted process) or `"panic"` (the library caught an internal error). |
-| `TextEncodingError` | `scan_text` got text that UTF-8 cannot encode. |
+| `TextEncodingError` | Text that UTF-8 cannot encode, such as a lone surrogate: the text given to `scan_text`, a `path`, a `config` string or a rule ID. A path from `os.listdir` or `os.walk` with a name that is not valid in the file system encoding holds such surrogates. |
 
 A status that this version of the package does not name raises
 `rustleaks.Error` itself.
@@ -299,6 +300,11 @@ with rustleaks.Engine() as engine:
 Cancellation is not immediate. The engine checks the token and the timeout
 between steps, and one pattern search cannot be interrupted.
 
+Python runs signal handlers, and raises `KeyboardInterrupt` for Ctrl-C, only
+between native calls, so an interrupt during a scan waits until the scan
+returns. To stop long scans on Ctrl-C, give them a `timeout`, or set their
+`CancelToken` from the signal handler.
+
 ## Threads and closing
 
 An `Engine` can be used from many threads at once. Native calls release the
@@ -313,6 +319,12 @@ thread, for example with `asyncio.to_thread(engine.scan, data)`.
 the engine. It does not cancel them. Later scans raise `ClosedError`.
 Calling `close()` again does nothing. A `with` block calls `close()` at the
 end. An engine that is not closed is freed when it is garbage collected.
+
+Do not call `close()` from a signal handler or from another place that can
+run in the middle of a scan on the same thread. It would wait for that scan,
+which cannot finish, so it raises `RuntimeError` instead. In a signal
+handler, set a `CancelToken` or a flag, and close the engine after the scan
+returns.
 
 Engines, tokens and findings cannot be pickled. Engines and tokens cannot be
 copied.
@@ -336,6 +348,11 @@ freed. The same is true of your input.
   need, not those three fields.
 - Error messages never hold scanned bytes. A `ConfigError` message can
   quote configuration text.
+- The traceback of an error from `scan` or `scan_text` holds the frames of
+  the package, and their local variables hold the input. An error reporter
+  that records local variables, as some crash reporting services do, sends
+  the scanned bytes with the error. Turn that option off, or catch the
+  error and report a new one.
 - `redaction=100` replaces each secret with `REDACTED` in `secret`,
   `match` and `line`. A lower percent keeps the start of the secret and
   replaces the rest with `...`. For a finding in decoded text, the whole
