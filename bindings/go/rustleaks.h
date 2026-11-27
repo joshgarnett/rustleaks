@@ -38,6 +38,15 @@
  * the scan threads. Starting a thread can fail in a restricted process; the
  * error is RUSTLEAKS_ERROR_ENGINE.
  *
+ * Run at most rustleaks_engine_workers scans with one engine at once. A
+ * scan beyond that waits in a queue for a free scan thread, and while it
+ * waits neither its deadline nor its cancel handle is checked.
+ *
+ * Fork: a forked child has none of the parent's scan threads. In the child,
+ * do not scan with or free an engine handle made before the fork; drop the
+ * handle without calling any function on it, and build a new engine there.
+ * The parent's handles stay valid in the parent.
+ *
  * Text: rule IDs, descriptions, tags, keywords and error messages are
  * UTF-8. Secrets, matches, lines and paths are the scanned and given bytes.
  */
@@ -93,7 +102,10 @@ extern "C" {
  * Default 0: scans run on the engine's scan threads. 1 runs scans on the
  * calling thread, which saves a thread hand-off per scan. A scan can compile
  * a pattern with up to 200 groups on the thread that runs it, so set it only
- * when every calling thread has a large stack, such as 8 MiB.
+ * when every calling thread has a large stack, such as 8 MiB. Core can then
+ * also wait on the calling thread, for example when two scans compile the
+ * same pattern at once, and on Apple platforms such a wait can make a child
+ * forked from that thread crash in its first scan there.
  */
 #define RUSTLEAKS_OPTION_SCAN_ON_CALLER_THREAD 2
 

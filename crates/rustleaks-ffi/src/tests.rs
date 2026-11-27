@@ -699,7 +699,8 @@ fn a_rule_with_200_nested_groups_builds_and_scans_on_a_128_kib_stack() {
 #[cfg_attr(miri, ignore = "loads every built-in rule")]
 fn builtin_rules_build_and_scan_on_a_128_kib_stack() {
     // Every keyword in the input makes the scan compile every rule's
-    // pattern on this thread.
+    // pattern. The engine builds on its build thread and compiles on a scan
+    // thread, so the 128 KiB caller only waits.
     let outcome = on_small_stack(|| {
         let engine = Engine::new(&Options::new().unwrap()).unwrap();
         let mut input = Vec::new();
@@ -926,4 +927,119 @@ fn a_misaligned_error_pointer_is_invalid_for_a_scan() {
     };
     assert_eq!(status, ERROR_INVALID_ARGUMENT);
     assert!(result.is_null());
+}
+
+/// A pointer with address 1, misaligned for every type with an alignment
+/// above 1. The library must reject it before it reads or writes.
+fn misaligned<T>() -> *mut T {
+    ptr::without_provenance_mut(1)
+}
+
+/// [`misaligned`] for a `const` parameter.
+fn misaligned_const<T>() -> *const T {
+    ptr::without_provenance(1)
+}
+
+#[test]
+fn misaligned_out_handle_argument_and_free_pointers_are_invalid() {
+    let engine = token_engine();
+    let mut options = Options::new().unwrap();
+    let invalid = ERROR_INVALID_ARGUMENT;
+    let mut count = 0_usize;
+    let mut text = ptr::without_provenance::<u8>(7);
+    let mut result = ptr::null_mut();
+    // SAFETY: every pointer is a valid local, a live handle, or the
+    // misaligned address, which the library rejects before any access.
+    unsafe {
+        // Out pointers of a getter and of a handle constructor.
+        assert_eq!(
+            rustleaks_engine_rule_count(engine.raw(), misaligned()),
+            invalid
+        );
+        assert_eq!(
+            rustleaks_engine_max_input_bytes(engine.raw(), misaligned()),
+            invalid
+        );
+        assert_eq!(rustleaks_cancel_new(misaligned()), invalid);
+        assert_eq!(rustleaks_options_new(ABI_VERSION, misaligned()), invalid);
+        // Two out pointers: the misaligned second one leaves the first one
+        // unwritten.
+        assert_eq!(rustleaks_version(&raw mut text, misaligned()), invalid);
+        assert_eq!(text, ptr::without_provenance::<u8>(7));
+
+        // Shared and exclusive handle borrows.
+        assert_eq!(
+            rustleaks_engine_workers(misaligned_const(), &raw mut count),
+            invalid
+        );
+        assert_eq!(rustleaks_options_set_u64(misaligned(), 1, 1), invalid);
+        assert_eq!(rustleaks_cancel_set(misaligned_const()), invalid);
+        assert_eq!(
+            rustleaks_result_count(misaligned_const(), &raw mut count),
+            invalid
+        );
+        let mut kind = 0_i32;
+        assert_eq!(
+            rustleaks_error_kind(misaligned_const(), &raw mut kind),
+            invalid
+        );
+
+        // Scan arguments and a cancel handle.
+        let mut error = ptr::null_mut();
+        let status = rustleaks_scan(
+            engine.raw(),
+            b"TOKEN".as_ptr(),
+            5,
+            misaligned_const(),
+            ptr::null(),
+            &raw mut result,
+            &raw mut error,
+        );
+        assert_eq!(status, invalid);
+        assert!(result.is_null());
+        assert_eq!(rustleaks_error_free(error), STATUS_OK);
+        let status = rustleaks_scan(
+            engine.raw(),
+            b"TOKEN".as_ptr(),
+            5,
+            ptr::null(),
+            misaligned_const(),
+            &raw mut result,
+            ptr::null_mut(),
+        );
+        assert_eq!(status, invalid);
+
+        // Free functions.
+        assert_eq!(rustleaks_options_free(misaligned()), invalid);
+        assert_eq!(rustleaks_engine_free(misaligned()), invalid);
+        assert_eq!(rustleaks_cancel_free(misaligned()), invalid);
+        assert_eq!(rustleaks_result_free(misaligned()), invalid);
+        assert_eq!(rustleaks_error_free(misaligned()), invalid);
+    }
+    // The real handles are untouched.
+    assert!(options.set_u64(OPTION_WORKERS, 1).is_ok());
+    assert_eq!(engine.rules().len(), 1);
+}
+
+#[test]
+fn error_message_checks_both_out_pointers_before_writing() {
+    let mut options = Options::new().unwrap();
+    options
+        .set_config(b"[extend]\npath = \"base.toml\"\n")
+        .unwrap();
+    let mut engine = ptr::null_mut();
+    let mut handle = ptr::null_mut();
+    let mut text = ptr::without_provenance::<u8>(7);
+    // SAFETY: the options handle is live, the out pointers are valid locals
+    // or the misaligned address, and the error handle is freed once.
+    unsafe {
+        let status = rustleaks_engine_new(options.raw(), &raw mut engine, &raw mut handle);
+        assert_eq!(status, ERROR_CONFIG);
+        assert_eq!(
+            rustleaks_error_message(handle, &raw mut text, misaligned()),
+            ERROR_INVALID_ARGUMENT
+        );
+        assert_eq!(text, ptr::without_provenance::<u8>(7));
+        assert_eq!(rustleaks_error_free(handle), STATUS_OK);
+    }
 }
