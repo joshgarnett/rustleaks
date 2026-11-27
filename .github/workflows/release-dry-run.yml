@@ -542,7 +542,7 @@ jobs:
           second_bin_dir="$(bazelisk --output_user_root="${second_root}" info --config="${RELEASE_CONFIG}" bazel-bin)"
           install -m 0755 "${first_bin_dir}/crates/rustleaks-cli/rustleaks" "${work}/rustleaks-one"
           install -m 0755 "${second_bin_dir}/crates/rustleaks-cli/rustleaks" "${work}/rustleaks-two"
-          test -z "$(dwarfdump --uuid "${work}/rustleaks-one")"
+          cargo xtask release-artifact check-executable "${RELEASE_TARGET}" "${work}/rustleaks-one"
           "${work}/rustleaks-one" --help
           printf '%s%s\n' 'string AWSToken = "AKIA' 'LALEMEL33243OLIB";' | "${work}/rustleaks-one" stdin --redact --no-banner --exit-code=0 --report-format=json --report-path=- | tee "${work}/smoke.json"
           grep -q REDACTED "${work}/smoke.json"

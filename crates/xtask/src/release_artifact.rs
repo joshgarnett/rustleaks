@@ -99,6 +99,12 @@ pub(crate) fn target_notice_files(
     notices::load(root, target, None).map(|bundle| bundle.files)
 }
 
+/// Checks that `bytes` is a macOS dynamic library for the Apple `target`
+/// with the `LC_UUID` load command that dyld needs to load it.
+pub(crate) fn check_mach_o_library(target: &str, bytes: &[u8]) -> Result<(), String> {
+    executable::validate_mach_o(target, executable::MH_DYLIB, bytes)
+}
+
 pub(crate) fn run(root: &Path, args: &[String]) -> Result<(), String> {
     match args {
         [command] if command == "notices" => notices::generate(root, false),
