@@ -232,7 +232,11 @@ Rules for the crate:
   Rust is `#[unsafe(no_mangle)]` under a `SAFETY:` comment. `just security`
   checks both rules, and also rejects unsafe Rust in every test root of the
   other crates and in the Rust files under `bazel/`, `bindings/` and
-  `release/`.
+  `release/`. This search reads source text. It catches the `unsafe`
+  keyword, unsafe attributes, assembly macros and includes of non-Rust files
+  as written, but not a macro renamed with `use ... as` or passed through
+  another macro. The compiler's `forbid(unsafe_code)` lint and review are
+  the controls; the search catches unsafe code added by mistake.
 
 The Go `unsafe`, cgo and `syscall` code and the Python ctypes code under
 `bindings/` are part of the same reviewed boundary. Review them with the

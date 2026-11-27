@@ -862,7 +862,7 @@ fn non_rust_include(source: &str) -> Option<String> {
     };
     let next = |mut index: usize| {
         while let Some(&(character, literal)) = tokens.get(index) {
-            if literal || !character.is_whitespace() {
+            if literal || !is_rust_whitespace(character) {
                 return Some(index);
             }
             index += 1;
@@ -964,7 +964,14 @@ fn non_rust_include(source: &str) -> Option<String> {
 /// Returns the next index at or after `index` in `code` that is not
 /// whitespace.
 fn next_code(code: &[char], index: usize) -> Option<usize> {
-    (index..code.len()).find(|&index| !code[index].is_whitespace())
+    (index..code.len()).find(|&index| !is_rust_whitespace(code[index]))
+}
+
+/// Whether Rust's lexer treats `character` as whitespace. Rust uses the
+/// Unicode `Pattern_White_Space` set, which also holds the left-to-right and
+/// right-to-left marks that `char::is_whitespace` does not.
+fn is_rust_whitespace(character: char) -> bool {
+    character.is_whitespace() || matches!(character, '\u{200E}' | '\u{200F}')
 }
 
 /// Returns the characters of Rust source without comments, each marked as
@@ -1422,6 +1429,20 @@ mod tests {
             super::non_rust_include("include!(\"x.inc\");\n").as_deref(),
             Some("x.inc")
         );
+        // Rust also treats the left-to-right and right-to-left marks as
+        // whitespace between tokens.
+        assert_eq!(
+            super::non_rust_include("include\u{200E}!(\"x.inc\");\n").as_deref(),
+            Some("x.inc")
+        );
+        assert_eq!(
+            super::non_rust_include("#[path\u{200E}= \"x.txt\"]\nmod x;\n").as_deref(),
+            Some("x.txt")
+        );
+        assert_eq!(
+            super::non_rust_include("#\u{200F}[path = \"x.txt\"]\nmod x;\n").as_deref(),
+            Some("x.txt")
+        );
         assert_eq!(
             super::non_rust_include("#[path = \"x.txt\"]\nmod x;\n").as_deref(),
             Some("x.txt")
@@ -1457,6 +1478,9 @@ mod tests {
         }
         // Assembly macros, which need no unsafe keyword in global_asm!.
         assert!(super::mentions_unsafe_attribute("global_asm!(\"nop\");\n"));
+        assert!(super::mentions_unsafe_attribute(
+            "global_asm\u{200F}!(\"nop\");\n"
+        ));
         assert!(super::mentions_unsafe_attribute(
             "core::arch::global_asm /* x */ !(\"nop\");\n"
         ));
